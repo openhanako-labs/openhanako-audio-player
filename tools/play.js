@@ -25,24 +25,11 @@ const parameters = {
   required: ['source'],
 };
 
-/**
- * 获取插件数据目录（统一版本）
- * 优先级: 环境变量 > 默认 ~/.hanako/plugin-data/hanako-audio-player
- */
-function getDataDir() {
-  if (process.env.HANAKO_AUDIO_PLAYER_DIR) {
-    return process.env.HANAKO_AUDIO_PLAYER_DIR;
-  }
-  const home = process.env.USERPROFILE || process.env.HOME || '';
-  return path.join(home, '.hanako', 'plugin-data', 'hanako-audio-player');
-}
-
-async function execute({ source, title }, { sessionPath, pluginId }) {
+async function execute({ source, title }, { sessionPath, pluginId, dataDir }) {
   const fileName = source.split('/').pop().split('\\').pop().split('?')[0] || '音频';
   const trackName = title || fileName;
   const isLocal = !source.startsWith('http://') && !source.startsWith('https://');
 
-  const dataDir = getDataDir();
   const mediaDir = path.join(dataDir, 'media');
   const queuePath = path.join(dataDir, 'queue.json');
 
@@ -52,7 +39,7 @@ async function execute({ source, title }, { sessionPath, pluginId }) {
     fs.mkdirSync(mediaDir, { recursive: true });
     const dst = path.join(mediaDir, fileName);
     if (!fs.existsSync(dst)) {
-      try { fs.copyFileSync(source, dst); } catch {}
+      try { fs.copyFileSync(source, dst); } catch (e) { console.warn('[play] copyFile failed:', e.message); }
     }
     mediaUrl = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(fileName)}`;
   }
@@ -62,11 +49,11 @@ async function execute({ source, title }, { sessionPath, pluginId }) {
     if (fs.existsSync(queuePath)) {
       queue = JSON.parse(fs.readFileSync(queuePath, 'utf-8'));
     }
-  } catch {}
+  } catch (e) { console.warn('[play] queue read failed:', e.message); }
 
   if (!queue.some(t => t.url === mediaUrl)) {
     queue.push({ name: trackName, url: mediaUrl, mode: isLocal ? '本地' : '在线' });
-    // 原子写入：先写临时文件再 rename，防止并发覆盖
+    // 原子写入
     const tmpPath = queuePath + '.tmp.' + process.pid;
     fs.writeFileSync(tmpPath, JSON.stringify(queue, null, 2), 'utf-8');
     fs.renameSync(tmpPath, queuePath);

@@ -44,12 +44,35 @@ export default function (app, ctx) {
 
     const ext = path.extname(filename).slice(1).toLowerCase();
     const mime = MIME[ext] || "audio/mpeg";
+
+    // 大文件（>1MB）走 redirect 到 widget/media 端点，避免全量加载到内存
+    const stat = fs.statSync(filePath);
+    if (stat.size > 1024 * 1024) {
+      const redirectUrl = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(filename)}`;
+      return c.redirect(redirectUrl);
+    }
+
     const buf = fs.readFileSync(filePath);
     const base64 = buf.toString("base64");
     const audioSrc = `data:${mime};base64,${base64}`;
 
-    // 暂用随机文件名作为显示名（工具模块缓存问题暂无法传原文件名）
-    const displayName = filename.replace(/\.\w+$/, "");
+    // 读 _names.json 映射获取显示名（先 dev 目录，再生产目录）
+    let displayName = filename.replace(/\.\w+$/, "");
+    try {
+      const namesPath = path.join(dataDir, "media", "_names.json");
+      let namesMap = null;
+      if (fs.existsSync(namesPath)) {
+        namesMap = JSON.parse(fs.readFileSync(namesPath, "utf-8"));
+      } else if (pluginDataMediaDir) {
+        const fallbackNames = path.join(pluginDataMediaDir, "_names.json");
+        if (fs.existsSync(fallbackNames)) {
+          namesMap = JSON.parse(fs.readFileSync(fallbackNames, "utf-8"));
+        }
+      }
+      if (namesMap && namesMap[filename]) displayName = namesMap[filename];
+    } catch (e) {
+      console.warn("[play] _names.json read failed:", e.message);
+    }
 
     const html = `<!DOCTYPE html>
 <html lang="zh">
@@ -110,22 +133,32 @@ setTimeout(n,100);
 
   // ── 播放队列 ──
   const queuePath = path.join(dataDir, "queue.json");
+  // 兼容 dev 模式：部分工具可能写到生产数据目录
+  const homeDir = process.env.USERPROFILE || process.env.HOME || "";
+  const prodQueuePath = homeDir ? path.join(homeDir, ".hanako", "plugin-data", "hanako-audio-player", "queue.json") : null;
 
   app.get("/widget/api/queue", (c) => {
     try {
       if (fs.existsSync(queuePath)) {
         return c.json(JSON.parse(fs.readFileSync(queuePath, "utf-8")));
       }
-    } catch {}
+      // fallback: 生产目录
+      if (prodQueuePath && fs.existsSync(prodQueuePath)) {
+        return c.json(JSON.parse(fs.readFileSync(prodQueuePath, "utf-8")));
+      }
+    } catch (e) { console.warn('[queue] GET failed:', e.message); }
     return c.json([]);
   });
 
   app.post("/widget/api/queue", async (c) => {
     try {
       const body = await c.req.json();
-      const tmpPath = queuePath + ".tmp." + process.pid;
-      fs.writeFileSync(tmpPath, JSON.stringify(body, null, 2), "utf-8");
-      fs.renameSync(tmpPath, queuePath);
+      // 写入主目录
+      fs.writeFileSync(queuePath, JSON.stringify(body, null, 2), "utf-8");
+      // 也同步到生产目录（如果是 dev 模式）
+      if (prodQueuePath && prodQueuePath !== queuePath) {
+        try { fs.writeFileSync(prodQueuePath, JSON.stringify(body, null, 2), "utf-8"); } catch (e) { console.warn('[queue] prod sync write failed:', e.message); }
+      }
       return c.json({ ok: true });
     } catch (e) {
       return c.json({ ok: false, error: e.message }, 500);
@@ -140,6 +173,9 @@ setTimeout(n,100);
     }
 
     let filePath = path.join(mediaDir, filename);
+    if (!fs.existsSync(filePath) && pluginDataMediaDir) {
+      filePath = path.join(pluginDataMediaDir, filename);
+    }
     if (!fs.existsSync(filePath)) {
       return c.json({ error: "not found" }, 404);
     }
@@ -151,9 +187,16 @@ setTimeout(n,100);
     const range = c.req.header("range");
 
     if (range) {
-      const match = range.match(/bytes=(\d*)-(\d*)/);
-      const start = match[1] ? parseInt(match[1], 10) : 0;
-      const end = match[2] ? parseInt(match[2], 10) : total - 1;
+      // 只支持单段 Range: bytes=N-M 或 bytes=N-
+      const match = range.match(/^bytes=(\d+)-(\d*)$/);
+      if (!match) {
+        return c.text("Invalid Range", 416);
+      }
+      const start = parseInt(match[1], 10);
+      const end = match[2] !== "" ? parseInt(match[2], 10) : total - 1;
+      if (start >= total || end >= total) {
+        return c.text("Range Not Satisfiable", 416);
+      }
       const stream = fs.createReadStream(filePath, { start, end });
       const { readable, writable } = new TransformStream();
       streamPipe(stream, writable);

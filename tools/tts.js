@@ -36,12 +36,7 @@ function findVenvPython(cosyVoiceBase) {
   return 'python';
 }
 
-/** 取插件数据目录 */
-function getDataDir() {
-  if (process.env.HANAKO_AUDIO_PLAYER_DIR) return process.env.HANAKO_AUDIO_PLAYER_DIR;
-  const home = process.env.USERPROFILE || process.env.HOME || '';
-  return path.join(home, '.hanako', 'plugin-data', 'hanako-audio-player');
-}
+
 
 /** 查找 executor.py */
 function findExecutor(pluginId) {
@@ -57,14 +52,15 @@ function findExecutor(pluginId) {
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
   }
-  return path.join(home, '.hanako', 'plugins', pluginId, 'executor.py');
+  const fallback = path.join(home, '.hanako', 'plugins', pluginId, 'executor.py');
+  if (fs.existsSync(fallback)) return fallback;
+  throw new Error(`executor.py 未找到，已扫描路径：\n  ${candidates.concat(fallback).join('\n  ')}`);
 }
 
-async function execute(input, { sessionPath, pluginId }) {
+async function execute(input, { sessionPath, pluginId, dataDir }) {
   const text = input.text;
   const trackName = text.length > 20 ? text.slice(0, 20) + '…' : text;
 
-  const dataDir = getDataDir();
   const taskDir = path.join(dataDir, 'tasks');
   fs.mkdirSync(taskDir, { recursive: true });
 
@@ -82,11 +78,12 @@ async function execute(input, { sessionPath, pluginId }) {
 
   fs.writeFileSync(path.join(taskDir, `${taskId}.json`), JSON.stringify(task, null, 2), 'utf-8');
 
-  // run executor
+  // run executor — 传入 HANAKO_AUDIO_PLAYER_DIR 确保 executor 写同一目录
   const executorPath = findExecutor(pluginId);
   const cosyVoiceBase = process.env.COSYVOICE_BASE;
   const venvPython = findVenvPython(cosyVoiceBase);
-  const execEnv = cosyVoiceBase ? { ...process.env, COSYVOICE_BASE: cosyVoiceBase } : process.env;
+  const execEnv = { ...process.env, HANAKO_AUDIO_PLAYER_DIR: dataDir };
+  if (cosyVoiceBase) execEnv.COSYVOICE_BASE = cosyVoiceBase;
   try {
     await execFile(venvPython, [executorPath, '--input', taskId, '--mode', 'auto'], {
       timeout: 120000,
@@ -99,7 +96,7 @@ async function execute(input, { sessionPath, pluginId }) {
   }
 
   // 验证输出文件
-  const outputFile = path.join(getDataDir(), 'media', `${taskId}.wav`);
+  const outputFile = path.join(dataDir, 'media', `${taskId}.wav`);
   if (!fs.existsSync(outputFile)) {
     return {
       content: [{ type: 'text', text: `❌ TTS 合成失败：执行器已退出但未找到输出文件\n  taskId=${taskId}\n  wav=${outputFile}` }],
@@ -109,21 +106,21 @@ async function execute(input, { sessionPath, pluginId }) {
   // 加入播放队列
   const fileName = `${taskId}.wav`;
   const mediaUrl = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(fileName)}`;
-  const queuePath = path.join(getDataDir(), 'queue.json');
+  const queuePath = path.join(dataDir, 'queue.json');
 
   let queue = [];
   try {
     if (fs.existsSync(queuePath)) {
       queue = JSON.parse(fs.readFileSync(queuePath, 'utf-8'));
     }
-  } catch (_) {}
+  } catch (e) { console.warn('[tts] queue read failed:', e.message); }
   if (!queue.some(t => t.url === mediaUrl)) {
     queue.push({ name: trackName, url: mediaUrl, mode: '本地' });
     try {
       const tmpPath = queuePath + '.tmp.' + process.pid;
       fs.writeFileSync(tmpPath, JSON.stringify(queue, null, 2), 'utf-8');
       fs.renameSync(tmpPath, queuePath);
-    } catch (_) {}
+    } catch (e) { console.warn('[tts] queue write failed:', e.message); }
   }
 
   // 对话内嵌卡片
