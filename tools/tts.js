@@ -1,10 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile as execFileCb } from 'node:child_process';
+import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 
+const execFile = promisify(execFileCb);
+
 const name = 'tts';
-const description = '用 CosyVoice 本地模型合成语音（零样本克隆/情感控制），自动播放并加入播放列表。';
+const description = '用 CosyVoice 本地模型合成语音（零样本克隆/情感控制），自动播放并加入播放列表';
 
 const parameters = {
   type: 'object',
@@ -33,14 +36,14 @@ function findVenvPython(cosyVoiceBase) {
   return 'python';
 }
 
-/** 取插件数据目录（统一版）：环境变量 > 默认 ~/.hanako/plugin-data/hanako-audio-player */
+/** 取插件数据目录 */
 function getDataDir() {
   if (process.env.HANAKO_AUDIO_PLAYER_DIR) return process.env.HANAKO_AUDIO_PLAYER_DIR;
   const home = process.env.USERPROFILE || process.env.HOME || '';
   return path.join(home, '.hanako', 'plugin-data', 'hanako-audio-player');
 }
 
-/** 查找 executor.py：优先插件源码目录，回退到数据目录 */
+/** 查找 executor.py */
 function findExecutor(pluginId) {
   const home = process.env.USERPROFILE || process.env.HOME || '';
   const candidates = [
@@ -54,7 +57,6 @@ function findExecutor(pluginId) {
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
   }
-  // 兜底：返回 plugins 目录下的路径，即便不存在
   return path.join(home, '.hanako', 'plugins', pluginId, 'executor.py');
 }
 
@@ -80,7 +82,7 @@ async function execute(input, { sessionPath, pluginId }) {
 
   fs.writeFileSync(path.join(taskDir, `${taskId}.json`), JSON.stringify(task, null, 2), 'utf-8');
 
-  // run executor synchronously
+  // run executor
   const executorPath = findExecutor(pluginId);
   const cosyVoiceBase = process.env.COSYVOICE_BASE;
   const venvPython = findVenvPython(cosyVoiceBase);
@@ -96,16 +98,15 @@ async function execute(input, { sessionPath, pluginId }) {
     };
   }
 
-  // 验证 executor 是否真的生成了输出（exit code 0 不代表成功）
+  // 验证输出文件
   const outputFile = path.join(getDataDir(), 'media', `${taskId}.wav`);
   if (!fs.existsSync(outputFile)) {
     return {
-      content: [{ type: 'text', text: '❌ TTS 合成失败：执行器未生成音频文件，请检查 CosyVoice 配置和日志' }],
+      content: [{ type: 'text', text: `❌ TTS 合成失败：执行器已退出但未找到输出文件\n  taskId=${taskId}\n  wav=${outputFile}` }],
     };
   }
 
-  // after success, add to playlist
-  const mediaDirForQueue = path.join(getDataDir(), 'media');
+  // 加入播放队列
   const fileName = `${taskId}.wav`;
   const mediaUrl = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(fileName)}`;
   const queuePath = path.join(getDataDir(), 'queue.json');
@@ -119,15 +120,21 @@ async function execute(input, { sessionPath, pluginId }) {
   if (!queue.some(t => t.url === mediaUrl)) {
     queue.push({ name: trackName, url: mediaUrl, mode: '本地' });
     try {
-      // 原子写入：先写临时文件再 rename，防止并发覆盖
       const tmpPath = queuePath + '.tmp.' + process.pid;
       fs.writeFileSync(tmpPath, JSON.stringify(queue, null, 2), 'utf-8');
       fs.renameSync(tmpPath, queuePath);
     } catch (_) {}
   }
 
+  // 对话内嵌卡片
+  const cardRoute = `/play?file=${encodeURIComponent(fileName)}`;
+
   return {
-    content: [{ type: 'text', text: `🎤 CosyVoice 合成「${trackName}」\n已加入播放器` }]
+    content: [{ type: 'text', text: `🎤 CosyVoice 合成「${trackName}」` }],
+    details: {
+      card: { type: 'iframe', route: cardRoute, aspectRatio: '10:3' },
+      media: { items: [] },
+    },
   };
 }
 
