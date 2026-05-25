@@ -31,6 +31,7 @@ export default function (app, ctx) {
   // ── 对话内嵌播放器（音频 base64 内嵌，绕过媒体端点鉴权）──
   app.get("/play", (c) => {
     const filename = c.req.query("file");
+    const translate = c.req.query("translate") || "";
     if (!filename) return c.text("Missing file", 400);
     if (filename.includes("/") || filename.includes("\\") || filename.includes("..")) {
       return c.text("Invalid filename", 400);
@@ -101,6 +102,8 @@ body{
   font-size:13px;flex-shrink:0;color:white;
 }
 .name{color:#2c2c2c;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
+.trans{color:#666;font-size:12px;line-height:1.4;padding:6px 0 2px 0;border-top:1px solid rgba(0,0,0,0.04);margin-top:6px;word-break:break-all}
+.trans{color:#666;font-size:12px;line-height:1.4;padding:6px 0 2px 0;border-top:1px solid rgba(0,0,0,0.04);margin-top:6px;word-break:break-all}
 audio{width:100%;height:36px;border-radius:6px;outline:none;background:#FFFBF5}
 audio::-webkit-media-controls-panel{background:#FFFBF5}
 </style>
@@ -114,6 +117,7 @@ audio::-webkit-media-controls-panel{background:#FFFBF5}
       <div class="name">${escAttr(displayName)}</div>
     </div>
     <audio src="${escAttr(audioSrc)}" controls preload="auto"></audio>
+    ${translate ? `<div class="trans">${escAttr(translate)}</div>` : ""}
   </div>
 </div>
 <script>

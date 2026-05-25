@@ -73,8 +73,6 @@ def find_cosyvoice_base():
                     _COSYVOICE_CACHE = d
                     return d
 
-    # 移除全盘符扫描——依赖 env var / cache / cwd / user home 足够
-
     return ''
 
 
@@ -104,7 +102,6 @@ import torch
 # ── 模型目录 ──
 MODEL_DIR = os.environ.get('COSYVOICE_MODEL_DIR', '')
 if not MODEL_DIR:
-    # 自动检测 CV2 → CV3 → 300M
     for candidate in ['CosyVoice2-0.5B', 'CosyVoice3-0.5B', 'CosyVoice-300M']:
         d = os.path.join(BASE, 'models', candidate)
         if os.path.isdir(d):
@@ -113,6 +110,19 @@ if not MODEL_DIR:
 if not MODEL_DIR:
     print('[FATAL] 未找到模型目录，请设置 COSYVOICE_MODEL_DIR', file=sys.stderr)
     sys.exit(1)
+
+# ── 注册说话人参考配置（用于零样本模式保留语气）──
+SPEAKER_REFS_PATH = os.path.join(BASE, 'speaker_refs.json')
+
+def load_speaker_refs():
+    """加载说话人参考音频配置，用于零样本模式取代 SFT"""
+    try:
+        if os.path.exists(SPEAKER_REFS_PATH):
+            with open(SPEAKER_REFS_PATH, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except:
+        pass
+    return {}
 
 # ── 插件数据目录 ──
 USER_HOME = os.environ.get('USERPROFILE', os.environ.get('HOME', ''))
@@ -135,6 +145,7 @@ MEDIA_DIR = os.path.join(PLUGIN_DATA, 'media')
 os.makedirs(MEDIA_DIR, exist_ok=True)
 
 _model = None
+_speaker_refs = None
 
 def get_model():
     global _model
@@ -143,6 +154,24 @@ def get_model():
         _model = AutoModel(model_dir=MODEL_DIR, fp16=True)
         print(f'模型就绪 | CUDA: {torch.cuda.is_available()}', file=sys.stderr)
     return _model
+
+def get_speaker_ref(spk_name):
+    """查找说话人对应的参考音频配置（支持中英文 ID 匹配）"""
+    global _speaker_refs
+    if _speaker_refs is None:
+        _speaker_refs = load_speaker_refs()
+    # 直接匹配
+    if spk_name in _speaker_refs:
+        return _speaker_refs[spk_name]
+    # 中文名→英文名映射查找
+    cn_to_en = {
+        '洛琪希': 'luoqixi', '艾莉丝': 'alice', '瑞贝卡': 'rebecca',
+        '爱弥斯': 'aimis', '奥菲莉娅': 'ophelia', '我的声音': 'my_voice',
+    }
+    en_name = cn_to_en.get(spk_name, '')
+    if en_name and en_name in _speaker_refs:
+        return _speaker_refs[en_name]
+    return None
 
 def process_task(task_id):
     task_path = os.path.join(TASK_DIR, f'{task_id}.json')
@@ -159,7 +188,7 @@ def process_task(task_id):
     ref_text = task.get('refText', '')
     instruct = task.get('instruct', '')
 
-    # ── 自动转录：有参考音频但无参考文本时走 Whisper ──
+    # ── 自动转录 ──
     if ref_audio and not ref_text and os.path.exists(ref_audio):
         print(f'[转录] 参考音频无文本，自动 Whisper 转录: {ref_audio}', file=sys.stderr)
         if not _WHISPER_OK:
@@ -170,7 +199,6 @@ def process_task(task_id):
                 wr = wm.transcribe(ref_audio, language='zh')
                 ref_text = wr['text'].strip()
                 print(f'[转录] 结果: {ref_text}', file=sys.stderr)
-                # 写回任务文件，后续可直接复用
                 task['refText'] = ref_text
                 with open(task_path, 'w', encoding='utf-8') as f:
                     json.dump(task, f, ensure_ascii=False, indent=2)
@@ -187,14 +215,21 @@ def process_task(task_id):
     spk_list = list(cosy.frontend.spk2info.keys())
 
     if ref_audio and ref_text and os.path.exists(ref_audio):
+        # 用户显式传入参考 → 零样本
         print(f'[零样本克隆] 参考: {ref_audio}', file=sys.stderr)
         result = cosy.inference_zero_shot(text, ref_text, ref_audio, stream=False)
     elif instruct and spk in spk_list:
         print(f'[Instruct] spk: {spk} | {instruct}', file=sys.stderr)
         result = cosy.inference_instruct(text, spk, instruct, stream=False)
     elif spk in spk_list:
-        print(f'[SFT] spk: {spk}', file=sys.stderr)
-        result = cosy.inference_sft(text, spk, stream=False)
+        # 检查是否有预设参考音频（保留语气情感）
+        speaker_ref = get_speaker_ref(spk)
+        if speaker_ref and os.path.exists(speaker_ref.get('ref_audio', '')):
+            print(f'[零样本·情感保留] spk: {spk}', file=sys.stderr)
+            result = cosy.inference_zero_shot(text, speaker_ref['ref_text'], speaker_ref['ref_audio'], stream=False)
+        else:
+            print(f'[SFT] spk: {spk}', file=sys.stderr)
+            result = cosy.inference_sft(text, spk, stream=False)
     elif spk_list:
         spk = spk_list[0]
         print(f'[fallback] 说话人: {spk}', file=sys.stderr)

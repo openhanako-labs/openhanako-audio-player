@@ -17,6 +17,7 @@ const parameters = {
     refAudio: { type: 'string', description: '参考音频路径（零样本克隆时必填）' },
     refText: { type: 'string', description: '参考文本（零样本克隆时必填）' },
     instruct: { type: 'string', description: '情感指令：开心/温柔/低沉/激动 等' },
+    translate: { type: 'string', description: '中文翻译（当text为非中文时提供，会显示在合成结果下方）' },
   },
   required: ['text'],
 };
@@ -35,8 +36,6 @@ function findVenvPython(cosyVoiceBase) {
   }
   return 'python';
 }
-
-
 
 /** 查找 executor.py */
 function findExecutor(pluginId) {
@@ -57,9 +56,15 @@ function findExecutor(pluginId) {
   throw new Error(`executor.py 未找到，已扫描路径：\n  ${candidates.concat(fallback).join('\n  ')}`);
 }
 
+/** 检测文本是否包含非中文（如日文）字符 */
+function hasNonChinese(text) {
+  return /[\u3040-\u30ff\uac00-\ud7af\u4e00-\u9fff]/.test(text) && !/^[\u4e00-\u9fff\uff00-\uffef\u3000-\u303f\s\w]+$/.test(text);
+}
+
 async function execute(input, { sessionPath, pluginId, dataDir }) {
   const text = input.text;
   const trackName = text.length > 20 ? text.slice(0, 20) + '…' : text;
+  const translation = input.translate || '';
 
   const taskDir = path.join(dataDir, 'tasks');
   fs.mkdirSync(taskDir, { recursive: true });
@@ -78,7 +83,7 @@ async function execute(input, { sessionPath, pluginId, dataDir }) {
 
   fs.writeFileSync(path.join(taskDir, `${taskId}.json`), JSON.stringify(task, null, 2), 'utf-8');
 
-  // run executor — 传入 HANAKO_AUDIO_PLAYER_DIR 确保 executor 写同一目录
+  // run executor
   const executorPath = findExecutor(pluginId);
   const cosyVoiceBase = process.env.COSYVOICE_BASE;
   const venvPython = findVenvPython(cosyVoiceBase);
@@ -123,11 +128,23 @@ async function execute(input, { sessionPath, pluginId, dataDir }) {
     } catch (e) { console.warn('[tts] queue write failed:', e.message); }
   }
 
+  // 构建回复文本
+  const hasNonChineseText = hasNonChinese(text);
+  let replyText = `🎤 CosyVoice 合成「${trackName}」`;
+  
+  // 如果是非中文语言且提供了翻译，附加翻译
+  if (hasNonChineseText && translation) {
+    replyText += `\n📖 ${translation}`;
+  } else if (hasNonChineseText && !translation) {
+    // 非中文但没给翻译，提示一下
+    replyText += `\n💡 检测到非中文文本，可使用 translate="..." 参数添加翻译`;
+  }
+
   // 对话内嵌卡片
-  const cardRoute = `/play?file=${encodeURIComponent(fileName)}`;
+  const cardRoute = input.translate ? `/play?file=${encodeURIComponent(fileName)}&translate=${encodeURIComponent(input.translate)}` : `/play?file=${encodeURIComponent(fileName)}`;
 
   return {
-    content: [{ type: 'text', text: `🎤 CosyVoice 合成「${trackName}」` }],
+    content: [{ type: 'text', text: replyText }],
     details: {
       card: { type: 'iframe', route: cardRoute, aspectRatio: '10:3' },
       media: { items: [] },
