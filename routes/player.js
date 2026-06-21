@@ -511,7 +511,7 @@ body {
 .empty { padding:20px 12px; text-align:center; color:var(--text-dim); font-size:12px; }
 
 /* Bus Control Panel */
-.bus-panel { border-top:1px solid var(--border); padding:8px 12px; background:rgba(0,0,0,0.01); flex-shrink:0; }
+.bus-panel { border-top:1px solid var(--border); padding:8px 12px; background:rgba(0,0,0,0.01); flex-shrink:0; position:relative; z-index:10; }
 .bus-status { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--text-dim); margin-bottom:6px; }
 .bus-dot { width:6px; height:6px; border-radius:50%; background:var(--text-dim); flex-shrink:0; }
 .bus-dot.playing { background:#22c55e; box-shadow:0 0 6px rgba(34,197,94,.4); }
@@ -520,10 +520,10 @@ body {
 .bus-queue-item { display:flex; align-items:center; gap:6px; padding:3px 0; font-size:11px; border-bottom:1px solid rgba(0,0,0,0.03); }
 .bus-queue-item .type-tag { font-size:9px; padding:1px 4px; border-radius:3px; background:rgba(0,0,0,0.05); color:var(--text-dim); flex-shrink:0; }
 .bus-queue-item .item-text { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.bus-controls { display:flex; gap:4px; align-items:center; }
+.bus-controls { display:flex; gap:4px; align-items:center; position:relative; }
 .bus-controls input { flex:1; min-width:0; background:rgba(255,255,255,0.04); border:1px solid var(--border); border-radius:4px; color:var(--text); font-size:11px; padding:4px 8px; outline:none; font-family:inherit; }
-.bus-controls select { background:var(--surface); border:1px solid var(--border); border-radius:4px; color:var(--text); font-size:11px; padding:4px; font-family:inherit; }
-.bus-btn { background:none; border:1px solid var(--border); border-radius:4px; color:var(--text-dim); font-size:11px; padding:4px 8px; cursor:pointer; font-family:inherit; white-space:nowrap; transition:all 0.15s; }
+.bus-controls select { background:var(--surface); border:1px solid var(--border); border-radius:4px; color:var(--text); font-size:11px; padding:4px; font-family:inherit; position:relative; z-index:20; }
+.bus-btn { background:none; border:1px solid var(--border); border-radius:4px; color:var(--text-dim); font-size:11px; padding:4px 8px; cursor:pointer; font-family:inherit; white-space:nowrap; transition:all 0.15s; position:relative; z-index:20; }
 .bus-btn:hover { border-color:var(--accent); color:var(--accent); }
 .bus-btn.primary { background:linear-gradient(135deg,var(--accent),var(--accent-end)); border:none; color:white; }
 .bus-btn.primary:hover { box-shadow:0 2px 8px rgba(212,154,106,.3); }
@@ -837,7 +837,29 @@ fetch(API+'/widget/api/queue').then(function(r){return r.json();}).then(function
   if(data&&data.length){data.forEach(function(t){addTrack(t.name,tok(t.url),t.mode);});}
 }).catch(function(){});
 
-// 定时全量同步 Bus 状态到播放器
+// 加载 Bus 已有音频（统一数据源）
+function loadBusQueue() {
+  fetch(API+'/bus/state').then(function(r){return r.json();}).then(function(st){
+    if(!st||!st.ok)return;
+    // 清空当前播放列表
+    trks = []; idx = 0; playing = false;
+    // 先加载当前播放
+    if(st.current && st.current.type==='play' && st.current.url) {
+      addTrack(st.current.name || st.current.url, tok(st.current.url), st.current.mode || 'Bus');
+    }
+    // 再加载队列
+    (st.queue||[]).forEach(function(it){
+      if(it.type==='play' && it.url) {
+        addTrack(it.name || it.url, tok(it.url), it.mode || 'Bus');
+      }
+    });
+    if(!trks.length) load(-1); else load(0);
+    renderPL();
+  }).catch(function(){});
+}
+loadBusQueue();
+
+// 定时同步 Bus 状态到播放器
 setInterval(function(){
   fetch(API+'/bus/state').then(function(r){return r.json();}).then(function(st){
     if(!st||!st.ok)return;
@@ -854,24 +876,13 @@ setInterval(function(){
     // 移除 trks 有但 Bus 没有的
     var removedAny = false;
     for(var i=trks.length-1;i>=0;i--){
-      var tu = stripToken(trks[i].url);
-      if(!busUrls.includes(tu)){
-        // 如果正在播放这首，停止播放
-        if(i===idx){
-          audio.pause();
-          playing=false;
-          document.getElementById('playIcon').style.display='block';
-          document.getElementById('pauseIcon').style.display='none';
-        }
+      if(!busUrls.includes(stripToken(trks[i].url))){
+        if(i===idx){ audio.pause(); playing=false; document.getElementById('playIcon').style.display='block'; document.getElementById('pauseIcon').style.display='none'; }
         trks.splice(i,1);
         removedAny = true;
       }
     }
-    if(removedAny){
-      if(idx>=trks.length) idx=Math.max(0,trks.length-1);
-      if(trks.length) load(idx); else load(-1);
-      renderPL();
-    }
+    if(removedAny){ if(idx>=trks.length) idx=Math.max(0,trks.length-1); if(trks.length) load(idx); else load(-1); renderPL(); }
   }).catch(function(){});
 }, 5000);
 
