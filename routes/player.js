@@ -92,6 +92,16 @@ export default function (app, ctx) {
       const files = collectMediaFiles().map(({ name, size, mtime, url }) => ({ name, size, mtime, url }));
       return c.json({ ok: true, files });
     }
+    if (action === "play_file") {
+      const filename = c.req.query("file") || "";
+      const translate = c.req.query("translate") || "";
+      if (!filename) return c.text("Missing file", 400);
+      if (filename.includes("/") || filename.includes("\\") || filename.includes("..")) return c.text("Invalid filename", 400);
+      const token = c.req.query("token") || "";
+      // 复用 /play 的 HTML 生成逻辑，先构造播放器 HTML
+      const playHtml = buildPlayHtml(pluginId, dataDir, filename, translate, token);
+      return c.html(playHtml);
+    }
     // 默认返回 HTML 页面
     const hanaCss = c.req.query("hana-css") || "";
     const token = c.req.query("token") || "";
@@ -165,112 +175,18 @@ export default function (app, ctx) {
     const filename = c.req.query("file");
     const translate = c.req.query("translate") || "";
     if (!filename) return c.text("Missing file", 400);
-    if (filename.includes("/") || filename.includes("\\") || filename.includes("..")) {
-      return c.text("Invalid filename", 400);
-    }
-    // 先查 dev dataDir，再查 plugin-data 共享目录，再查 extraMediaDirs
+    if (filename.includes("/") || filename.includes("\\") || filename.includes("..")) return c.text("Invalid filename", 400);
+    // 文件存在性检查（用于大文件重定向）
     let filePath = path.join(mediaDir, filename);
-    if (!fs.existsSync(filePath) && pluginDataMediaDir) {
-      filePath = path.join(pluginDataMediaDir, filename);
-    }
-    if (!fs.existsSync(filePath)) {
-      for (const extraDir of extraMediaDirs) {
-        const p = path.join(extraDir, filename);
-        if (fs.existsSync(p)) { filePath = p; break; }
-      }
-    }
+    if (!fs.existsSync(filePath) && pluginDataMediaDir) filePath = path.join(pluginDataMediaDir, filename);
+    if (!fs.existsSync(filePath)) { for (const extraDir of extraMediaDirs) { const p = path.join(extraDir, filename); if (fs.existsSync(p)) { filePath = p; break; } } }
     if (!fs.existsSync(filePath)) return c.text("File not found", 404);
-
-    const ext = path.extname(filename).slice(1).toLowerCase();
-    const mime = MIME[ext] || "audio/mpeg";
-
-    // 大文件（>1MB）走 redirect 到 widget/media 端点，避免全量加载到内存
     const stat = fs.statSync(filePath);
     if (stat.size > 1024 * 1024) {
       const redirectUrl = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(filename)}`;
       return c.redirect(redirectUrl);
     }
-
-    const buf = fs.readFileSync(filePath);
-    const base64 = buf.toString("base64");
-    const audioSrc = `data:${mime};base64,${base64}`;
-
-    // 读 _names.json 映射获取显示名（先 dev 目录，再生产目录）
-    let displayName = filename.replace(/\.\w+$/, "");
-    try {
-      const namesPath = path.join(dataDir, "media", "_names.json");
-      let namesMap = null;
-      if (fs.existsSync(namesPath)) {
-        namesMap = JSON.parse(fs.readFileSync(namesPath, "utf-8"));
-      } else if (pluginDataMediaDir) {
-        const fallbackNames = path.join(pluginDataMediaDir, "_names.json");
-        if (fs.existsSync(fallbackNames)) {
-          namesMap = JSON.parse(fs.readFileSync(fallbackNames, "utf-8"));
-        }
-      }
-      if (namesMap && namesMap[filename]) displayName = namesMap[filename];
-    } catch (e) {
-      console.warn("[play] _names.json read failed:", e.message);
-    }
-
-    const html = `<!DOCTYPE html>
-<html lang="zh">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{
-  display:flex;align-items:center;justify-content:center;
-  min-height:52px;padding:0;background:transparent;
-  font-family:system-ui,-apple-system,sans-serif;
-}
-.player-wrap{
-  width:100%;max-width:480px;
-  background:#FFFBF5;border:1px solid rgba(0,0,0,0.06);
-  border-radius:10px;overflow:hidden;
-}
-.top{height:2px;background:linear-gradient(90deg,#d49a6a,#c48454)}
-.body{padding:8px 12px}
-.row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-.icon{
-  width:26px;height:26px;border-radius:5px;
-  background:linear-gradient(135deg,#d49a6a,#c48454);
-  display:flex;align-items:center;justify-content:center;
-  font-size:13px;flex-shrink:0;color:white;
-}
-.name{color:#2c2c2c;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
-.trans{color:#666;font-size:12px;line-height:1.4;padding:6px 0 2px 0;border-top:1px solid rgba(0,0,0,0.04);margin-top:6px;word-break:break-all}
-.trans{color:#666;font-size:12px;line-height:1.4;padding:6px 0 2px 0;border-top:1px solid rgba(0,0,0,0.04);margin-top:6px;word-break:break-all}
-audio{width:100%;height:36px;border-radius:6px;outline:none;background:#FFFBF5}
-audio::-webkit-media-controls-panel{background:#FFFBF5}
-</style>
-</head>
-<body>
-<div class="player-wrap">
-  <div class="top"></div>
-  <div class="body">
-    <div class="row">
-      <div class="icon">♫</div>
-      <div class="name">${escAttr(displayName)}</div>
-    </div>
-    <audio src="${escAttr(audioSrc)}" controls preload="auto"></audio>
-    ${translate ? `<div class="trans">${escAttr(translate)}</div>` : ""}
-  </div>
-</div>
-<script>
-(function(){
-var a=document.querySelector("audio");
-try{parent.postMessage({type:"ready"},"*")}catch(e){}
-function n(){try{parent.postMessage({type:"resize-request",payload:{height:document.body.scrollHeight}},"*")}catch(e){}}
-a.onloadedmetadata=n;
-new ResizeObserver(n).observe(document.body);
-setTimeout(n,100);
-})();
-</script>
-</body>
-</html>`;
-    return c.html(html);
+    return c.html(buildPlayHtml(pluginId, dataDir, filename, translate));
   });
 
   // ── Bus 实例（统一在 /widget 路由中处理 API）──
@@ -356,6 +272,101 @@ function esc(s) {
 }
 function escAttr(s) {
   return esc(s);
+}
+
+/**
+ * 生成单文件播放器 HTML（base64 内嵌，绕过 /widget/media 鉴权）
+ * 供 /widget?action=play_file 和 /play 复用
+ */
+function buildPlayHtml(pluginId, dataDir, filename, translate) {
+  const mediaDir = path.join(dataDir, "media");
+  const home = process.env.USERPROFILE || process.env.HOME || "";
+  const pluginDataMediaDir = home ? path.join(home, ".hanako", "plugin-data", "hanako-audio-player", "media") : null;
+  const extraMediaDirs = [];
+  try {
+    if (process.env.HANAKO_PLUGIN_DATA) {
+      extraMediaDirs.push(path.join(process.env.HANAKO_PLUGIN_DATA, "hanako-audio-player", "media"));
+    }
+    const workHanako = path.resolve("W:/Games/Hanako/.hanako/plugin-data/hanako-audio-player/media");
+    if (fs.existsSync(workHanako)) extraMediaDirs.push(workHanako);
+  } catch (e) {}
+
+  function findFile() {
+    let filePath = path.join(mediaDir, filename);
+    if (fs.existsSync(filePath)) return filePath;
+    if (pluginDataMediaDir && fs.existsSync(path.join(pluginDataMediaDir, filename))) return path.join(pluginDataMediaDir, filename);
+    for (const extraDir of extraMediaDirs) {
+      const p = path.join(extraDir, filename);
+      if (fs.existsSync(p)) return p;
+    }
+    return null;
+  }
+
+  const filePath = findFile();
+  if (!filePath) return `<!DOCTYPE html><html><body style="font-family:sans-serif;padding:12px;color:#c00">File not found: ${escAttr(filename)}</body></html>`;
+
+  const ext = path.extname(filename).slice(1).toLowerCase();
+  const mime = { mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac", m4a: "audio/mp4", webm: "audio/webm" }[ext] || "audio/mpeg";
+
+  let displayName = filename.replace(/\.\w+$/, "");
+  try {
+    const namesPath = path.join(dataDir, "media", "_names.json");
+    let namesMap = null;
+    if (fs.existsSync(namesPath)) namesMap = JSON.parse(fs.readFileSync(namesPath, "utf-8"));
+    else if (pluginDataMediaDir) {
+      const fb = path.join(pluginDataMediaDir, "_names.json");
+      if (fs.existsSync(fb)) namesMap = JSON.parse(fs.readFileSync(fb, "utf-8"));
+    }
+    if (namesMap && namesMap[filename]) displayName = namesMap[filename];
+  } catch (e) {}
+
+  const buf = fs.readFileSync(filePath);
+  const base64 = buf.toString("base64");
+  const audioSrc = `data:${mime};base64,${base64}`;
+
+  return `<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{display:flex;align-items:center;justify-content:center;min-height:52px;padding:0;background:transparent;font-family:system-ui,-apple-system,sans-serif}
+.player-wrap{width:100%;max-width:480px;background:#FFFBF5;border:1px solid rgba(0,0,0,0.06);border-radius:10px;overflow:hidden}
+.top{height:2px;background:linear-gradient(90deg,#d49a6a,#c48454)}
+.body{padding:8px 12px}
+.row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.icon{width:26px;height:26px;border-radius:5px;background:linear-gradient(135deg,#d49a6a,#c48454);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;color:white}
+.name{color:#2c2c2c;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
+.trans{color:#666;font-size:12px;line-height:1.4;padding:6px 0 2px 0;border-top:1px solid rgba(0,0,0,0.04);margin-top:6px;word-break:break-all}
+audio{width:100%;height:36px;border-radius:6px;outline:none;background:#FFFBF5}
+audio::-webkit-media-controls-panel{background:#FFFBF5}
+</style>
+</head>
+<body>
+<div class="player-wrap">
+  <div class="top"></div>
+  <div class="body">
+    <div class="row">
+      <div class="icon">♫</div>
+      <div class="name">${escAttr(displayName)}</div>
+    </div>
+    <audio src="${escAttr(audioSrc)}" controls preload="auto"></audio>
+    ${translate ? `<div class="trans">${escAttr(translate)}</div>` : ""}
+  </div>
+</div>
+<script>
+(function(){
+var a=document.querySelector("audio");
+try{parent.postMessage({type:"ready"},"*")}catch(e){}
+function n(){try{parent.postMessage({type:"resize-request",payload:{height:document.body.scrollHeight}},"*")}catch(e){}}
+a.onloadedmetadata=n;
+new ResizeObserver(n).observe(document.body);
+setTimeout(n,100);
+})();
+</script>
+</body>
+</html>`;
 }
 
 function getWidgetHTML(pluginId, hanaCss, token) {

@@ -222,24 +222,12 @@ def process_task(task_id):
         print(f'[Instruct] spk: {spk} | {instruct}', file=sys.stderr)
         result = cosy.inference_instruct(text, spk, instruct, stream=False)
     elif spk in spk_list:
-        # 检查是否有预设参考音频（保留语气情感）
-        speaker_ref = get_speaker_ref(spk)
-        if speaker_ref and os.path.exists(speaker_ref.get('ref_audio', '')):
-            print(f'[零样本·情感保留] spk: {spk}', file=sys.stderr)
-            result = cosy.inference_zero_shot(text, speaker_ref['ref_text'], speaker_ref['ref_audio'], stream=False)
-        else:
-            print(f'[SFT] spk: {spk}', file=sys.stderr)
-            result = cosy.inference_sft(text, spk, stream=False)
+        print(f'[SFT] spk: {spk}', file=sys.stderr)
+        result = cosy.inference_sft(text, spk, stream=False)
     elif spk_list:
-        # 自定义 speaker ID（不在模型内置 spk_list 中）
-        speaker_ref = get_speaker_ref(spk)
-        if speaker_ref and os.path.exists(speaker_ref.get('ref_audio', '')):
-            print(f'[零样本·自定义说话人] spk: {spk}', file=sys.stderr)
-            result = cosy.inference_zero_shot(text, speaker_ref['ref_text'], speaker_ref['ref_audio'], stream=False)
-        else:
-            spk = spk_list[0]
-            print(f'[fallback] 说话人: {spk}', file=sys.stderr)
-            result = cosy.inference_sft(text, spk, stream=False)
+        spk = spk_list[0]
+        print(f'[fallback] 说话人: {spk}', file=sys.stderr)
+        result = cosy.inference_sft(text, spk, stream=False)
     else:
         print('[ERROR] 无可用说话人', file=sys.stderr)
         return False

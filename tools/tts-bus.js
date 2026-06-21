@@ -248,7 +248,7 @@ export async function execute(input, toolCtx) {
 
   // 成功生成音频
   const mediaUrl = result.url;
-  const cardRoute = `/play?file=${encodeURIComponent(result.filename)}${input.translate ? "&translate=" + encodeURIComponent(input.translate) : ""}`;
+  const cardRoute = `/widget?action=play_file&file=${encodeURIComponent(result.filename)}${input.translate ? "&translate=" + encodeURIComponent(input.translate) : ""}`;
 
   return {
     content: [{ type: "text", text: `🎤 ${result.layer === "cosyvoice" ? "CosyVoice" : "HTTP TTS"} 合成完成` }],

@@ -152,8 +152,8 @@ async function execute(input, { sessionPath, pluginId, dataDir }) {
     replyText += `\n💡 检测到非中文文本，可使用 translate="..." 参数添加翻译`;
   }
 
-  // 对话内嵌卡片
-  const cardRoute = input.translate ? `/play?file=${encodeURIComponent(fileName)}&translate=${encodeURIComponent(input.translate)}` : `/play?file=${encodeURIComponent(fileName)}`;
+  // 对话内嵌卡片（使用 widget 路由绕过 /play 鉴权问题）
+  const cardRoute = input.translate ? `/widget?action=play_file&file=${encodeURIComponent(fileName)}&translate=${encodeURIComponent(input.translate)}` : `/widget?action=play_file&file=${encodeURIComponent(fileName)}`;
 
   return {
     content: [{ type: 'text', text: replyText }],
