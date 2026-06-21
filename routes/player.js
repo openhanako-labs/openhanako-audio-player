@@ -964,7 +964,7 @@ function loadMediaLib() {
     if(!data||!data.ok)return;
     trks = []; idx = 0; playing = false;
     (data.files||[]).forEach(function(f){
-      trks.push({ name: f.name, url: f.url, mode: '本地', dur: 0 });
+      trks.push({ name: f.name, url: tok(f.url), mode: '本地', dur: 0 });
     });
     if(trks.length) load(0); else load(-1);
     renderPL();
