@@ -231,9 +231,15 @@ def process_task(task_id):
             print(f'[SFT] spk: {spk}', file=sys.stderr)
             result = cosy.inference_sft(text, spk, stream=False)
     elif spk_list:
-        spk = spk_list[0]
-        print(f'[fallback] 说话人: {spk}', file=sys.stderr)
-        result = cosy.inference_sft(text, spk, stream=False)
+        # 自定义 speaker ID（不在模型内置 spk_list 中）
+        speaker_ref = get_speaker_ref(spk)
+        if speaker_ref and os.path.exists(speaker_ref.get('ref_audio', '')):
+            print(f'[零样本·自定义说话人] spk: {spk}', file=sys.stderr)
+            result = cosy.inference_zero_shot(text, speaker_ref['ref_text'], speaker_ref['ref_audio'], stream=False)
+        else:
+            spk = spk_list[0]
+            print(f'[fallback] 说话人: {spk}', file=sys.stderr)
+            result = cosy.inference_sft(text, spk, stream=False)
     else:
         print('[ERROR] 无可用说话人', file=sys.stderr)
         return False
