@@ -218,6 +218,59 @@ setTimeout(n,100);
     return c.json([]);
   });
 
+  // ── 媒体库（扫描 media/ 目录）──
+  app.get("/widget/api/files", (c) => {
+    try {
+      const files = [];
+      const entries = fs.readdirSync(mediaDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isFile()) {
+          const ext = path.extname(entry.name).slice(1).toLowerCase();
+          if (['mp3','wav','ogg','flac','m4a','webm'].includes(ext)) {
+            const stat = fs.statSync(path.join(mediaDir, entry.name));
+            files.push({
+              name: entry.name,
+              size: stat.size,
+              mtime: stat.mtimeMs,
+              url: `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(entry.name)}`,
+            });
+          }
+        }
+      }
+      files.sort((a, b) => b.mtime - a.mtime);
+      return c.json({ ok: true, files });
+    } catch (e) {
+      return c.json({ ok: false, error: e.message }, 500);
+    }
+  });
+
+  app.post("/widget/api/delete", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const filename = body.filename || "";
+      if (!filename || filename.includes("/") || filename.includes("\\") || filename.includes("..")) {
+        return c.json({ ok: false, error: "invalid filename" }, 400);
+      }
+      const filePath = path.join(mediaDir, filename);
+      if (!fs.existsSync(filePath)) {
+        return c.json({ ok: false, error: "not found" }, 404);
+      }
+      fs.unlinkSync(filePath);
+      // 同步清理 bus-queue.json 中的引用
+      try {
+        const bus = new AudioBus({ pluginId, dataDir });
+        bus.queue = bus.queue.filter(it => {
+          if (it.type === 'play' && it.url) return stripToken(it.url) !== stripToken(`/api/plugins/${pluginId}/widget/media/${encodeURIComponent(filename)}`);
+          return true;
+        });
+        bus._saveQueue();
+      } catch (e) { console.warn('[delete] bus cleanup failed:', e.message); }
+      return c.json({ ok: true });
+    } catch (e) {
+      return c.json({ ok: false, error: e.message }, 500);
+    }
+  });
+
   app.post("/widget/api/queue", async (c) => {
     try {
       const body = await c.req.json();
@@ -511,7 +564,7 @@ body {
 .empty { padding:20px 12px; text-align:center; color:var(--text-dim); font-size:12px; }
 
 /* Bus Control Panel */
-.bus-panel { border-top:1px solid var(--border); padding:8px 12px; background:rgba(0,0,0,0.01); flex-shrink:0; position:relative; z-index:10; }
+.bus-panel { border-top:1px solid var(--border); padding:8px 12px; background:rgba(0,0,0,0.01); flex-shrink:0; position:relative; z-index:50; }
 .bus-status { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--text-dim); margin-bottom:6px; }
 .bus-dot { width:6px; height:6px; border-radius:50%; background:var(--text-dim); flex-shrink:0; }
 .bus-dot.playing { background:#22c55e; box-shadow:0 0 6px rgba(34,197,94,.4); }
@@ -520,10 +573,10 @@ body {
 .bus-queue-item { display:flex; align-items:center; gap:6px; padding:3px 0; font-size:11px; border-bottom:1px solid rgba(0,0,0,0.03); }
 .bus-queue-item .type-tag { font-size:9px; padding:1px 4px; border-radius:3px; background:rgba(0,0,0,0.05); color:var(--text-dim); flex-shrink:0; }
 .bus-queue-item .item-text { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.bus-controls { display:flex; gap:4px; align-items:center; position:relative; }
+.bus-controls { display:flex; gap:4px; align-items:center; position:relative; z-index:50; }
 .bus-controls input { flex:1; min-width:0; background:rgba(255,255,255,0.04); border:1px solid var(--border); border-radius:4px; color:var(--text); font-size:11px; padding:4px 8px; outline:none; font-family:inherit; }
-.bus-controls select { background:var(--surface); border:1px solid var(--border); border-radius:4px; color:var(--text); font-size:11px; padding:4px; font-family:inherit; position:relative; z-index:20; }
-.bus-btn { background:none; border:1px solid var(--border); border-radius:4px; color:var(--text-dim); font-size:11px; padding:4px 8px; cursor:pointer; font-family:inherit; white-space:nowrap; transition:all 0.15s; position:relative; z-index:20; }
+.bus-controls select { background:var(--surface); border:1px solid var(--border); border-radius:4px; color:var(--text); font-size:11px; padding:4px; font-family:inherit; position:relative; z-index:60; }
+.bus-btn { background:none; border:1px solid var(--border); border-radius:4px; color:var(--text-dim); font-size:11px; padding:4px 8px; cursor:pointer; font-family:inherit; white-space:nowrap; transition:all 0.15s; position:relative; z-index:60; }
 .bus-btn:hover { border-color:var(--accent); color:var(--accent); }
 .bus-btn.primary { background:linear-gradient(135deg,var(--accent),var(--accent-end)); border:none; color:white; }
 .bus-btn.primary:hover { box-shadow:0 2px 8px rgba(212,154,106,.3); }
@@ -685,19 +738,45 @@ function renderPL() {
       +'<button class="rm" data-rm="'+i+'">✕</button></div>';
   }).join('');
   document.getElementById('plBody').querySelectorAll('.playlist-item').forEach(function(el){
-    el.addEventListener('click',function(e){if(e.target.closest('.rm'))return;const i=parseInt(this.dataset.i);if(i===idx){toggle();return;}load(i);if(audio.paused){audio.play();playing=true;toggle();}});
+    el.addEventListener('click',function(e){
+      if(e.target.closest('.rm'))return;
+      const i=parseInt(this.dataset.i);
+      var url = trks[i] ? trks[i].url : '';
+      if(!url) return;
+      // 通知 Bus 播放此 URL
+      fetch(API + '/bus/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'play', url: url, name: trks[i].name })
+      }).catch(function(){});
+      load(i); if(audio.paused){audio.play();playing=true;toggle();}
+    });
   });
   document.getElementById('plBody').querySelectorAll('.rm').forEach(function(el){
     el.addEventListener('click',function(e){
       e.stopPropagation();
       var i = parseInt(this.dataset.rm);
-      var url = trks[i] ? trks[i].url : '';
-      if (!url) return;
+      var track = trks[i];
+      if (!track) return;
+      var url = track.url;
+      var name = track.name;
+      // 从 Bus 队列移除
       fetch(API + '/bus/control', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'remove', url: url })
-      }).then(function(){ refreshBusState(); }).catch(function(){});
+      }).catch(function(){});
+      // 从 media/ 目录删除文件
+      fetch(API + '/widget/api/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: name })
+      }).then(function(r){ return r.json(); }).then(function(res) {
+        if (res && res.ok) {
+          refreshBusState();
+          loadMediaLib();
+        }
+      }).catch(function(){});
     });
   });
 }
@@ -832,59 +911,38 @@ function loadAgents() {
 }
 loadAgents();
 
-// 加载队列
-fetch(API+'/widget/api/queue').then(function(r){return r.json();}).then(function(data){
-  if(data&&data.length){data.forEach(function(t){addTrack(t.name,tok(t.url),t.mode);});}
-}).catch(function(){});
-
-// 加载 Bus 已有音频（统一数据源）
-function loadBusQueue() {
-  fetch(API+'/bus/state').then(function(r){return r.json();}).then(function(st){
-    if(!st||!st.ok)return;
-    // 清空当前播放列表
+// 加载媒体库（扫描 media/ 目录）
+function loadMediaLib() {
+  fetch(API+'/widget/api/files').then(function(r){return r.json();}).then(function(data){
+    if(!data||!data.ok)return;
     trks = []; idx = 0; playing = false;
-    // 先加载当前播放
-    if(st.current && st.current.type==='play' && st.current.url) {
-      addTrack(st.current.name || st.current.url, tok(st.current.url), st.current.mode || 'Bus');
-    }
-    // 再加载队列
-    (st.queue||[]).forEach(function(it){
-      if(it.type==='play' && it.url) {
-        addTrack(it.name || it.url, tok(it.url), it.mode || 'Bus');
-      }
+    (data.files||[]).forEach(function(f){
+      trks.push({ name: f.name, url: f.url, mode: '本地', dur: 0 });
     });
-    if(!trks.length) load(-1); else load(0);
+    if(trks.length) load(0); else load(-1);
     renderPL();
   }).catch(function(){});
 }
-loadBusQueue();
+loadMediaLib();
 
-// 定时同步 Bus 状态到播放器
+// 定时刷新媒体库（文件增删变化）
 setInterval(function(){
-  fetch(API+'/bus/state').then(function(r){return r.json();}).then(function(st){
-    if(!st||!st.ok)return;
-    var busUrls = [];
-    if(st.current && st.current.type==='play' && st.current.url) busUrls.push(stripToken(st.current.url));
-    (st.queue||[]).forEach(function(it){
-      if(it.type==='play' && it.url) busUrls.push(stripToken(it.url));
-    });
-    // 添加 Bus 有但 trks 没有的
-    busUrls.forEach(function(url){
+  fetch(API+'/widget/api/files').then(function(r){return r.json();}).then(function(data){
+    if(!data||!data.ok)return;
+    var fileUrls = (data.files||[]).map(function(f){ return stripToken(f.url); });
+    // 添加新文件
+    fileUrls.forEach(function(url){
       var found=false;for(var i=0;i<trks.length;i++){if(stripToken(trks[i].url)===url){found=true;break;}}
-      if(!found) addTrack(url.split('/').pop().split('?')[0]||'音频', tok(url), 'Bus');
+      if(!found) addTrack(url.split('/').pop().split('?')[0]||'音频', tok(url), '本地');
     });
-    // 移除 trks 有但 Bus 没有的
-    var removedAny = false;
+    // 移除已删除文件
     for(var i=trks.length-1;i>=0;i--){
-      if(!busUrls.includes(stripToken(trks[i].url))){
-        if(i===idx){ audio.pause(); playing=false; document.getElementById('playIcon').style.display='block'; document.getElementById('pauseIcon').style.display='none'; }
-        trks.splice(i,1);
-        removedAny = true;
-      }
+      if(!fileUrls.includes(stripToken(trks[i].url))) trks.splice(i,1);
     }
-    if(removedAny){ if(idx>=trks.length) idx=Math.max(0,trks.length-1); if(trks.length) load(idx); else load(-1); renderPL(); }
+    if(idx>=trks.length) idx=Math.max(0,trks.length-1);
+    renderPL();
   }).catch(function(){});
-}, 5000);
+}, 10000);
 
 function notifySize() {
   try { parent.postMessage({type:'resize-request',payload:{height:document.body.scrollHeight}},'*'); } catch(e) {}
