@@ -315,6 +315,8 @@ function getWidgetHTML(pluginId, hanaCss, token) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
 <title>🎵 播放器</title>
 ${hanaCss ? `<link rel="stylesheet" href="${esc(hanaCss)}">` : ""}
 <style>
@@ -816,7 +818,7 @@ loadPresets();
 // 加载助手列表填充说话人下拉框
 function loadAgents() {
   fetch(API + '/bus/agents').then(function(r){ return r.json(); }).then(function(data) {
-    if (!data || !data.ok || !Array.isArray(data.agents)) return;
+    if (!data || !data.ok || !Array.isArray(data.agents) || !data.agents.length) return;
     var sel = document.getElementById('spkSelect');
     if (!sel) return;
     sel.innerHTML = '';
