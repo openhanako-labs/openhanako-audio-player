@@ -1,0 +1,28 @@
+{
+  "manifestVersion": 1,
+  "id": "hanako-audio-player",
+  "name": "音频播放器",
+  "version": "0.4.0",
+  "description": "音频播放器，支持 TTS 结果播放、本地音乐和在线音乐。",
+  "minAppVersion": "0.0.0",
+  "trust": "full-access",
+  "contributes": {
+    "tools": [
+      { "source": "tools/play.js" },
+      { "source": "tools/tts.js" },
+      { "source": "tools/generate_speech.js" },
+      { "source": "tools/bus.js" },
+      { "source": "tools/tts-bus.js" }
+    ],
+    "widget": {
+      "title": { "zh": "音频播放器", "en": "Audio Player" },
+      "icon": "<svg viewBox=\"0 0 24 24\" fill=\"none\"><circle cx=\"12\" cy=\"12\" r=\"10\" stroke=\"#d49a6a\" stroke-width=\"1.5\"/><polygon points=\"10,8 16,12 10,16\" fill=\"#d49a6a\"/></svg>",
+      "route": "/widget"
+    },
+    "routes": true,
+    "lifecycle": true
+  },
+  "ui": {
+    "hostCapabilities": ["external.open", "clipboard.writeText"]
+  }
+}
