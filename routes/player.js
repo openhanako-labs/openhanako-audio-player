@@ -45,20 +45,14 @@ export default function (app, ctx) {
           if (!entry.isFile()) continue;
           const ext = path.extname(entry.name).slice(1).toLowerCase();
           if (!['mp3','wav','ogg','flac','m4a','webm'].includes(ext)) continue;
+          // 按文件名去重（硬链接/挂载可能导致同一文件在不同路径）
+          const nameKey = entry.name.toLowerCase();
+          if (seen.has(nameKey)) continue;
+          seen.add(nameKey);
           const fullPath = path.join(dir, entry.name);
           const stat = fs.statSync(fullPath);
-          // 按路径去重，避免同一文件被扫描多次
-          const key = fullPath.toLowerCase();
-          if (seen.has(key)) continue;
-          seen.add(key);
-          // URL 指向 plugin-data 路径（如果有）
-          let url;
-          if (dir === pluginDataMediaDir || extraMediaDirs.includes(dir)) {
-            url = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(entry.name)}`;
-          } else {
-            url = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(entry.name)}`;
-          }
-          files.push({ name: entry.name, size: stat.size, mtime: stat.mtimeMs, url, _dir: dir });
+          const url = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(entry.name)}`;
+          files.push({ name: entry.name, size: stat.size, mtime: stat.mtimeMs, url });
         }
       } catch (e) { console.warn('[media] scan failed:', dir, e.message); }
     }
@@ -516,11 +510,12 @@ body {
 .playlist-count { font-size:10px; color:var(--text-dim); margin-left:4px; }
 
 .playlist-body {
-  max-height:0; overflow:hidden; transition:max-height 0.25s ease;
+  max-height:220px; overflow-y:auto; scroll-behavior:smooth;
 }
-.playlist-body.open { max-height:160px; overflow-y:auto; }
-.playlist-body::-webkit-scrollbar { width:2px; }
-.playlist-body::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+.playlist-body::-webkit-scrollbar { width:6px; }
+.playlist-body::-webkit-scrollbar-track { background:transparent; }
+.playlist-body::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+.playlist-body::-webkit-scrollbar-thumb:hover { background:var(--text-dim); }
 .playlist-item {
   display:flex; align-items:center; gap:8px;
   padding:6px 12px; cursor:pointer; transition:background 0.12s;
@@ -968,15 +963,20 @@ loadMediaLib();
 setInterval(function(){
   fetch(API+'/widget/api/files').then(function(r){return r.json();}).then(function(data){
     if(!data||!data.ok)return;
-    var fileUrls = (data.files||[]).map(function(f){ return stripToken(f.url); });
+    var newUrls = {};
+    (data.files||[]).forEach(function(f){ newUrls[stripToken(f.url)] = f; });
+    var oldUrls = {};
+    trks.forEach(function(t){ oldUrls[stripToken(t.url)] = t; });
     // 添加新文件
-    fileUrls.forEach(function(url){
-      var found=false;for(var i=0;i<trks.length;i++){if(stripToken(trks[i].url)===url){found=true;break;}}
-      if(!found) addTrack(url.split('/').pop().split('?')[0]||'音频', tok(url), '本地');
+    Object.keys(newUrls).forEach(function(url){
+      if(!oldUrls[url]){
+        var f = newUrls[url];
+        addTrack(f.name, tok(url), '本地');
+      }
     });
     // 移除已删除文件
     for(var i=trks.length-1;i>=0;i--){
-      if(!fileUrls.includes(stripToken(trks[i].url))) trks.splice(i,1);
+      if(!newUrls[stripToken(trks[i].url)]) trks.splice(i,1);
     }
     if(idx>=trks.length) idx=Math.max(0,trks.length-1);
     renderPL();
