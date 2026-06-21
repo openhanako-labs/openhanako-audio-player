@@ -76,10 +76,16 @@ export default function (app, ctx) {
     if (filename.includes("/") || filename.includes("\\") || filename.includes("..")) {
       return c.text("Invalid filename", 400);
     }
-    // 先查 dev dataDir，再查 plugin-data 共享目录
+    // 先查 dev dataDir，再查 plugin-data 共享目录，再查 extraMediaDirs
     let filePath = path.join(mediaDir, filename);
     if (!fs.existsSync(filePath) && pluginDataMediaDir) {
       filePath = path.join(pluginDataMediaDir, filename);
+    }
+    if (!fs.existsSync(filePath)) {
+      for (const extraDir of extraMediaDirs) {
+        const p = path.join(extraDir, filename);
+        if (fs.existsSync(p)) { filePath = p; break; }
+      }
     }
     if (!fs.existsSync(filePath)) return c.text("File not found", 404);
 
@@ -329,6 +335,13 @@ setTimeout(n,100);
     let filePath = path.join(mediaDir, filename);
     if (!fs.existsSync(filePath) && pluginDataMediaDir) {
       filePath = path.join(pluginDataMediaDir, filename);
+    }
+    // 额外扫描路径
+    if (!fs.existsSync(filePath)) {
+      for (const extraDir of extraMediaDirs) {
+        const p = path.join(extraDir, filename);
+        if (fs.existsSync(p)) { filePath = p; break; }
+      }
     }
     if (!fs.existsSync(filePath)) {
       return c.json({ error: "not found" }, 404);
