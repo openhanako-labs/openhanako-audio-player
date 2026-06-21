@@ -40,6 +40,14 @@ export default function (app, ctx) {
     for (const dir of dirsToScan) {
       try {
         if (!fs.existsSync(dir)) continue;
+        // 读取 _names.json 映射（文件名 → 显示名）
+        const namesPath = path.join(dir, '_names.json');
+        let namesMap = null;
+        try {
+          if (fs.existsSync(namesPath)) {
+            namesMap = JSON.parse(fs.readFileSync(namesPath, 'utf-8'));
+          }
+        } catch (e) { console.warn('[media] _names.json read failed:', e.message); }
         const entries = fs.readdirSync(dir, { withFileTypes: true });
         for (const entry of entries) {
           if (!entry.isFile()) continue;
@@ -52,7 +60,11 @@ export default function (app, ctx) {
           const fullPath = path.join(dir, entry.name);
           const stat = fs.statSync(fullPath);
           const url = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(entry.name)}`;
-          files.push({ name: entry.name, size: stat.size, mtime: stat.mtimeMs, url });
+          // 如果有 _names.json 映射，用映射名；否则用文件名（去掉扩展名）
+          const displayName = namesMap && namesMap[entry.name]
+            ? namesMap[entry.name]
+            : entry.name.replace(/\.[^.]+$/, '');
+          files.push({ name: displayName, size: stat.size, mtime: stat.mtimeMs, url });
         }
       } catch (e) { console.warn('[media] scan failed:', dir, e.message); }
     }
