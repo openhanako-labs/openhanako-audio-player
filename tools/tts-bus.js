@@ -38,17 +38,18 @@ const parameters = {
 // ── 辅助函数（复用 tts.js 逻辑）──
 
 function findVenvPython(cosyVoiceBase) {
-  if (!cosyVoiceBase) return "python";
+  if (!cosyVoiceBase) cosyVoiceBase = 'W:/Games/Hanako/Work/cosyvoice-tts';
+  cosyVoiceBase = String(cosyVoiceBase).replace(/^["']|["']$/g, '');
   const candidates = [
-    path.join(cosyVoiceBase, "venv", "Scripts", "python.exe"),
-    path.join(cosyVoiceBase, "venv", "Scripts", "python"),
-    path.join(cosyVoiceBase, "venv", "bin", "python3"),
-    path.join(cosyVoiceBase, "venv", "bin", "python"),
+    path.join(cosyVoiceBase, 'venv', 'Scripts', 'python.exe'),
+    path.join(cosyVoiceBase, 'venv', 'Scripts', 'python'),
+    path.join(cosyVoiceBase, 'venv', 'bin', 'python3'),
+    path.join(cosyVoiceBase, 'venv', 'bin', 'python'),
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
   }
-  return "python";
+  return 'python';
 }
 
 function findExecutor(pluginId) {
