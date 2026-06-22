@@ -678,7 +678,7 @@ body {
   max-height:0; overflow:hidden;
   transition:max-height 0.3s cubic-bezier(0.4,0,0.2,1);
 }
-.bus-body.open { max-height:260px; overflow-y:auto; }
+.bus-body.open { max-height:500px; overflow-y:auto; }
 .bus-body::-webkit-scrollbar { width:3px; }
 .bus-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
 .bus-controls {
@@ -767,7 +767,7 @@ body {
   max-height:0; overflow:hidden;
   transition:max-height 0.3s cubic-bezier(0.4,0,0.2,1);
 }
-.bus-body.open { max-height:400px; overflow-y:auto; }
+.bus-body.open { max-height:500px; overflow-y:auto; }
 .bus-body::-webkit-scrollbar { width:3px; }
 .bus-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
 
