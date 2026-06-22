@@ -1,284 +1,103 @@
+/**
+ * hanako-audio-player/routes/player.js
+ *
+ * 播放器路由：
+ *   /widget                    — widget 页面（嵌入式）
+ *   /widget/media/{filename} — 流式音频
+ *   /play                      — 对话内嵌播放器
+ */
+
 import fs from "node:fs";
 import path from "node:path";
-import { Readable } from "node:stream";
-import { AudioBus } from "../tools/bus.js";
 
-export default function(app, ctx) {
+const MIME = { mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac", m4a: "audio/mp4" };
+
+export default function (app, ctx) {
   const pluginId = ctx.pluginId;
   const dataDir = ctx.dataDir;
   const mediaDir = path.join(dataDir, "media");
-  let widgetToken = "";
   fs.mkdirSync(mediaDir, { recursive: true });
-
   const home = process.env.USERPROFILE || process.env.HOME || "";
   const pluginDataMediaDir = home ? path.join(home, ".hanako", "plugin-data", "hanako-audio-player", "media") : null;
-  const extraMediaDirs = [];
-  try {
-    if (process.env.HANAKO_PLUGIN_DATA) {
-      extraMediaDirs.push(path.join(process.env.HANAKO_PLUGIN_DATA, "hanako-audio-player", "media"));
-    }
-    const workHanako = path.resolve("W:/Games/Hanako/.hanako/plugin-data/hanako-audio-player/media");
-    if (fs.existsSync(workHanako)) extraMediaDirs.push(workHanako);
-  } catch (e) {}
 
-  function collectMediaFiles() {
-    const files = [];
-    const seen = new Set();
-    const dirsToScan = [mediaDir];
-    if (pluginDataMediaDir) dirsToScan.push(pluginDataMediaDir);
-    extraMediaDirs.forEach(d => dirsToScan.push(d));
-    for (const dir of dirsToScan) {
-      try {
-        if (!fs.existsSync(dir)) continue;
-        const namesPath = path.join(dir, '_names.json');
-        let namesMap = null;
-        try {
-          if (fs.existsSync(namesPath)) namesMap = JSON.parse(fs.readFileSync(namesPath, 'utf-8'));
-        } catch (e) { console.warn('[media] _names.json read failed:', e.message); }
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          if (!entry.isFile()) continue;
-          const ext = path.extname(entry.name).slice(1).toLowerCase();
-          if (!['mp3','wav','ogg','flac','m4a','webm'].includes(ext)) continue;
-          const nameKey = entry.name.toLowerCase();
-          if (seen.has(nameKey)) continue;
-          seen.add(nameKey);
-          const fullPath = path.join(dir, entry.name);
-          const stat = fs.statSync(fullPath);
-          let url = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(entry.name)}`;
-          if (widgetToken) url += `?token=${encodeURIComponent(widgetToken)}`;
-          const displayName = namesMap && namesMap[entry.name] ? namesMap[entry.name] : entry.name.replace(/\.[^.]+$/, '');
-          files.push({ name: displayName, size: stat.size, mtime: stat.mtimeMs, url });
-        }
-      } catch (e) { console.warn('[media] scan failed:', dir, e.message); }
-    }
-    files.sort((a, b) => b.mtime - a.mtime);
-    return files;
-  }
-
-  const bus = new AudioBus({ pluginId, dataDir });
-
+  // ── Widget 页面 ──
   app.get("/widget", (c) => {
-    const action = c.req.query("action");
-    if (action === "bus_state") return c.json(bus.getState());
-    if (action === "bus_agents") {
-      const agentsDir = path.resolve("W:/Games/Hanako/Work/zhiyi/agents");
-      let agents = [];
-      try {
-        if (fs.existsSync(agentsDir)) {
-          const entries = fs.readdirSync(agentsDir, { withFileTypes: true });
-          agents = entries.filter(e => e.isDirectory()).map(e => ({ id: e.name, name: e.name }));
-        }
-      } catch (e) { console.warn("[bus] agents list failed:", e.message); }
-      return c.json({ ok: true, agents });
-    }
-    if (action === "media_files") {
-      const files = collectMediaFiles().map(({ name, size, mtime, url }) => ({ name, size, mtime, url }));
-      return c.json({ ok: true, files });
-    }
-    if (action === "play_file") {
-      const filename = c.req.query("file") || "";
-      const translate = c.req.query("translate") || "";
-      if (!filename) return c.text("Missing file", 400);
-      if (filename.includes("/") || filename.includes("\\") || filename.includes("..")) return c.text("Invalid filename", 400);
-      const token = c.req.query("token") || "";
-      return c.html(buildPlayHtml(pluginId, dataDir, filename, translate, token));
-    }
     const hanaCss = c.req.query("hana-css") || "";
     const token = c.req.query("token") || "";
-    widgetToken = token;
-    return c.html(getWidgetHTML(pluginId, hanaCss, token));
+    const html = getWidgetHTML(pluginId, hanaCss, token);
+    return c.html(html);
   });
 
-  app.post("/widget", async (c) => {
-    const action = c.req.query("action");
-    if (action === "bus_control") {
-      try {
-        const body = await c.req.json().catch(() => ({}));
-        const act = body.action || "state";
-        let result;
-        switch (act) {
-          case "load": result = bus.load(body.playlist || []); break;
-          case "say": result = bus.say(body.text || "", { spk: body.spk, instruct: body.instruct, translate: body.translate }); break;
-          case "play": result = bus.play(body.url || "", { name: body.name, mode: body.mode }); break;
-          case "next": result = bus.next(); break;
-          case "pause": result = bus.pause(); break;
-          case "resume": result = bus.resume(); break;
-          case "remove": {
-            const idx = parseInt(body.index, 10);
-            if (!isNaN(idx)) result = bus.remove(idx);
-            else if (body.url) result = bus.removeByUrl(body.url);
-            else result = { ok: false, code: 'missing_index_or_url' };
-            break;
-          }
-          case "clear": result = bus.clear(); break;
-          default: result = bus.getState();
-        }
-        return c.json(result);
-      } catch (e) {
-        return c.json({ ok: false, error: e.message }, 500);
-      }
-    }
-    if (action === "media_delete") {
-      try {
-        const body = await c.req.json().catch(() => ({}));
-        const filename = body.filename || "";
-        if (!filename || filename.includes("/") || filename.includes("\\") || filename.includes("..")) {
-          return c.json({ ok: false, error: "invalid filename" }, 400);
-        }
-        const dirsToScan = [mediaDir];
-        if (pluginDataMediaDir) dirsToScan.push(pluginDataMediaDir);
-        extraMediaDirs.forEach(d => dirsToScan.push(d));
-        let deleted = false;
-        for (const dir of dirsToScan) {
-          const filePath = path.join(dir, filename);
-          if (fs.existsSync(filePath)) { fs.unlinkSync(filePath); deleted = true; break; }
-        }
-        if (!deleted) return c.json({ ok: false, error: "not found" }, 404);
-        try {
-          const bus2 = new AudioBus({ pluginId, dataDir });
-          const targetUrl = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(filename)}`;
-          bus2.queue = bus2.queue.filter(it => {
-            if (it.type === 'play' && it.url) return stripToken(it.url) !== stripToken(targetUrl);
-            return true;
-          });
-          bus2._saveQueue();
-        } catch (e) { console.warn('[delete] bus cleanup failed:', e.message); }
-        return c.json({ ok: true });
-      } catch (e) {
-        return c.json({ ok: false, error: e.message }, 500);
-      }
-    }
-    return c.json({ ok: false, error: "unknown action" }, 400);
-  });
-
+  // ── 对话内嵌播放器 ──
   app.get("/play", (c) => {
     const filename = c.req.query("file");
     const translate = c.req.query("translate") || "";
     if (!filename) return c.text("Missing file", 400);
-    if (filename.includes("/") || filename.includes("\\") || filename.includes("..")) return c.text("Invalid filename", 400);
-    let filePath = path.join(mediaDir, filename);
-    if (!fs.existsSync(filePath) && pluginDataMediaDir) filePath = path.join(pluginDataMediaDir, filename);
-    if (!fs.existsSync(filePath)) {
-      for (const extraDir of extraMediaDirs) {
-        const p = path.join(extraDir, filename);
-        if (fs.existsSync(p)) { filePath = p; break; }
-      }
-    }
-    if (!fs.existsSync(filePath)) return c.text("File not found", 404);
-    const stat = fs.statSync(filePath);
-    if (stat.size > 1024 * 1024) {
-      const redirectUrl = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(filename)}`;
-      return c.redirect(redirectUrl);
-    }
-    return c.html(buildPlayHtml(pluginId, dataDir, filename, translate));
-  });
-
-  app.get("/widget/media/:filename", async (c) => {
-    let filename = c.req.param("filename");
-    filename = stripToken(filename);
     if (filename.includes("/") || filename.includes("\\") || filename.includes("..")) {
-      return c.json({ error: "invalid filename" }, 400);
+      return c.text("Invalid filename", 400);
     }
     let filePath = path.join(mediaDir, filename);
     if (!fs.existsSync(filePath) && pluginDataMediaDir) {
       filePath = path.join(pluginDataMediaDir, filename);
     }
-    if (!fs.existsSync(filePath)) {
-      for (const extraDir of extraMediaDirs) {
-        const p = path.join(extraDir, filename);
-        if (fs.existsSync(p)) { filePath = p; break; }
-      }
-    }
-    if (!fs.existsSync(filePath)) return c.json({ error: "not found" }, 404);
+    if (!fs.existsSync(filePath)) return c.text("File not found", 404);
+
+    const ext = path.extname(filename).slice(1).toLowerCase();
+    const mime = MIME[ext] || "audio/mpeg";
+
     const stat = fs.statSync(filePath);
-    const ext = path.extname(filename).slice(1);
-    const mime = { mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac", m4a: "audio/mp4", webm: "audio/webm" }[ext] || "audio/mpeg";
-    const total = stat.size;
+    if (stat.size > 1024 * 1024) {
+      const redirectUrl = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(filename)}`;
+      return c.redirect(redirectUrl);
+    }
+
+    const buf = fs.readFileSync(filePath);
+    const base64 = buf.toString("base64");
+    const audioSrc = `data:${mime};base64,${base64}`;
+
+    let displayName = filename.replace(/\.\w+$/, "");
     try {
-      const nodeStream = fs.createReadStream(filePath);
-      const webStream = Readable.toWeb(nodeStream);
-      const headers = new Headers();
-      headers.set('Content-Type', mime);
-      headers.set('Content-Length', String(total));
-      headers.set('Accept-Ranges', 'bytes');
-      return new Response(webStream, { headers });
-    } catch(e) {
-      console.error('[media] serve error:', e.message, e.stack);
-      return c.json({ error: 'serve failed', detail: e.message }, 500);
+      const namesPath = path.join(dataDir, "media", "_names.json");
+      let namesMap = null;
+      if (fs.existsSync(namesPath)) {
+        namesMap = JSON.parse(fs.readFileSync(namesPath, "utf-8"));
+      } else if (pluginDataMediaDir) {
+        const fallbackNames = path.join(pluginDataMediaDir, "_names.json");
+        if (fs.existsSync(fallbackNames)) {
+          namesMap = JSON.parse(fs.readFileSync(fallbackNames, "utf-8"));
+        }
+      }
+      if (namesMap && namesMap[filename]) displayName = namesMap[filename];
+    } catch (e) {
+      console.warn("[play] _names.json read failed:", e.message);
     }
-  });
-}
 
-function stripToken(url) {
-  if (!url) return url;
-  return url.split('?')[0];
-}
-
-function esc(s) {
-  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
-function escAttr(s) {
-  return esc(s);
-}
-
-function buildPlayHtml(pluginId, dataDir, filename, translate) {
-  const mediaDir = path.join(dataDir, "media");
-  const home = process.env.USERPROFILE || process.env.HOME || "";
-  const pluginDataMediaDir = home ? path.join(home, ".hanako", "plugin-data", "hanako-audio-player", "media") : null;
-  const extraMediaDirs = [];
-  try {
-    if (process.env.HANAKO_PLUGIN_DATA) extraMediaDirs.push(path.join(process.env.HANAKO_PLUGIN_DATA, "hanako-audio-player", "media"));
-    const workHanako = path.resolve("W:/Games/Hanako/.hanako/plugin-data/hanako-audio-player/media");
-    if (fs.existsSync(workHanako)) extraMediaDirs.push(workHanako);
-  } catch (e) {}
-
-  function findFile() {
-    let filePath = path.join(mediaDir, filename);
-    if (fs.existsSync(filePath)) return filePath;
-    if (pluginDataMediaDir && fs.existsSync(path.join(pluginDataMediaDir, filename))) return path.join(pluginDataMediaDir, filename);
-    for (const extraDir of extraMediaDirs) {
-      const p = path.join(extraDir, filename);
-      if (fs.existsSync(p)) return p;
-    }
-    return null;
-  }
-
-  const filePath = findFile();
-  if (!filePath) return `<!DOCTYPE html><html><body style="font-family:sans-serif;padding:12px;color:#c00">File not found: ${escAttr(filename)}</body></html>`;
-
-  const ext = path.extname(filename).slice(1).toLowerCase();
-  const mime = { mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac", m4a: "audio/mp4", webm: "audio/webm" }[ext] || "audio/mpeg";
-
-  let displayName = filename.replace(/\.\w+$/, "");
-  try {
-    const namesPath = path.join(dataDir, "media", "_names.json");
-    let namesMap = null;
-    if (fs.existsSync(namesPath)) namesMap = JSON.parse(fs.readFileSync(namesPath, "utf-8"));
-    else if (pluginDataMediaDir) {
-      const fb = path.join(pluginDataMediaDir, "_names.json");
-      if (fs.existsSync(fb)) namesMap = JSON.parse(fs.readFileSync(fb, "utf-8"));
-    }
-    if (namesMap && namesMap[filename]) displayName = namesMap[filename];
-  } catch (e) {}
-
-  const buf = fs.readFileSync(filePath);
-  const base64 = buf.toString("base64");
-  const audioSrc = `data:${mime};base64,${base64}`;
-
-  return `<!DOCTYPE html>
+    const html = `<!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{display:flex;align-items:center;justify-content:center;min-height:52px;padding:0;background:transparent;font-family:system-ui,-apple-system,sans-serif}
-.player-wrap{width:100%;max-width:480px;background:#FFFBF5;border:1px solid rgba(0,0,0,0.06);border-radius:10px;overflow:hidden}
+body{
+  display:flex;align-items:center;justify-content:center;
+  min-height:52px;padding:0;background:transparent;
+  font-family:system-ui,-apple-system,sans-serif;
+}
+.player-wrap{
+  width:100%;max-width:480px;
+  background:#FFFBF5;border:1px solid rgba(0,0,0,0.06);
+  border-radius:10px;overflow:hidden;
+}
 .top{height:2px;background:linear-gradient(90deg,#d49a6a,#c48454)}
 .body{padding:8px 12px}
 .row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-.icon{width:26px;height:26px;border-radius:5px;background:linear-gradient(135deg,#d49a6a,#c48454);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;color:white}
+.icon{
+  width:26px;height:26px;border-radius:5px;
+  background:linear-gradient(135deg,#d49a6a,#c48454);
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;flex-shrink:0;color:white;
+}
 .name{color:#2c2c2c;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
 .trans{color:#666;font-size:12px;line-height:1.4;padding:6px 0 2px 0;border-top:1px solid rgba(0,0,0,0.04);margin-top:6px;word-break:break-all}
 audio{width:100%;height:36px;border-radius:6px;outline:none;background:#FFFBF5}
@@ -301,7 +120,7 @@ audio::-webkit-media-controls-panel{background:#FFFBF5}
 (function(){
 var a=document.querySelector("audio");
 try{parent.postMessage({type:"ready"},"*")}catch(e){}
-function n(){try{parent.postMessage({type:"resize-request",payload:{height:document.body.scrollHeight}},"*")}catch(e){}};
+function n(){try{parent.postMessage({type:"resize-request",payload:{height:document.body.scrollHeight}},"*")}catch(e){}}
 a.onloadedmetadata=n;
 new ResizeObserver(n).observe(document.body);
 setTimeout(n,100);
@@ -309,8 +128,116 @@ setTimeout(n,100);
 </script>
 </body>
 </html>`;
+    return c.html(html);
+  });
+
+  // ── 播放队列 ──
+  const queuePath = path.join(dataDir, "queue.json");
+  const homeDir = process.env.USERPROFILE || process.env.HOME || "";
+  const prodQueuePath = homeDir ? path.join(homeDir, ".hanako", "plugin-data", "hanako-audio-player", "queue.json") : null;
+
+  app.get("/widget/api/queue", (c) => {
+    try {
+      if (fs.existsSync(queuePath)) {
+        return c.json(JSON.parse(fs.readFileSync(queuePath, "utf-8")));
+      }
+      if (prodQueuePath && fs.existsSync(prodQueuePath)) {
+        return c.json(JSON.parse(fs.readFileSync(prodQueuePath, "utf-8")));
+      }
+    } catch (e) { console.warn('[queue] GET failed:', e.message); }
+    return c.json([]);
+  });
+
+  app.post("/widget/api/queue", async (c) => {
+    try {
+      const body = await c.req.json();
+      fs.writeFileSync(queuePath, JSON.stringify(body, null, 2), "utf-8");
+      if (prodQueuePath && prodQueuePath !== queuePath) {
+        try { fs.writeFileSync(prodQueuePath, JSON.stringify(body, null, 2), "utf-8"); } catch (e) { console.warn('[queue] prod sync write failed:', e.message); }
+      }
+      return c.json({ ok: true });
+    } catch (e) {
+      return c.json({ ok: false, error: e.message }, 500);
+    }
+  });
+
+  // ── 媒体文件 ──
+  app.get("/widget/media/:filename", async (c) => {
+    const filename = c.req.param("filename");
+    if (filename.includes("/") || filename.includes("\\") || filename.includes("..")) {
+      return c.json({ error: "invalid filename" }, 400);
+    }
+
+    let filePath = path.join(mediaDir, filename);
+    if (!fs.existsSync(filePath) && pluginDataMediaDir) {
+      filePath = path.join(pluginDataMediaDir, filename);
+    }
+    if (!fs.existsSync(filePath)) {
+      return c.json({ error: "not found" }, 404);
+    }
+
+    const stat = fs.statSync(filePath);
+    const ext = path.extname(filename).slice(1);
+    const mime = MIME[ext] || "audio/mpeg";
+    const total = stat.size;
+    const range = c.req.header("range");
+
+    if (range) {
+      const match = range.match(/^bytes=(\d+)-(\d*)$/);
+      if (!match) {
+        return c.text("Invalid Range", 416);
+      }
+      const start = parseInt(match[1], 10);
+      const end = match[2] !== "" ? parseInt(match[2], 10) : total - 1;
+      if (start >= total || end >= total) {
+        return c.text("Range Not Satisfiable", 416);
+      }
+      const stream = fs.createReadStream(filePath, { start, end });
+      const { readable, writable } = new TransformStream();
+      streamPipe(stream, writable);
+      return new Response(readable, {
+        status: 206,
+        headers: {
+          "Content-Type": mime,
+          "Content-Range": `bytes ${start}-${end}/${total}`,
+          "Content-Length": String(end - start + 1),
+          "Accept-Ranges": "bytes",
+          "Cache-Control": "public, max-age=86400",
+        },
+      });
+    }
+
+    const stream = fs.createReadStream(filePath);
+    const { readable, writable } = new TransformStream();
+    streamPipe(stream, writable);
+    return new Response(readable, {
+      headers: {
+        "Content-Type": mime,
+        "Content-Length": String(total),
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "public, max-age=86400",
+      },
+    });
+  });
 }
 
+function streamPipe(nodeStream, writable) {
+  const writer = writable.getWriter();
+  nodeStream.on("data", (chunk) => writer.write(chunk));
+  nodeStream.on("end", () => writer.close());
+  nodeStream.on("error", () => writer.close());
+}
+
+function esc(s) {
+  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function escAttr(s) {
+  return esc(s);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Widget HTML — 深色玻璃质感 + 琥珀色点缀
+// ═══════════════════════════════════════════════════════════════
 function getWidgetHTML(pluginId, hanaCss, token) {
   const apiBase = `/api/plugins/${pluginId}`;
   return `<!DOCTYPE html>
@@ -318,184 +245,363 @@ function getWidgetHTML(pluginId, hanaCss, token) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Pragma" no-cache>
 <title>🎵 播放器</title>
 ${hanaCss ? `<link rel="stylesheet" href="${esc(hanaCss)}">` : ""}
 <style>
-:root {
-  --bg: #FFFBF5;
-  --surface: #FFFBF5;
-  --border: rgba(0,0,0,0.06);
-  --text: #2c2c2c;
-  --text-dim: rgba(0,0,0,0.35);
+:root, [data-theme="dark"] {
+  --bg: #161618;
+  --surface: rgba(255,255,255,0.03);
+  --surface-hover: rgba(255,255,255,0.06);
+  --surface-active: rgba(255,255,255,0.08);
+  --border: rgba(255,255,255,0.08);
+  --border-strong: rgba(255,255,255,0.14);
+  --text: #e4e4e7;
+  --text-dim: rgba(255,255,255,0.4);
+  --text-faint: rgba(255,255,255,0.25);
   --accent: #d49a6a;
-  --accent-end: #c48454;
-  --radius: 8px;
+  --accent-glow: rgba(212,154,106,0.4);
+  --accent-soft: rgba(212,154,106,0.12);
+  --radius: 10px;
 }
+[data-theme="light"] {
+  --bg: #FFF8E7;
+  --surface: rgba(0,0,0,0.03);
+  --surface-hover: rgba(0,0,0,0.05);
+  --surface-active: rgba(0,0,0,0.08);
+  --border: rgba(0,0,0,0.08);
+  --border-strong: rgba(0,0,0,0.14);
+  --text: #3d3320;
+  --text-dim: rgba(0,0,0,0.4);
+  --text-faint: rgba(0,0,0,0.25);
+  --accent: #c48454;
+  --accent-glow: rgba(196,132,84,0.3);
+  --accent-soft: rgba(196,132,84,0.1);
+}
+
 * { margin:0; padding:0; box-sizing:border-box; }
-html, body { height: 100%; overflow: hidden; writing-mode: horizontal-tb !important; }
+html, body { height:100%; overflow:hidden; }
+
 body {
-  font-family: system-ui, -apple-system, sans-serif;
-  background: var(--surface);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
   color: var(--text);
   font-size: 13px;
   display: flex; flex-direction: column;
   user-select: none;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Header */
+/* ── Header ── */
 .header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.header-left { display: flex; align-items: center; gap: 8px; }
-.header-icon {
-  width: 24px; height: 24px; border-radius: 4px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-end));
-  display: flex; align-items: center; justify-content: center;
-  font-size: 12px; flex-shrink: 0;
-}
-.header-title { font-weight: 600; font-size: 13px; }
-.header-min { background:none; border:none; color:var(--text-dim); cursor:pointer; font-size:18px; padding:2px 6px; border-radius:4px; transition:all 0.15s; }
-.header-min:hover { background:rgba(0,0,0,0.04); color:var(--text); }
-
-/* Track Info */
-.track-info { display:flex; align-items:center; gap:10px; padding:10px 12px; flex-shrink:0; }
-.track-icon {
-  width:36px; height:36px; border-radius:6px; flex-shrink:0;
-  background:linear-gradient(135deg, var(--accent), var(--accent-end));
-  display:flex; align-items:center; justify-content:center; font-size:16px; color:white;
-}
-.track-name { font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.track-mode { font-size:11px; color:var(--text-dim); margin-top:2px; }
-
-/* Progress */
-.progress-area { padding:0 12px 8px; flex-shrink:0; }
-.time-row { display:flex; justify-content:space-between; font-size:10px; color:var(--text-dim); margin-bottom:4px; }
-.progress-bar { height:4px; background:rgba(0,0,0,0.06); border-radius:2px; cursor:pointer; position:relative; }
-.progress-fill { height:100%; background:linear-gradient(90deg, var(--accent), var(--accent-end)); border-radius:2px; width:0%; transition:width 0.1s linear; }
-
-/* Controls */
-.controls-area { display:flex; align-items:center; justify-content:center; gap:8px; padding:4px 12px 10px; flex-shrink:0; }
-.btn {
-  background:none; border:none; cursor:pointer; padding:6px; border-radius:6px;
-  color:var(--text); display:flex; align-items:center; justify-content:center; transition:all 0.15s;
-}
-.btn:hover { background:rgba(0,0,0,0.04); }
-.btn-play {
-  width:32px; height:32px; border-radius:50%;
-  background:linear-gradient(135deg, var(--accent), var(--accent-end));
-  color:white; box-shadow:0 2px 10px rgba(212,154,106,0.3);
-}
-.btn-play:hover { box-shadow:0 4px 12px rgba(212,154,106,0.4) !important; }
-.volume-wrap { display:flex; align-items:center; gap:4px; }
-.volume-slider { width:60px; }
-
-/* Playlist */
-.playlist-area { flex:1; display:flex; flex-direction:column; min-height:0; border-top:1px solid var(--border); }
-.playlist-header {
   display:flex; align-items:center; justify-content:space-between;
-  padding:8px 12px; cursor:pointer; flex-shrink:0; user-select:none;
+  padding:10px 14px 8px;
+  flex-shrink:0;
 }
-.playlist-header-left { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:500; }
-.playlist-header svg { transition:transform 0.2s; }
-.playlist-header.collapsed svg { transform:rotate(-90deg); }
-.add-row { display:flex; gap:6px; padding:6px 12px; flex-shrink:0; }
-.add-row input {
-  flex:1; background:rgba(0,0,0,0.02); border:1px solid var(--border); border-radius:4px;
-  padding:5px 8px; font-size:12px; color:var(--text); outline:none; font-family:inherit;
+.header-left { display:flex; align-items:center; gap:8px; }
+.header-icon {
+  width:22px; height:22px; border-radius:5px;
+  background:linear-gradient(135deg, var(--accent), #c48454);
+  display:flex; align-items:center; justify-content:center;
+  font-size:11px; flex-shrink:0;
+  box-shadow: 0 2px 8px var(--accent-glow);
 }
-.add-row input:focus { border-color:var(--accent); }
-.add-row button {
-  background:linear-gradient(135deg, var(--accent), var(--accent-end)); border:none; border-radius:4px;
-  color:white; font-size:12px; padding:5px 10px; cursor:pointer; font-family:inherit; white-space:nowrap;
+.header-title {
+  font-weight:600; font-size:13px; letter-spacing:0.3px;
+  color: var(--text);
 }
-.playlist-body { flex:1; overflow-y:auto; min-height:0; }
-.playlist-body.closed { max-height:0; overflow:hidden; }
-.playlist-item {
-  display:flex; align-items:center; gap:8px; padding:7px 12px; cursor:pointer;
-  border-bottom:1px solid rgba(0,0,0,0.03); transition:background 0.1s;
+.header-actions { display:flex; gap:4px; }
+.icon-btn {
+  background:none; border:none; color:var(--text-dim); cursor:pointer;
+  width:26px; height:26px; border-radius:6px;
+  display:flex; align-items:center; justify-content:center;
+  transition: all 0.15s;
 }
-.playlist-item:hover { background:rgba(0,0,0,0.02); }
-.playlist-item.active { background:rgba(212,154,106,0.08); }
-.status { font-size:10px; color:var(--text-dim); min-width:24px; }
-.name { flex:1; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.fav { background:none; border:none; cursor:pointer; font-size:14px; padding:2px 4px; opacity:0.5; transition:opacity 0.15s; }
-.fav:hover { opacity:1; }
-.rm { background:none; border:none; cursor:pointer; font-size:12px; color:var(--text-dim); padding:2px 4px; opacity:0; transition:opacity 0.15s; }
-.playlist-item:hover .rm { opacity:1; }
-.empty { padding:20px 12px; text-align:center; color:var(--text-dim); font-size:12px; }
+.icon-btn:hover { background:var(--surface-hover); color:var(--text); }
+.icon-btn svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
 
-/* Bus Panel */
-.bus-panel { border-top:1px solid var(--border); padding:8px 12px; background:rgba(0,0,0,0.01); flex-shrink:0; position:relative; z-index:50; margin-top:4px; }
-.bus-queue-item { cursor:pointer; transition:background 0.1s; }
-.bus-queue-item:hover { background:rgba(212,154,106,0.06); }
-.bus-status { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--text-dim); margin-bottom:6px; }
-.bus-dot { width:6px; height:6px; border-radius:50%; background:var(--text-dim); flex-shrink:0; }
-.bus-dot.playing { background:#22c55e; box-shadow:0 0 6px rgba(34,197,94,0.4); }
-.bus-dot.error { background:#ef4444; }
-.bus-queue { max-height:100px; overflow-y:auto; margin-bottom:6px; }
-.bus-queue-item { display:flex; align-items:center; gap:6px; padding:3px 0; font-size:11px; border-bottom:1px solid rgba(0,0,0,0.03); }
-.bus-queue-item .type-tag { font-size:9px; padding:1px 4px; border-radius:3px; background:rgba(0,0,0,0.05); color:var(--text-dim); flex-shrink:0; }
-.bus-queue-item .item-text { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.bus-queue-item .item-del { background:none; border:none; cursor:pointer; font-size:10px; color:var(--text-dim); opacity:0; transition:opacity 0.15s; }
-.bus-queue-item:hover .item-del { opacity:1; }
-.bus-controls { display:flex; gap:4px; align-items:center; flex-wrap:wrap; }
-.bus-controls input { flex:1; min-width:0; background:rgba(255,255,255,0.04); border:1px solid var(--border); border-radius:4px; color:var(--text); font-size:11px; padding:4px 8px; outline:none; font-family:inherit; }
-.bus-controls select { background:var(--surface); border:1px solid var(--border); border-radius:4px; color:var(--text); font-size:11px; padding:4px; font-family:inherit; max-width:100px; min-width:0; flex-shrink:1; }
-.bus-btn { background:none; border:1px solid var(--border); border-radius:4px; color:var(--text-dim); font-size:11px; padding:4px 8px; cursor:pointer; font-family:inherit; white-space:nowrap; transition:all 0.15s; }
-.bus-btn:hover { border-color:var(--accent); color:var(--accent); }
-.bus-btn.primary { background:linear-gradient(135deg,var(--accent),var(--accent-end)); border:none; color:white; }
-.bus-btn.primary:hover { box-shadow:0 2px 8px rgba(212,154,106,0.3); }
-
-/* Scene Row */
-.scene-row { display:flex; gap:6px; padding:6px 12px; flex-shrink:0; }
-.scene-btn {
-  flex:1; background:none; border:1px solid var(--border); border-radius:4px;
-  font-size:11px; padding:4px; cursor:pointer; font-family:inherit; color:var(--text-dim); transition:all 0.15s;
+/* ── Now Playing ── */
+.now-playing {
+  display:flex; align-items:center; gap:10px;
+  padding:6px 14px 8px;
 }
-.scene-btn:hover { border-color:var(--accent); color:var(--accent); background:rgba(212,154,106,0.04); }
+.np-cover {
+  width:36px; height:36px; border-radius:8px;
+  background:linear-gradient(135deg, var(--accent), #c48454);
+  display:flex; align-items:center; justify-content:center;
+  font-size:16px; flex-shrink:0;
+  box-shadow: 0 4px 14px var(--accent-glow);
+  position:relative; overflow:hidden;
+}
+.np-cover::after {
+  content:''; position:absolute; inset:0;
+  background:linear-gradient(135deg, rgba(255,255,255,0.15), transparent 50%);
+}
+.np-cover.spinning { animation: spin 8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.np-info { min-width:0; flex:1; }
+.np-name {
+  font-weight:500; font-size:13px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  color:var(--text);
+}
+.np-mode {
+  font-size:11px; color:var(--text-dim);
+  margin-top:1px;
+}
 
-/* Presets */
-.presets-row { flex-shrink:0; }
-.preset-header { display:flex; align-items:center; justify-content:space-between; padding:4px 12px 2px; }
-.preset-header span { font-size:11px; color:var(--text-dim); }
-.preset-list { display:flex; flex-wrap:wrap; gap:6px; padding:2px 12px 10px; }
+/* ── Progress ── */
+.progress-section { padding:4px 14px 6px; }
+.time-row {
+  display:flex; justify-content:space-between;
+  font-size:10px; color:var(--text-faint);
+  margin-bottom:4px; font-variant-numeric:tabular-nums;
+  letter-spacing:0.5px;
+}
+.progress-bar {
+  height:5px; background:var(--surface); border-radius:3px;
+  cursor:pointer; position:relative;
+  transition: height 0.15s;
+}
+.progress-bar:hover { height:7px; }
+.progress-fill {
+  height:100%; width:0%; border-radius:3px;
+  background:linear-gradient(90deg, var(--accent), #e0b088);
+  position:relative; transition:width 0.1s linear;
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+.progress-fill::after {
+  content:''; position:absolute; right:-4px; top:50%;
+  transform:translateY(-50%);
+  width:10px; height:10px; border-radius:50%;
+  background:var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
+  opacity:0; transition:opacity 0.2s;
+}
+.progress-bar:hover .progress-fill::after { opacity:1; }
+
+/* ── Controls ── */
+.controls {
+  display:flex; align-items:center; justify-content:center;
+  padding:4px 14px 10px; gap:16px;
+}
+.ctrl-btn {
+  background:none; border:none; color:var(--text-dim); cursor:pointer;
+  width:30px; height:30px; border-radius:8px;
+  display:flex; align-items:center; justify-content:center;
+  transition: all 0.15s; flex-shrink:0;
+}
+.ctrl-btn:hover { background:var(--surface-hover); color:var(--text); }
+.ctrl-btn svg { width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.ctrl-btn.active { color:var(--accent); }
+
+.ctrl-play {
+  width:40px; height:40px; border-radius:50%;
+  background:linear-gradient(135deg, var(--accent), #c48454);
+  color:#fff; cursor:pointer; border:none;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow: 0 4px 16px var(--accent-glow);
+  transition: all 0.2s; flex-shrink:0;
+}
+.ctrl-play:hover { transform:scale(1.06); box-shadow:0 6px 22px var(--accent-glow); }
+.ctrl-play:active { transform:scale(0.96); }
+.ctrl-play svg { width:18px; height:18px; }
+
+/* Volume — compact inline */
+.volume-group {
+  display:flex; align-items:center; gap:4px;
+  margin-left:auto;
+}
+.vol-slider {
+  width:50px; height:4px; -webkit-appearance:none; appearance:none;
+  background:var(--surface); border-radius:2px; cursor:pointer;
+  transition: height 0.15s;
+}
+.vol-slider:hover { height:6px; }
+.vol-slider::-webkit-slider-thumb {
+  -webkit-appearance:none; width:10px; height:10px;
+  border-radius:50%; background:var(--accent); cursor:pointer;
+  box-shadow: 0 0 4px var(--accent-glow);
+}
+
+/* ── Playlist ── */
+.playlist-section {
+  border-top:1px solid var(--border);
+  flex:1; min-height:0; display:flex; flex-direction:column;
+}
+.pl-toggle {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 14px; cursor:pointer;
+  transition: background 0.15s;
+}
+.pl-toggle:hover { background:var(--surface); }
+.pl-toggle-left { display:flex; align-items:center; gap:6px; }
+.pl-toggle-left svg { width:13px; height:13px; stroke:var(--text-dim); fill:none; stroke-width:2; }
+.pl-toggle-text { font-size:12px; color:var(--text-dim); }
+.pl-count {
+  font-size:10px; color:var(--text-faint);
+  background:var(--surface); border-radius:8px;
+  padding:1px 7px; font-variant-numeric:tabular-nums;
+}
+.pl-chevron { width:14px; height:14px; stroke:var(--text-faint); fill:none; stroke-width:2; transition:transform 0.25s; }
+.pl-toggle.open .pl-chevron { transform:rotate(180deg); }
+
+.pl-body {
+  max-height:0; overflow:hidden;
+  transition:max-height 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+.pl-body.open { max-height:180px; overflow-y:auto; }
+.pl-body::-webkit-scrollbar { width:3px; }
+.pl-body::-webkit-scrollbar-track { background:transparent; }
+.pl-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
+
+.pl-item {
+  display:flex; align-items:center; gap:8px;
+  padding:6px 14px; cursor:pointer;
+  transition: background 0.12s;
+}
+.pl-item:hover { background:var(--surface); }
+.pl-item.active { background:var(--accent-soft); }
+.pl-item .pl-status {
+  width:16px; text-align:center; font-size:11px;
+  color:var(--text-faint); flex-shrink:0;
+}
+.pl-item.active .pl-status { color:var(--accent); }
+.pl-item .pl-name {
+  flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  font-size:12px; color:var(--text-dim);
+}
+.pl-item.active .pl-name { color:var(--accent); font-weight:500; }
+.pl-item .pl-dur {
+  font-size:10px; color:var(--text-faint);
+  font-variant-numeric:tabular-nums;
+}
+.pl-item .pl-star {
+  background:none; border:none; cursor:pointer;
+  font-size:13px; padding:2px; flex-shrink:0;
+  color:var(--text-faint); transition: color 0.15s, transform 0.15s;
+  line-height:1;
+}
+.pl-item .pl-star:hover { transform:scale(1.2); }
+.pl-item .pl-star.starred { color:#f0c060; }
+.pl-item .pl-rm {
+  background:none; border:none; color:var(--text-faint);
+  cursor:pointer; font-size:11px; padding:2px; flex-shrink:0;
+  opacity:0.35; transition:opacity 0.12s, color 0.12s;
+}
+.pl-item:hover .pl-rm { opacity:0.7; }
+.pl-item .pl-rm:hover { opacity:1; color:var(--accent); }
+.pl-item.dragging { opacity:0.4; }
+.pl-item.drag-over { border-top:2px solid var(--accent); }
+.pl-handle {
+  cursor:grab; color:var(--text-faint); font-size:12px;
+  flex-shrink:0; opacity:0; transition:opacity 0.12s;
+}
+.pl-item:hover .pl-handle { opacity:0.5; }
+
+.pl-empty { padding:16px 14px; text-align:center; color:var(--text-faint); font-size:12px; }
+
+/* ── Add + Preset (unified) ── */
+.add-section { border-top:1px solid var(--border); padding:8px 14px 10px; }
+.add-row {
+  display:flex; align-items:center; gap:6px;
+}
+.add-input {
+  flex:1; min-width:0;
+  background:var(--surface); border:1px solid var(--border); border-radius:7px;
+  color:var(--text); font-size:11px; padding:5px 10px;
+  outline:none; font-family:inherit;
+  transition: border-color 0.15s;
+}
+.add-input::placeholder { color:var(--text-faint); }
+.add-input:focus { border-color:var(--accent); background:var(--surface-hover); }
+.add-btn {
+  background:linear-gradient(135deg, var(--accent), #c48454);
+  border:none; border-radius:7px; color:#fff;
+  font-size:11px; padding:5px 12px; cursor:pointer;
+  font-family:inherit; font-weight:500; white-space:nowrap;
+  transition: all 0.15s;
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+.add-btn:hover { box-shadow:0 3px 12px var(--accent-glow); transform:translateY(-1px); }
+.add-btn:active { transform:translateY(0); }
+
+.add-secondary {
+  display:flex; align-items:center; gap:6px; margin-top:6px;
+}
+.add-mini-input {
+  flex:0.5; min-width:0;
+  background:var(--surface); border:1px solid var(--border); border-radius:6px;
+  color:var(--text); font-size:11px; padding:4px 8px;
+  outline:none; font-family:inherit;
+  transition: border-color 0.15s;
+}
+.add-mini-input::placeholder { color:var(--text-faint); }
+.add-mini-input:focus { border-color:var(--accent); }
+.add-mini-btn {
+  background:none; border:1px solid var(--border); border-radius:6px;
+  color:var(--text-dim); font-size:10px; padding:4px 8px;
+  cursor:pointer; font-family:inherit; white-space:nowrap;
+  transition: all 0.15s;
+}
+.add-mini-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+/* ── Presets ── */
+.preset-section { padding:0 14px 10px; }
+.preset-label {
+  font-size:10px; color:var(--text-faint);
+  margin-bottom:5px; letter-spacing:0.5px;
+  text-transform:uppercase;
+}
+.preset-list { display:flex; flex-wrap:wrap; gap:5px; }
 .preset-wrap { position:relative; display:inline-flex; }
 .preset-btn {
-  background:rgba(0,0,0,0.02); border:1px solid var(--border); border-radius:4px;
-  font-size:11px; padding:3px 8px; cursor:pointer; font-family:inherit; color:var(--text-dim); transition:all 0.15s;
+  background:var(--surface); border:1px solid var(--border); border-radius:12px;
+  color:var(--text-dim); font-size:11px; padding:3px 11px;
+  cursor:pointer; transition: all 0.15s; font-family:inherit;
 }
-.preset-btn:hover { border-color:var(--accent); color:var(--accent); }
+.preset-btn:hover {
+  border-color:var(--accent); color:var(--accent);
+  background:var(--accent-soft);
+}
 .preset-del {
-  position:absolute; top:-4px; right:-4px; width:14px; height:14px; border-radius:50%;
-  background:rgba(0,0,0,0.1); color:white; font-size:9px; display:flex; align-items:center; justify-content:center;
+  position:absolute; top:-4px; right:-4px;
+  width:13px; height:13px; border-radius:50%;
+  background:rgba(0,0,0,0.5); color:#fff;
+  font-size:8px; line-height:13px; text-align:center;
   cursor:pointer; opacity:0; transition:opacity 0.15s;
 }
 .preset-wrap:hover .preset-del { opacity:1; }
 </style>
 </head>
 <body>
+
+<!-- Header -->
 <div class="header">
   <div class="header-left">
     <div class="header-icon">♫</div>
     <span class="header-title">播放器</span>
   </div>
-  <button class="header-min" id="popBtn" title="弹出窗口">⧉</button>
-</div>
-
-<div class="track-info">
-  <div class="track-icon" id="icon">♫</div>
-  <div style="min-width:0">
-    <div class="track-name" id="trackName">播放器</div>
-    <div class="track-mode" id="trackMode">准备就绪</div>
+  <div class="header-actions">
+    <button class="icon-btn" id="themeBtn" title="切换主题">
+      <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+    </button>
+    <button class="icon-btn" id="popBtn" title="弹出窗口">
+      <svg viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+    </button>
   </div>
 </div>
 
-<div class="progress-area">
+<!-- Now Playing -->
+<div class="now-playing">
+  <div class="np-cover" id="npCover">♫</div>
+  <div class="np-info">
+    <div class="np-name" id="trackName">播放器</div>
+    <div class="np-mode" id="trackMode">准备就绪</div>
+  </div>
+</div>
+
+<!-- Progress -->
+<div class="progress-section">
   <div class="time-row">
     <span id="currentTime">0:00</span>
     <span id="totalTime">0:00</span>
@@ -505,274 +611,467 @@ body {
   </div>
 </div>
 
-<div class="controls-area">
-  <button class="btn" id="prevBtn">
-    <svg viewBox="0 0 24 24"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></svg>
+<!-- Controls -->
+<div class="controls">
+  <button class="ctrl-btn" id="prevBtn" title="上一首">
+    <svg viewBox="0 0 24 24"><polygon points="19 20 9 12 19 4 19 20" fill="currentColor" stroke="none"/><line x1="5" y1="19" x2="5" y2="5"/></svg>
   </button>
-  <div class="controls-center">
-    <button class="btn btn-play" id="playBtn">
-      <svg id="playIcon" viewBox="0 0 24 24"><polygon points="8,5 19,12 8,19" fill="white"/></svg>
-      <svg id="pauseIcon" viewBox="0 0 24 24" style="display:none"><rect x="7" y="5" width="4" height="14" rx="1" fill="white"/><rect x="13" y="5" width="4" height="14" rx="1" fill="white"/></svg>
-    </button>
-  </div>
-  <div class="volume-wrap">
-    <button class="btn" id="volumeBtn" style="width:auto">
-      <svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-    </button>
-    <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="80">
-  </div>
-  <button class="btn" id="nextBtn">
-    <svg viewBox="0 0 24 24"><polygon points="5 4 15 12 5 21 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+  <button class="ctrl-play" id="playBtn" title="播放/暂停">
+    <svg id="playIcon" viewBox="0 0 24 24"><polygon points="8,5 19,12 8,19" fill="white" stroke="none"/></svg>
+    <svg id="pauseIcon" viewBox="0 0 24 24" style="display:none"><rect x="7" y="5" width="3.5" height="14" rx="1" fill="white" stroke="none"/><rect x="13.5" y="5" width="3.5" height="14" rx="1" fill="white" stroke="none"/></svg>
   </button>
+  <button class="ctrl-btn" id="nextBtn" title="下一首">
+    <svg viewBox="0 0 24 24"><polygon points="5 4 15 12 5 21 5 4" fill="currentColor" stroke="none"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+  </button>
+  <div class="volume-group">
+    <button class="ctrl-btn" id="volumeBtn" title="静音" style="width:26px;height:26px;">
+      <svg id="volIcon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+    </button>
+    <input type="range" class="vol-slider" id="volumeSlider" min="0" max="100" value="80">
+  </div>
 </div>
 
-<div class="playlist-area">
-  <div class="playlist-header" id="plHeader">
-    <div class="playlist-header-left">
+<!-- Playlist -->
+<div class="playlist-section">
+  <div class="pl-toggle" id="plToggle">
+    <div class="pl-toggle-left">
       <svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-      <span>播放列表</span>
-      <span class="playlist-count" id="plCount">0</span>
+      <span class="pl-toggle-text">播放列表</span>
+      <span class="pl-count" id="plCount">0</span>
     </div>
-    <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+    <svg class="pl-chevron" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
   </div>
-  <div class="add-row">
-    <input id="plSearch" type="text" placeholder="🔍 搜索音频" spellcheck="false">
-    <button id="favFilterBtn" class="bus-btn" title="仅显示收藏">☆</button>
-  </div>
-  <div class="playlist-body" id="plBody"></div>
-  <div class="add-row">
-    <input id="urlInput" type="text" placeholder="URL 或本地路径" spellcheck="false">
-    <button id="addBtn">添加</button>
-  </div>
-</div>
+  <div class="pl-body" id="plBody"></div>
 
-<div class="bus-panel" id="busPanel">
-  <div class="bus-status" id="busStatus">
-    <span class="bus-dot" id="busDot"></span>
-    <span id="busStatusText">待机</span>
+  <!-- Add track -->
+  <div class="add-section">
+    <div class="add-row">
+      <input class="add-input" id="urlInput" type="text" placeholder="粘贴 URL 或本地路径…" spellcheck="false">
+      <button class="add-btn" id="addBtn">添加</button>
+    </div>
+    <div class="add-secondary">
+      <input class="add-mini-input" id="presetNameInput" type="text" placeholder="电台名…" spellcheck="false">
+      <button class="add-mini-btn" id="savePresetBtn">存为电台</button>
+    </div>
   </div>
-  <div class="bus-queue" id="busQueue">
-    <div style="padding:8px;font-size:11px;color:var(--text-dim)">队列为空</div>
-  </div>
-  <div class="bus-controls">
-    <input id="sayInput" type="text" placeholder="输入串场文本" spellcheck="false">
-    <select id="spkSelect">
-      <option value="my_voice">my_voice</option>
-      <option value="default">default</option>
-    </select>
-    <button class="bus-btn" id="busSayBtn">说</button>
-    <button class="bus-btn" id="busNextBtn">下一首</button>
-    <button class="bus-btn" id="busClearBtn">清空</button>
+
+  <!-- Presets -->
+  <div class="preset-section">
+    <div class="preset-label">在线电台</div>
+    <div class="preset-list" id="presetsList">
+      <div class="preset-wrap"><button class="preset-btn" data-url="https://music.163.com/song/media/outer/url?id=569213220.mp3">起风了</button><span class="preset-del" data-name="起风了">✕</span></div>
+      <div class="preset-wrap"><button class="preset-btn" data-url="https://music.163.com/song/media/outer/url?id=27599862.mp3">夜に駆ける</button><span class="preset-del" data-name="夜に駆ける">✕</span></div>
+      <div class="preset-wrap"><button class="preset-btn" data-url="https://music.163.com/song/media/outer/url?id=1387099973.mp3">Lemon</button><span class="preset-del" data-name="Lemon">✕</span></div>
+    </div>
   </div>
 </div>
 
 <audio id="audio" preload="auto"></audio>
+
 <script>
 (function(){
 "use strict";
+
+// ── MutationObserver: 持续对抗 parent iframe 注入的 writing-mode: vertical-lr ──
+(function fixWritingMode(){
+  function revert(){ document.documentElement.style.writingMode='horizontal-tb'; document.body.style.writingMode='horizontal-tb'; }
+  revert();
+  var ob = new MutationObserver(function(muts){
+    for(var i=0;i<muts.length;i++){
+      if(muts[i].target.style && muts[i].target.style.writingMode && muts[i].target.style.writingMode !== 'horizontal-tb'){
+        revert(); break;
+      }
+    }
+  });
+  ob.observe(document.documentElement, { attributes:true, attributeFilter:['style'] });
+  ob.observe(document.body, { attributes:true, attributeFilter:['style'] });
+  // 也观察 parent 注入的 style 标签
+  var styleOb = new MutationObserver(function(){
+    revert();
+  });
+  styleOb.observe(document.head, { childList:true });
+})();
+
 const API = ${JSON.stringify(apiBase)};
 const TOKEN = ${JSON.stringify(token)};
-// ── 强制横排：清除 Hanako 注入的 writing-mode ──
-try {
-  document.documentElement.style.setProperty('writing-mode', 'horizontal-tb', 'important');
-  document.body.style.setProperty('writing-mode', 'horizontal-tb', 'important');
-  var all = document.querySelectorAll('*');
-  for (var i = 0; i < all.length; i++) {
-    try { all[i].style.removeProperty('writing-mode'); } catch(e) {}
-  }
-} catch(e) {}
 if (TOKEN) {
   const _f = window.fetch.bind(window);
   window.fetch = function(u, o) { o=o||{}; o.headers=o.headers||{}; o.headers["Authorization"]="Bearer "+TOKEN; return _f(u,o); };
 }
 
 const audio = document.getElementById('audio');
+const npCover = document.getElementById('npCover');
 let trks = [], idx = 0, playing = false, shuffled = false, prevVol = 0.8;
-function fmt(s) { if (!s||!isFinite(s)) return '0:00'; return Math.floor(s/60)+':'+Math.floor(s%60).toString().padStart(2,'0'); }
+
+function fmt(s) {
+  if (!s||!isFinite(s)) return '0:00';
+  return Math.floor(s/60)+':'+Math.floor(s%60).toString().padStart(2,'0');
+}
 
 function load(i) {
-  if (i<0||i>=trks.length) { trackName.textContent='播放器'; trackMode.textContent='暂停'; return; }
+  if (i<0||i>=trks.length) {
+    document.getElementById('trackName').textContent='播放器';
+    document.getElementById('trackMode').textContent='准备就绪';
+    npCover.classList.remove('spinning');
+    return;
+  }
   idx=i; const t=trks[i];
   document.getElementById('trackName').textContent=t.name;
   document.getElementById('trackMode').textContent=t.mode||'';
-  audio.src=t.url; audio.load(); renderPL();
+  audio.src=t.url; audio.load();
+  npCover.classList.add('spinning');
+  tryReadMetadata(audio, t);
+  renderPL();
 }
 
 function toggle() {
   if (!trks.length) return;
-  if (audio.paused) { audio.play().then(function(){ playing=true; document.getElementById('playIcon').style.display='none'; document.getElementById('pauseIcon').style.display='block'; }).catch(function(){}); }
-  else { audio.pause(); playing=false; document.getElementById('playIcon').style.display='block'; document.getElementById('pauseIcon').style.display='none'; }
+  if (audio.paused) { audio.play(); playing=true; npCover.classList.add('spinning'); }
+  else { audio.pause(); playing=false; npCover.classList.remove('spinning'); }
+  document.getElementById('playIcon').style.display=playing?'none':'block';
+  document.getElementById('pauseIcon').style.display=playing?'block':'none';
 }
 
 function next() {
   if (!trks.length) return;
   const n = shuffled ? Math.floor(Math.random()*trks.length) : (idx+1)%trks.length;
-  load(n); if (audio.paused) { audio.play().then(function(){ playing=true; document.getElementById('playIcon').style.display='none'; document.getElementById('pauseIcon').style.display='block'; }).catch(function(){}); }
+  load(n); if (audio.paused) { audio.play(); playing=true; toggle(); }
 }
 function prev() {
   if (!trks.length) return;
   if (audio.currentTime>3) { audio.currentTime=0; return; }
   const n = shuffled ? Math.floor(Math.random()*trks.length) : (idx-1+trks.length)%trks.length;
-  load(n); if (audio.paused) { audio.play().then(function(){ playing=true; document.getElementById('playIcon').style.display='none'; document.getElementById('pauseIcon').style.display='block'; }).catch(function(){}); }
+  load(n); if (audio.paused) { audio.play(); playing=true; toggle(); }
 }
 
-var favSet = new Set(JSON.parse(localStorage.getItem('hanako_favs')||'[]'));
-var searchQuery = '';
-var favOnly = false;
-function saveFavs() { try { localStorage.setItem('hanako_favs', JSON.stringify(Array.from(favSet))); } catch(e) {} }
-function toggleFav(url) { var key=stripToken(url); if(favSet.has(key))favSet.delete(key);else favSet.add(key); saveFavs(); renderPL(); }
-function isFav(url) { return favSet.has(stripToken(url)); }
-function getFilteredTrks() {
-  var q = (searchQuery||'').trim().toLowerCase();
-  return trks.filter(function(t) {
-    var name=(t.name||'').toLowerCase(); var url=stripToken(t.url||'').toLowerCase();
-    var matchSearch=!q||name.indexOf(q)!==-1||url.indexOf(q)!==-1;
-    var matchFav=!favOnly||isFav(t.url);
-    return matchSearch&&matchFav;
+function getFavorites() {
+  try { return JSON.parse(localStorage.getItem('hanako_audio_favs'))||[]; } catch(e) { return []; }
+}
+function isFav(url) {
+  return getFavorites().indexOf(url) !== -1;
+}
+function toggleFav(url) {
+  var favs = getFavorites();
+  var pos = favs.indexOf(url);
+  if (pos === -1) favs.push(url); else favs.splice(pos,1);
+  try { localStorage.setItem('hanako_audio_favs', JSON.stringify(favs)); } catch(e) {}
+}
+
+function renderPL() {
+  document.getElementById('plCount').textContent=trks.length;
+  if (!trks.length) { document.getElementById('plBody').innerHTML='<div class="pl-empty">暂无曲目，添加 URL 或点击电台开始</div>'; return; }
+  // 收藏的排前面
+  var sorted = trks.map(function(t,i){return {t:t,i:i};}).sort(function(a,b){
+    var fa=isFav(a.t.url)?1:0, fb=isFav(b.t.url)?1:0;
+    if(fa!==fb) return fb-fa;
+    return a.i-b.i;
+  });
+  document.getElementById('plBody').innerHTML=sorted.map(function(item,n){
+    var t=item.t, i=item.i;
+    var a=i===idx;
+    var star=isFav(t.url);
+    return '<div class="pl-item'+(a?' active':'')+'" data-i="'+i+'" draggable="true">'
+      +'<span class="pl-handle" title="拖动排序">⋮⋮</span>'
+      +'<span class="pl-status">'+(a?'♫':(n+1))+'</span>'
+      +'<span class="pl-name">'+esc(t.name)+'</span>'
+      +'<button class="pl-star'+(star?' starred':'')+'" data-star="'+i+'" title="收藏">'+(star?'★':'☆')+'</button>'
+      +'<span class="pl-dur">'+fmt(t.dur||0)+'</span>'
+      +'<button class="pl-rm" data-rm="'+i+'" title="移除">✕</button></div>';
+  }).join('');
+  document.getElementById('plBody').querySelectorAll('.pl-item').forEach(function(el){
+    el.addEventListener('click',function(e){
+      if(e.target.closest('.pl-rm')||e.target.closest('.pl-star')||e.target.closest('.pl-handle'))return;
+      const i=parseInt(this.dataset.i);
+      if(i===idx){toggle();return;}
+      load(i);if(audio.paused){audio.play();playing=true;toggle();}
+    });
+  });
+  document.getElementById('plBody').querySelectorAll('.pl-rm').forEach(function(el){
+    el.addEventListener('click',function(e){
+      e.stopPropagation();
+      const i=parseInt(this.dataset.rm);
+      trks.splice(i,1);
+      if(i<=idx)idx=Math.max(0,idx-1);
+      if(idx>=trks.length)idx=trks.length-1;
+      if(trks.length)load(idx);else load(-1);
+      renderPL();
+    });
+  });
+  document.getElementById('plBody').querySelectorAll('.pl-star').forEach(function(el){
+    el.addEventListener('click',function(e){
+      e.stopPropagation();
+      const i=parseInt(this.dataset.star);
+      toggleFav(trks[i].url);
+      renderPL();
+    });
+  });
+  // ── 拖拽排序 ──
+  var dragIdx=null;
+  document.getElementById('plBody').querySelectorAll('.pl-item').forEach(function(el){
+    el.addEventListener('dragstart',function(){
+      dragIdx=parseInt(this.dataset.i);
+      this.classList.add('dragging');
+    });
+    el.addEventListener('dragend',function(){
+      this.classList.remove('dragging');
+      document.getElementById('plBody').querySelectorAll('.pl-item').forEach(function(e){e.classList.remove('drag-over');});
+    });
+    el.addEventListener('dragover',function(e){
+      e.preventDefault();
+      this.classList.add('drag-over');
+    });
+    el.addEventListener('dragleave',function(){
+      this.classList.remove('drag-over');
+    });
+    el.addEventListener('drop',function(e){
+      e.preventDefault();
+      this.classList.remove('drag-over');
+      var dropIdx=parseInt(this.dataset.i);
+      if(dragIdx===null||dragIdx===dropIdx)return;
+      var moved=trks.splice(dragIdx,1)[0];
+      trks.splice(dropIdx,0,moved);
+      // 修正 idx
+      if(dragIdx===idx)idx=dropIdx;
+      else if(dragIdx<idx&&dropIdx>=idx)idx--;
+      else if(dragIdx>idx&&dropIdx<=idx)idx++;
+      renderPL();
+    });
   });
 }
-function renderPL() {
-  var filtered=getFilteredTrks();
-  document.getElementById('plCount').textContent=filtered.length+'/'+trks.length;
-  if(!filtered.length){ document.getElementById('plBody').innerHTML='<div class="empty">暂无曲目</div>'; return; }
-  document.getElementById('plBody').innerHTML=filtered.map(function(t,fi){
-    var realIdx=trks.indexOf(t); var a=realIdx===idx; var fav=isFav(t.url);
-    return '<div class="playlist-item'+(a?' active':'')+'" data-i="'+realIdx+'">'
-      +'<span class="status">'+(a?'♫ '+(realIdx+1):'')+'</span>'
-      +'<span class="name">'+esc(t.name)+'</span>'
-      +'<button class="fav" data-fav="'+esc(t.url)+'" title="收藏">'+(fav?'★':'☆')+'</button>'
-      +'<button class="rm" data-rm="'+realIdx+'" title="删除">✕</button>'
-      +'</div>';
-  }).join('');
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── Events ──
+document.getElementById('playBtn').addEventListener('click',toggle);
+document.getElementById('nextBtn').addEventListener('click',next);
+document.getElementById('prevBtn').addEventListener('click',prev);
+document.getElementById('volumeSlider').addEventListener('input',function(e){audio.volume=e.target.value/100;});
+document.getElementById('volumeBtn').addEventListener('click',function(){
+  if(audio.volume>0){prevVol=audio.volume;audio.volume=0;document.getElementById('volIcon').style.opacity=0.3;}
+  else{audio.volume=prevVol;document.getElementById('volumeSlider').value=prevVol*100;document.getElementById('volIcon').style.opacity=1;}
+});
+document.getElementById('progressBar').addEventListener('click',function(e){
+  const r=this.getBoundingClientRect();
+  const p=(e.clientX-r.left)/r.width;
+  if(audio.duration)audio.currentTime=p*audio.duration;
+});
+document.addEventListener('keydown',function(e){
+  if(e.code==='Space'&&e.target.tagName!=='INPUT'){e.preventDefault();toggle();}
+});
+document.getElementById('plToggle').addEventListener('click',function(){
+  this.classList.toggle('open');
+  document.getElementById('plBody').classList.toggle('open');
+});
+document.getElementById('addBtn').addEventListener('click',function(){
+  const v=document.getElementById('urlInput').value.trim();
+  if(!v)return;
+  addTrack(null,v);
+  document.getElementById('urlInput').value='';
+});
+document.getElementById('urlInput').addEventListener('keydown',function(e){
+  if(e.key==='Enter')document.getElementById('addBtn').click();
+});
+
+// ── Presets ──
+function addPresetDOM(name, url) {
+  var list = document.getElementById('presetsList');
+  for (var i=0; i<list.children.length; i++) {
+    var b = list.children[i].querySelector('.preset-btn');
+    if (b && b.dataset.url === url) return;
+  }
+  var wrap = document.createElement('div'); wrap.className = 'preset-wrap';
+  var btn = document.createElement('button'); btn.className = 'preset-btn'; btn.textContent = name; btn.dataset.url = url;
+  var del = document.createElement('span'); del.className = 'preset-del'; del.textContent = '✕';
+  wrap.appendChild(btn); wrap.appendChild(del);
+  list.appendChild(wrap);
 }
 
-function stripToken(url){ if(!url)return url; return url.split('?')[0]; }
-function tok(url){ if(!url)return url; if (url.indexOf('token=')>=0) return url; if (!TOKEN) return url; var sep = url.indexOf('?')>=0 ? '&' : '?'; return url + sep + 'token=' + encodeURIComponent(TOKEN); }
-function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+document.getElementById('presetsList').addEventListener('click', function(e) {
+  var btn = e.target.closest('.preset-btn');
+  var del = e.target.closest('.preset-del');
+  if (btn) { addTrack(btn.textContent, btn.dataset.url, '电台'); }
+  else if (del) { del.parentElement.remove(); savePresets(); }
+});
+
+function savePresets() {
+  var presets = [];
+  document.querySelectorAll('#presetsList .preset-wrap').forEach(function(w) {
+    var btn = w.querySelector('.preset-btn');
+    if (btn) presets.push({ name: btn.textContent, url: btn.dataset.url });
+  });
+  try { localStorage.setItem('hanako_audio_presets', JSON.stringify(presets)); } catch(e) {}
+}
+
+function loadPresets() {
+  var saved;
+  try { saved = JSON.parse(localStorage.getItem('hanako_audio_presets')); } catch(e) {}
+  if (!saved || !saved.length) return;
+  var list = document.getElementById('presetsList');
+  list.innerHTML = '';
+  saved.forEach(function(p) { addPresetDOM(p.name, p.url); });
+}
+
+document.getElementById('savePresetBtn').addEventListener('click',function(){
+  var url=document.getElementById('urlInput').value.trim();
+  var name=document.getElementById('presetNameInput').value.trim();
+  if(!url)return;
+  if(!name)name=url.split('/').pop().split('?')[0].replace(/\\.\\w+$/,'')||'电台';
+  addPresetDOM(name, url);
+  savePresets();
+  document.getElementById('urlInput').value='';
+  document.getElementById('presetNameInput').value='';
+});
+
+document.getElementById('popBtn').addEventListener('click',function(){
+  var url = 'http://localhost:14500' + API + '/widget?standalone=1&token=' + encodeURIComponent(TOKEN);
+  window.open(url, 'hanako-player', 'width=480,height=400');
+});
+
+audio.addEventListener('timeupdate',function(){
+  document.getElementById('currentTime').textContent=fmt(audio.currentTime);
+  if(audio.duration){
+    document.getElementById('totalTime').textContent=fmt(audio.duration);
+    document.getElementById('progressFill').style.width=(audio.currentTime/audio.duration*100)+'%';
+    if(trks[idx])trks[idx].dur=audio.duration;
+  }
+});
+audio.addEventListener('loadedmetadata',function(){
+  document.getElementById('totalTime').textContent=fmt(audio.duration);
+  if(trks[idx])trks[idx].dur=audio.duration;
+  renderPL();
+});
+audio.addEventListener('ended',next);
+audio.addEventListener('play',function(){playing=true;npCover.classList.add('spinning');document.getElementById('playIcon').style.display='none';document.getElementById('pauseIcon').style.display='block';});
+audio.addEventListener('pause',function(){playing=false;npCover.classList.remove('spinning');document.getElementById('playIcon').style.display='block';document.getElementById('pauseIcon').style.display='none';});
 
 function addTrack(name,url,mode) {
-  if(!url)return;
-  var cleanUrl=stripToken(url);
-  for(let i=0;i<trks.length;i++){if(stripToken(trks[i].url)===cleanUrl)return;}
-  trks.push({name:name||url.split('/').pop().split('?')[0]||'曲目',url:url,mode:mode||''});
+  for(let i=0;i<trks.length;i++){if(trks[i].url===url){load(i);if(audio.paused){audio.play();}return;}}
+  trks.push({name:name||url.split('/').pop().split('\\\\').pop().split('?')[0]||'音频',url:url,mode:mode||(url.startsWith('http')?'在线':'本地'),dur:0});
+  load(trks.length-1);
+  if(audio.paused){audio.play();}
   renderPL();
 }
 
-function loadMediaLib() {
-  fetch(API+'/widget?action=media_files').then(function(r){return r.json();}).then(function(data){
-    if(!data.ok||!data.files)return;
-    var newUrls={};
-    data.files.forEach(function(f){ newUrls[stripToken(f.url)]=f; });
-    for(var i=trks.length-1;i>=0;i--){ if(newUrls[stripToken(trks[i].url)])delete newUrls[stripToken(trks[i].url)]; else trks.splice(i,1); }
-    Object.keys(newUrls).forEach(function(key){ var f=newUrls[key]; addTrack(f.name,f.url); });
-  }).catch(function(){});
+function tok(url) {
+  if (!TOKEN) return url;
+  return url + (url.indexOf('?') > -1 ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN);
 }
 
-function refreshBusState() {
-  fetch(API+'/widget?action=bus_state').then(function(r){return r.json();}).then(function(st){
-    var dot=document.getElementById('busDot');
-    var txt=document.getElementById('busStatusText');
-    dot.className='bus-dot'+(st.status==='playing'?' playing':st.status==='error'?' error':'');
-    txt.textContent=st.status==='playing'?'播放中':st.status==='paused'?'暂停':'待机';
-    var items=(st.queue||[]).concat(st.current?[st.current]:[]);
-    var qEl=document.getElementById('busQueue');
-    if(!items.length){ qEl.innerHTML='<div style="padding:8px;font-size:11px;color:var(--text-dim)">队列为空</div>'; return; }
-    qEl.innerHTML=items.map(function(it,idx){
-      var typeTag=it.type==='say'?'TTS':it.type==='play'?'播放':it.type==='segue'?'过渡':'其他';
-      return '<div class="bus-queue-item" data-idx="'+idx+'"><span class="type-tag">'+typeTag+'</span>'
-        +'<span class="item-text">'+esc(it.name||it.text||it.url||'')+'</span>'
-        +'<button class="item-del" data-idx="'+idx+'" title="移除">✕</button></div>';
-    }).join('');
-  }).catch(function(){});
-}
-
-document.getElementById('playBtn').addEventListener('click', toggle);
-document.getElementById('nextBtn').addEventListener('click', next);
-document.getElementById('prevBtn').addEventListener('click', prev);
-document.getElementById('volumeBtn').addEventListener('click', function(){
-  if(prevVol){ audio.volume=0; } else { audio.volume=prevVol||0.8; prevVol=audio.volume; }
-});
-document.getElementById('volumeSlider').addEventListener('input', function(){
-  audio.volume=this.value/100; prevVol=audio.volume;
-});
-audio.addEventListener('timeupdate', function(){
-  if(!audio.duration)return;
-  document.getElementById('progressFill').style.width=(audio.currentTime/audio.duration*100)+'%';
-  document.getElementById('currentTime').textContent=fmt(audio.currentTime);
-  document.getElementById('totalTime').textContent=fmt(audio.duration);
-});
-document.getElementById('progressBar').addEventListener('click', function(e){
-  if(!audio.duration)return;
-  var rect=this.getBoundingClientRect();
-  audio.currentTime=(e.clientX-rect.left)/rect.width*audio.duration;
-});
-
-var collapsed=false;
-document.getElementById('plHeader').addEventListener('click', function(){
-  collapsed=!collapsed;
-  this.classList.toggle('collapsed',collapsed);
-  document.getElementById('plBody').classList.toggle('closed',collapsed);
-});
-
-document.getElementById('plBody').addEventListener('click', function(e){
-  var item=e.target.closest('.playlist-item'); if(!item)return;
-  var i=parseInt(item.getAttribute('data-i'));
-  if(isNaN(i))return;
-  load(i); audio.play(); playing=true; toggle();
-  var favBtn=e.target.closest('.fav'); if(favBtn){ toggleFav(favBtn.getAttribute('data-fav')); return; }
-  var rmBtn=e.target.closest('.rm'); if(rmBtn){
-    var idx2=parseInt(rmBtn.getAttribute('data-rm'));
-    fetch(API+'/widget?action=media_delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:trks[idx2].name})}).then(function(){ loadMediaLib(); }).catch(function(){});
+// ── 主题切换 ──
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  try { localStorage.setItem('hanako_audio_theme', theme); } catch(e) {}
+  var icon = document.getElementById('themeIcon');
+  if (theme === 'light') {
+    icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+  } else {
+    icon.innerHTML = '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
   }
+}
+document.getElementById('themeBtn').addEventListener('click',function(){
+  var cur = document.documentElement.getAttribute('data-theme') || 'dark';
+  applyTheme(cur === 'dark' ? 'light' : 'dark');
 });
+(function initTheme(){
+  var saved = 'dark';
+  try { saved = localStorage.getItem('hanako_audio_theme') || 'dark'; } catch(e) {}
+  applyTheme(saved);
+})();
 
-document.getElementById('addBtn').addEventListener('click', function(){
-  var url=document.getElementById('urlInput').value.trim();
-  if(!url)return;
-  addTrack(null,url);
-  document.getElementById('urlInput').value='';
-});
+// ── 音频元数据读取 ──
+function tryReadMetadata(audioEl, track) {
+  // 浏览器原生不提供 ID3 API，但可以用 MediaSession 或解析文件头
+  // 这里用文件名做智能提取 + URL 参数补全
+  if (track._metaTried) return;
+  track._metaTried = true;
+  // 如果 name 看起来是文件名（有扩展名或 URL 末段），尝试美化
+  var rawName = track.name;
+  if (/\.(mp3|wav|ogg|flac|m4a)$/i.test(rawName)) {
+    var baseName = rawName.replace(/\.[^.]+$/, '');
+    // 常见模式：歌手 - 歌名 或 歌名 - 歌手
+    if (baseName.indexOf(' - ') !== -1) {
+      var parts = baseName.split(' - ');
+      track.name = parts[0] + ' — ' + parts[1];
+    } else {
+      track.name = baseName;
+    }
+    // 更新 UI
+    if (trks[idx] === track) {
+      document.getElementById('trackName').textContent = track.name;
+    }
+    renderPL();
+  }
+  // 尝试通过 fetch 读取 ID3v2 头（仅同源或 CORS 允许时）
+  if (track.url && !track.url.startsWith('data:')) {
+    fetch(track.url, { method:'GET', headers:{'Range':'bytes=0-255'} })
+      .then(function(r){ return r.arrayBuffer(); })
+      .then(function(buf){
+        var dv = new DataView(buf);
+        // ID3v2 签名: 'ID3'
+        if (dv.getUint8(0)===0x49 && dv.getUint8(1)===0x44 && dv.getUint8(2)===0x33) {
+          var ver = dv.getUint8(3);
+          // ID3v2.3/2.4 文本帧
+          if (ver >= 3) {
+            var text = new TextDecoder('utf-8').decode(new Uint8Array(buf).slice(10, 256));
+            // 找 TIT2 (标题) 帧
+            var tit2Pos = text.indexOf('TIT2');
+            if (tit2Pos !== -1) {
+              var titleStart = tit2Pos + 4 + 4 + 2; // frame ID + size + flags + encoding
+              var titleBytes = new Uint8Array(buf).slice(10 + tit2Pos + 4 + 4 + 2 + 1, 256);
+              var titleStr = '';
+              for (var j=0; j<titleBytes.length && titleBytes[j]!==0; j++) { titleStr += String.fromCharCode(titleBytes[j]); }
+              if (titleStr.trim()) {
+                track.name = titleStr.trim();
+                if (trks[idx] === track) {
+                  document.getElementById('trackName').textContent = track.name;
+                }
+                renderPL();
+              }
+            }
+          }
+        }
+      })
+      .catch(function(){ /* 静默失败，CORS 或非音频文件 */ });
+  }
+}
 
-document.getElementById('plSearch').addEventListener('input', function(){ searchQuery=this.value; renderPL(); });
-document.getElementById('favFilterBtn').addEventListener('click', function(){ favOnly=!favOnly; this.textContent=favOnly?'★':'☆'; renderPL(); });
+// 初始化
+loadPresets();
 
-document.getElementById('busSayBtn').addEventListener('click', function(){
-  var text=document.getElementById('sayInput').value.trim();
-  if(!text)return;
-  fetch(API+'/widget?action=bus_control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'say',text:text,spk:document.getElementById('spkSelect').value})}).then(function(){ document.getElementById('sayInput').value=''; refreshBusState(); }).catch(function(){});
-});
-document.getElementById('busNextBtn').addEventListener('click', function(){
-  fetch(API+'/widget?action=bus_control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'next'})}).then(function(){ refreshBusState(); }).catch(function(){});
-});
-document.getElementById('busClearBtn').addEventListener('click', function(){
-  fetch(API+'/widget?action=bus_control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'clear'})}).then(function(){ refreshBusState(); }).catch(function(){});
-});
+// 加载队列
+fetch(API+'/widget/api/queue').then(function(r){return r.json();}).then(function(data){
+  if(data&&data.length){data.forEach(function(t){addTrack(t.name,tok(t.url),t.mode);});}
+}).catch(function(){});
 
-document.getElementById('busQueue').addEventListener('click', function(e){
-  var del=e.target.closest('.item-del'); if(!del)return;
-  var idx3=parseInt(del.getAttribute('data-idx'));
-  fetch(API+'/widget?action=bus_control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'remove',index:idx3})}).then(function(){ refreshBusState(); }).catch(function(){});
-});
-document.getElementById('busQueue').addEventListener('dblclick', function(e){
-  var item=e.target.closest('.bus-queue-item'); if(!item)return;
-  var idx4=parseInt(item.getAttribute('data-idx'));
-  if(isNaN(idx4))return;
-  fetch(API+'/widget?action=bus_state').then(function(r){return r.json();}).then(function(st){
-    var all=(st.queue||[]).concat(st.current?[st.current]:[]);
-    var target=all[idx4]; if(!target)return;
-    if(target.type==='play'&&target.url){ addTrack(target.name||target.url,tok(target.url),target.mode); var n=trks.length-1; load(n); audio.play(); playing=true; toggle(); }
-    else if(target.type==='say'&&target.text){ var spk=document.getElementById('spkSelect').value; fetch(API+'/widget?action=bus_control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'say',text:target.text,spk:spk})}); }
+// 定时检查新队列
+setInterval(function(){
+  fetch(API+'/widget/api/queue').then(function(r){return r.json();}).then(function(data){
+    if(data&&data.length){data.forEach(function(t){
+      var found=false;
+      for(var i=0;i<trks.length;i++){if(trks[i].url===tok(t.url)){found=true;break;}}
+      if(!found) addTrack(t.name,tok(t.url),t.mode);
+    });}
   }).catch(function(){});
-});
+}, 5000);
 
-setInterval(loadMediaLib, 10000);
-setInterval(refreshBusState, 2000);
-loadMediaLib();
-refreshBusState();
+function notifySize() {
+  try { parent.postMessage({type:'resize-request',payload:{height:document.body.scrollHeight}},'*'); } catch(e) {}
+}
+
+// Theme CSS
+try {
+  const pDoc = window.parent.document;
+  const src = pDoc.getElementById('theme-style') || pDoc.querySelector('style[id*="theme"]');
+  if (src) {
+    const s = document.createElement('style');
+    s.id = 'widget-theme';
+    s.textContent = src.textContent || '';
+    document.head.appendChild(s);
+  }
+} catch(e) {}
 
 parent.postMessage({type:'ready'},'*');
-if(window.ResizeObserver){ new ResizeObserver(function(){ try{parent.postMessage({type:'resize-request',payload:{height:document.body.scrollHeight}},'*')}catch(e){} }).observe(document.body); }
-setTimeout(function(){ try{parent.postMessage({type:'resize-request',payload:{height:document.body.scrollHeight}},'*')}catch(e){} },300);
+if (window.ResizeObserver) { new ResizeObserver(notifySize).observe(document.body); }
+setTimeout(notifySize, 300);
 })();
 </script>
 </body>
