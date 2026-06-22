@@ -1120,7 +1120,15 @@ const API = ${JSON.stringify(apiBase)};
 const TOKEN = ${JSON.stringify(token)};
 if (TOKEN) {
   const _f = window.fetch.bind(window);
-  window.fetch = function(u, o) { o=o||{}; o.headers=o.headers||{}; o.headers["Authorization"]="Bearer "+TOKEN; return _f(u,o); };
+  window.fetch = function(u, o) {
+    o=o||{};
+    // 只给本地 API 请求加 Authorization header（外部 URL 不加，避免 CORS preflight）
+    if (typeof u === 'string' && (u.startsWith('/api/') || u.startsWith('/widget/') || u.indexOf('127.0.0.1:14500') !== -1)) {
+      o.headers=o.headers||{};
+      o.headers["Authorization"]="Bearer "+TOKEN;
+    }
+    return _f(u,o);
+  };
 }
 
 const audio = document.getElementById('audio');
@@ -1150,7 +1158,7 @@ function load(i) {
 
 function toggle() {
   if (!trks.length) return;
-  if (audio.paused) { audio.play(); playing=true; npCover.classList.add('spinning'); }
+  if (audio.paused) { audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)}); playing=true; npCover.classList.add('spinning'); }
   else { audio.pause(); playing=false; npCover.classList.remove('spinning'); }
   document.getElementById('playIcon').style.display=playing?'none':'block';
   document.getElementById('pauseIcon').style.display=playing?'block':'none';
@@ -1159,13 +1167,13 @@ function toggle() {
 function next() {
   if (!trks.length) return;
   const n = shuffled ? Math.floor(Math.random()*trks.length) : (idx+1)%trks.length;
-  load(n); if (audio.paused) { audio.play(); playing=true; toggle(); }
+  load(n); if (audio.paused) { audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)}); playing=true; toggle(); }
 }
 function prev() {
   if (!trks.length) return;
   if (audio.currentTime>3) { audio.currentTime=0; return; }
   const n = shuffled ? Math.floor(Math.random()*trks.length) : (idx-1+trks.length)%trks.length;
-  load(n); if (audio.paused) { audio.play(); playing=true; toggle(); }
+  load(n); if (audio.paused) { audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)}); playing=true; toggle(); }
 }
 
 function getFavorites() {
@@ -1215,7 +1223,7 @@ function renderPL() {
       if(e.target.closest('.pl-rm')||e.target.closest('.pl-star')||e.target.closest('.pl-handle'))return;
       const i=parseInt(this.dataset.i);
       if(i===idx){toggle();return;}
-      load(i);if(audio.paused){audio.play();playing=true;toggle();}
+      load(i);if(audio.paused){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});playing=true;toggle();}
     });
   });
   document.getElementById('plBody').querySelectorAll('.pl-rm').forEach(function(el){
@@ -1376,10 +1384,10 @@ audio.addEventListener('play',function(){playing=true;npCover.classList.add('spi
 audio.addEventListener('pause',function(){playing=false;npCover.classList.remove('spinning');document.getElementById('playIcon').style.display='block';document.getElementById('pauseIcon').style.display='none';});
 
 function addTrack(name,url,mode) {
-  for(let i=0;i<trks.length;i++){if(trks[i].url===url){load(i);if(audio.paused){audio.play();}return;}}
+  for(let i=0;i<trks.length;i++){if(trks[i].url===url){load(i);if(audio.paused){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});}return;}}
   trks.push({name:name||url.split('/').pop().split('\\\\').pop().split('?')[0]||'音频',url:url,mode:mode||(url.startsWith('http')?'在线':'本地'),dur:0});
   load(trks.length-1);
-  if(audio.paused){audio.play();}
+  if(audio.paused){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});}
   renderPL();
 }
 
@@ -1667,14 +1675,17 @@ function applyScene(key){
   if(!scene) return;
   // UI 高亮
   document.querySelectorAll('.scene-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.scene===key); });
-  // 加载到 Bus
-  fetch(API+'/widget/api/bus/control',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({action:'load', playlist:scene.playlist})
+  // 获取当前 Bus 队列，追加场景条目（而非覆盖）
+  fetch(API+'/widget/api/bus/state').then(function(r){return r.json();}).then(function(state){
+    var existing = (state.queue || []).filter(function(item){ return item.type !== 'say' || item._origin; });
+    var merged = existing.concat(scene.playlist);
+    return fetch(API+'/widget/api/bus/control',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'load', playlist:merged})
+    });
   }).then(function(r){return r.json();}).then(function(res){
     refreshBus();
-    // 自动开始播放第一个
     if(res.ok) setTimeout(function(){busControl('next');}, 300);
   });
 }
