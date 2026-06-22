@@ -9,7 +9,6 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { getBus } from "../tools/bus.js";
 
 const MIME = { mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac", m4a: "audio/mp4" };
 
@@ -162,84 +161,6 @@ setTimeout(n,100);
     }
   });
 
-  // ── Speakers API ──
-  app.get("/widget/api/speakers", (c) => {
-    try {
-      const cosyBase = process.env.COSYVOICE_BASE || "";
-      const home = process.env.USERPROFILE || process.env.HOME || "";
-      const candidates = [
-        cosyBase,
-        "W:/Games/Hanako/Work/cosyvoice-tts",
-        path.join(home, "W", "Games", "Hanako", "Work", "cosyvoice-tts"),
-        path.join(home, "cosyvoice-tts"),
-        path.join(home, "CosyVoice"),
-        path.join(home, "CosyVoice2"),
-      ].filter(Boolean);
-      for (const base of candidates) {
-        const refsPath = path.join(base, "speaker_refs.json");
-        if (fs.existsSync(refsPath)) {
-          try {
-            const refs = JSON.parse(fs.readFileSync(refsPath, "utf-8"));
-            const cnMap = { ophelia:"奥菲莉娅", aimis:"爱弥斯", alice:"艾莉丝", luoqixi:"洛琪希", glados:"GLaDOS", rebecca:"瑞贝卡", rebecca_normal:"瑞贝卡(混合)", my_voice:"我的声音" };
-            const speakers = Object.keys(refs).map(function(id){ return { id:id, name:cnMap[id]||id }; });
-            return c.json({ ok:true, speakers:speakers });
-          } catch(e) { console.warn('[speakers] parse failed for', refsPath, e.message); }
-        }
-      }
-      return c.json({ ok:true, speakers:[{id:"my_voice",name:"我的声音"}] });
-    } catch(e) {
-      console.warn('[speakers] endpoint error:', e.message);
-      return c.json({ ok:false, speakers:[{id:"my_voice",name:"我的声音"}] });
-    }
-  });
-
-  // ── Bus API（节目编排引擎）──
-  app.get("/widget/api/bus/state", (c) => {
-    try {
-      const bus = getBus(ctx);
-      // 每次请求时强制从文件刷新队列（绕过模块缓存导致的旧实例问题）
-      try {
-        if (fs.existsSync(bus.queuePath)) {
-          bus.queue = JSON.parse(fs.readFileSync(bus.queuePath, "utf-8"));
-        }
-      } catch(e) { /* 忽略，保留旧值 */ }
-      return c.json(bus.getState());
-    } catch (e) {
-      return c.json({ ok: false, error: e.message }, 500);
-    }
-  });
-
-  app.post("/widget/api/bus/control", async (c) => {
-    try {
-      const bus = getBus(ctx);
-      const body = await c.req.json();
-      const action = body.action || "state";
-      switch (action) {
-        case "load":
-          return c.json(bus.load(body.playlist || []));
-        case "say":
-          if (!body.text) return c.json({ ok: false, code: "missing_text" });
-          return c.json(await bus.say(body.text, { spk: body.spk, instruct: body.instruct, translate: body.translate }));
-        case "play":
-          if (!body.url) return c.json({ ok: false, code: "missing_url" });
-          return c.json(bus.play(body.url, { name: body.name, mode: body.mode }));
-        case "next":
-          return c.json(await bus.next());
-        case "pause":
-          return c.json(bus.pause());
-        case "resume":
-          return c.json(bus.resume());
-        case "clear":
-          return c.json(bus.clear());
-        case "state":
-        default:
-          return c.json(bus.getState());
-      }
-    } catch (e) {
-      return c.json({ ok: false, error: e.message }, 500);
-    }
-  });
-
   // ── 媒体文件 ──
   app.get("/widget/media/:filename", async (c) => {
     const filename = c.req.param("filename");
@@ -327,7 +248,7 @@ function getWidgetHTML(pluginId, hanaCss, token) {
 <title>🎵 播放器</title>
 ${hanaCss ? `<link rel="stylesheet" href="${esc(hanaCss)}">` : ""}
 <style>
-:root, [data-theme="dark"] {
+:root {
   --bg: #161618;
   --surface: rgba(255,255,255,0.03);
   --surface-hover: rgba(255,255,255,0.06);
@@ -341,20 +262,6 @@ ${hanaCss ? `<link rel="stylesheet" href="${esc(hanaCss)}">` : ""}
   --accent-glow: rgba(212,154,106,0.4);
   --accent-soft: rgba(212,154,106,0.12);
   --radius: 10px;
-}
-[data-theme="light"] {
-  --bg: #FFF8E7;
-  --surface: rgba(0,0,0,0.03);
-  --surface-hover: rgba(0,0,0,0.05);
-  --surface-active: rgba(0,0,0,0.08);
-  --border: rgba(0,0,0,0.08);
-  --border-strong: rgba(0,0,0,0.14);
-  --text: #3d3320;
-  --text-dim: rgba(0,0,0,0.4);
-  --text-faint: rgba(0,0,0,0.25);
-  --accent: #c48454;
-  --accent-glow: rgba(196,132,84,0.3);
-  --accent-soft: rgba(196,132,84,0.1);
 }
 
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -521,17 +428,6 @@ body {
   background:var(--surface); border-radius:8px;
   padding:1px 7px; font-variant-numeric:tabular-nums;
 }
-.pl-toggle-right { display:flex; align-items:center; gap:6px; }
-.pl-filter-btn {
-  background:var(--surface); border:1px solid var(--border); border-radius:6px;
-  color:var(--text-faint); font-size:11px; padding:2px 8px;
-  cursor:pointer; transition:all 0.15s; font-family:inherit;
-  display:flex; align-items:center; gap:3px;
-}
-.pl-filter-btn:hover { border-color:var(--accent); color:var(--accent); }
-.pl-filter-btn.active {
-  background:var(--accent-soft); border-color:var(--accent); color:var(--accent);
-}
 .pl-chevron { width:14px; height:14px; stroke:var(--text-faint); fill:none; stroke-width:2; transition:transform 0.25s; }
 .pl-toggle.open .pl-chevron { transform:rotate(180deg); }
 
@@ -565,28 +461,13 @@ body {
   font-size:10px; color:var(--text-faint);
   font-variant-numeric:tabular-nums;
 }
-.pl-item .pl-star {
-  background:none; border:none; cursor:pointer;
-  font-size:13px; padding:2px; flex-shrink:0;
-  color:var(--text-faint); transition: color 0.15s, transform 0.15s;
-  line-height:1;
-}
-.pl-item .pl-star:hover { transform:scale(1.2); }
-.pl-item .pl-star.starred { color:#f0c060; }
 .pl-item .pl-rm {
   background:none; border:none; color:var(--text-faint);
-  cursor:pointer; font-size:11px; padding:2px; flex-shrink:0;
-  opacity:0.35; transition:opacity 0.12s, color 0.12s;
+  cursor:pointer; font-size:11px; padding:2px;
+  opacity:0; transition:opacity 0.12s;
 }
-.pl-item:hover .pl-rm { opacity:0.7; }
+.pl-item:hover .pl-rm { opacity:0.6; }
 .pl-item .pl-rm:hover { opacity:1; color:var(--accent); }
-.pl-item.dragging { opacity:0.4; }
-.pl-item.drag-over { border-top:2px solid var(--accent); }
-.pl-handle {
-  cursor:grab; color:var(--text-faint); font-size:12px;
-  flex-shrink:0; opacity:0; transition:opacity 0.12s;
-}
-.pl-item:hover .pl-handle { opacity:0.5; }
 
 .pl-empty { padding:16px 14px; text-align:center; color:var(--text-faint); font-size:12px; }
 
@@ -661,191 +542,6 @@ body {
   cursor:pointer; opacity:0; transition:opacity 0.15s;
 }
 .preset-wrap:hover .preset-del { opacity:1; }
-
-/* ── Bus Panel ── */
-.bus-section {
-  border-top:1px solid var(--border);
-}
-.bus-toggle {
-  display:flex; align-items:center; justify-content:space-between;
-  padding:8px 14px; cursor:pointer;
-  transition: background 0.15s;
-}
-.bus-toggle:hover { background:var(--surface); }
-.bus-toggle-left { display:flex; align-items:center; gap:6px; }
-.bus-status {
-  font-size:9px; padding:1px 6px; border-radius:8px;
-  background:var(--surface); color:var(--text-faint);
-  text-transform:uppercase; letter-spacing:0.5px;
-}
-.bus-status.playing { background:var(--accent-soft); color:var(--accent); }
-.bus-status.error { background:rgba(239,68,68,0.12); color:#ef4444; }
-.bus-body {
-  max-height:0; overflow:hidden;
-  transition:max-height 0.3s cubic-bezier(0.4,0,0.2,1);
-}
-.bus-body.open { max-height:500px; overflow-y:auto; }
-.bus-body::-webkit-scrollbar { width:3px; }
-.bus-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
-.bus-controls {
-  display:flex; gap:6px; padding:8px 14px 4px;
-}
-.bus-btn {
-  background:var(--surface); border:1px solid var(--border); border-radius:6px;
-  color:var(--text-dim); font-size:13px;
-  width:30px; height:28px; cursor:pointer;
-  display:flex; align-items:center; justify-content:center;
-  transition: all 0.15s; font-family:inherit;
-}
-.bus-btn:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
-.bus-btn:active { transform:scale(0.94); }
-.bus-say-row {
-  display:flex; gap:6px; padding:4px 14px 8px;
-}
-.bus-say-input {
-  flex:1; min-width:0;
-  background:var(--surface); border:1px solid var(--border); border-radius:7px;
-  color:var(--text); font-size:11px; padding:5px 10px;
-  outline:none; font-family:inherit;
-  transition: border-color 0.15s;
-}
-.bus-say-input::placeholder { color:var(--text-faint); }
-.bus-say-input:focus { border-color:var(--accent); }
-.bus-spk-input {
-  width:80px; flex-shrink:0;
-  background:var(--surface); border:1px solid var(--border); border-radius:7px;
-  color:var(--text); font-size:11px; padding:5px 6px;
-  outline:none; font-family:inherit;
-  transition: border-color 0.15s; cursor:pointer;
-}
-.bus-spk-input:focus { border-color:var(--accent); }
-.bus-play-row { display:flex; gap:6px; padding:0 14px 8px; }
-.bus-say-btn {
-  background:linear-gradient(135deg, var(--accent), #c48454);
-  border:none; border-radius:7px; color:#fff;
-  font-size:11px; padding:5px 14px; cursor:pointer;
-  font-family:inherit; font-weight:500; white-space:nowrap;
-  box-shadow: 0 2px 8px var(--accent-glow);
-  transition: all 0.15s;
-}
-.bus-say-btn:hover { box-shadow:0 3px 12px var(--accent-glow); }
-.bus-queue { padding:0 14px 8px; }
-.bus-queue-item {
-  display:flex; align-items:center; gap:6px;
-  padding:4px 0; font-size:11px;
-  border-bottom:1px solid var(--border);
-}
-.bus-queue-item:last-child { border-bottom:none; }
-.bus-q-type {
-  font-size:9px; padding:1px 5px; border-radius:4px;
-  text-transform:uppercase; letter-spacing:0.5px; flex-shrink:0;
-}
-.bus-q-type.say { background:rgba(99,102,241,0.15); color:#818cf8; }
-.bus-q-type.play { background:var(--accent-soft); color:var(--accent); }
-.bus-q-type.segue { background:rgba(34,197,94,0.15); color:#4ade80; }
-.bus-q-type.reason { background:rgba(234,179,8,0.15); color:#facc15; }
-.bus-q-name { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-dim); }
-.bus-q-current { color:var(--accent); font-weight:500; }
-.bus-empty { padding:12px 0; text-align:center; color:var(--text-faint); font-size:11px; }
-
-/* ── Bus Panel（节目编排）── */
-.bus-section {
-  border-top:1px solid var(--border);
-}
-.bus-toggle {
-  display:flex; align-items:center; justify-content:space-between;
-  padding:8px 14px; cursor:pointer;
-  transition: background 0.15s;
-}
-.bus-toggle:hover { background:var(--surface); }
-.bus-toggle-left { display:flex; align-items:center; gap:6px; }
-.bus-toggle-left svg { width:13px; height:13px; stroke:var(--text-dim); fill:none; stroke-width:2; }
-.bus-toggle-text { font-size:12px; color:var(--text-dim); }
-.bus-badge {
-  font-size:9px; color:var(--accent);
-  background:var(--accent-soft); border-radius:4px;
-  padding:1px 5px; font-variant-numeric:tabular-nums;
-}
-.bus-chevron { width:14px; height:14px; stroke:var(--text-faint); fill:none; stroke-width:2; transition:transform 0.25s; }
-.bus-toggle.open .bus-chevron { transform:rotate(180deg); }
-
-.bus-body {
-  max-height:0; overflow:hidden;
-  transition:max-height 0.3s cubic-bezier(0.4,0,0.2,1);
-}
-.bus-body.open { max-height:500px; overflow-y:auto; }
-.bus-body::-webkit-scrollbar { width:3px; }
-.bus-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
-
-.bus-controls {
-  display:flex; gap:4px; padding:6px 14px 4px;
-}
-.bus-btn {
-  background:var(--surface); border:1px solid var(--border); border-radius:6px;
-  color:var(--text-dim); font-size:11px; padding:4px 10px;
-  cursor:pointer; transition:all 0.15s; font-family:inherit;
-  display:flex; align-items:center; gap:3px;
-}
-.bus-btn:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
-.bus-btn.primary {
-  background:linear-gradient(135deg, var(--accent), #c48454);
-  border:none; color:#fff;
-  box-shadow: 0 2px 8px var(--accent-glow);
-}
-.bus-btn.primary:hover { box-shadow:0 3px 12px var(--accent-glow); }
-
-.bus-say-row {
-  display:flex; gap:4px; padding:4px 14px 6px;
-}
-.bus-say-input {
-  flex:1; min-width:0;
-  background:var(--surface); border:1px solid var(--border); border-radius:7px;
-  color:var(--text); font-size:11px; padding:5px 10px;
-  outline:none; font-family:inherit;
-  transition: border-color 0.15s;
-}
-.bus-say-input::placeholder { color:var(--text-faint); }
-.bus-say-input:focus { border-color:var(--accent); }
-.bus-say-btn {
-  background:var(--accent-soft); border:1px solid var(--accent); border-radius:7px;
-  color:var(--accent); font-size:11px; padding:5px 12px;
-  cursor:pointer; font-family:inherit; white-space:nowrap;
-  transition: all 0.15s;
-}
-.bus-say-btn:hover { background:var(--accent); color:#fff; }
-
-.bus-queue { padding:0 14px 8px; }
-.bus-queue-item {
-  display:flex; align-items:center; gap:6px;
-  padding:4px 0; font-size:11px;
-  border-bottom:1px solid var(--border);
-}
-.bus-queue-item:last-child { border-bottom:none; }
-.bus-queue-type {
-  font-size:9px; padding:1px 5px; border-radius:3px;
-  flex-shrink:0; font-weight:500; letter-spacing:0.3px;
-}
-.bus-queue-type.say { background:rgba(100,180,255,0.12); color:#64b4ff; }
-.bus-queue-type.play { background:var(--accent-soft); color:var(--accent); }
-.bus-queue-type.segue { background:rgba(180,180,180,0.1); color:var(--text-faint); }
-.bus-queue-type.reason { background:rgba(200,150,255,0.1); color:#c896ff; }
-.bus-queue-text {
-  flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  color:var(--text-dim);
-}
-.bus-queue-playing { color:var(--accent); font-weight:500; }
-.bus-empty { padding:10px 14px; text-align:center; color:var(--text-faint); font-size:11px; }
-.bus-status {
-  padding:4px 14px 8px; font-size:10px; color:var(--text-faint);
-  display:flex; align-items:center; gap:4px;
-}
-.bus-status-dot {
-  width:6px; height:6px; border-radius:50%;
-  background:var(--text-faint);
-}
-.bus-status-dot.playing { background:#4ade80; box-shadow:0 0 4px rgba(74,222,128,0.5); }
-.bus-status-dot.paused { background:#fbbf24; }
-.bus-status-dot.idle { background:var(--text-faint); }
 </style>
 </head>
 <body>
@@ -857,9 +553,6 @@ body {
     <span class="header-title">播放器</span>
   </div>
   <div class="header-actions">
-    <button class="icon-btn" id="themeBtn" title="切换主题">
-      <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-    </button>
     <button class="icon-btn" id="popBtn" title="弹出窗口">
       <svg viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
     </button>
@@ -914,13 +607,7 @@ body {
       <span class="pl-toggle-text">播放列表</span>
       <span class="pl-count" id="plCount">0</span>
     </div>
-    <div class="pl-toggle-right">
-      <button class="pl-filter-btn" id="favFilterBtn" title="只显示收藏">
-        <span id="favFilterIcon">☆</span>
-        <span style="font-size:10px;">收藏</span>
-      </button>
-      <svg class="pl-chevron" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
-    </div>
+    <svg class="pl-chevron" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
   </div>
   <div class="pl-body" id="plBody"></div>
 
@@ -943,36 +630,6 @@ body {
       <div class="preset-wrap"><button class="preset-btn" data-url="https://music.163.com/song/media/outer/url?id=569213220.mp3">起风了</button><span class="preset-del" data-name="起风了">✕</span></div>
       <div class="preset-wrap"><button class="preset-btn" data-url="https://music.163.com/song/media/outer/url?id=27599862.mp3">夜に駆ける</button><span class="preset-del" data-name="夜に駆ける">✕</span></div>
       <div class="preset-wrap"><button class="preset-btn" data-url="https://music.163.com/song/media/outer/url?id=1387099973.mp3">Lemon</button><span class="preset-del" data-name="Lemon">✕</span></div>
-    </div>
-  </div>
-
-  <!-- Bus Panel -->
-  <div class="bus-section">
-    <div class="bus-toggle" id="busToggle">
-      <div class="bus-toggle-left">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m11-7h-6m-6 0H1m16.5-5.5L14 7m-4 6l-3.5 3.5M18.5 18.5L15 15M9 9L5.5 5.5"/></svg>
-        <span style="font-size:12px;color:var(--text-dim);">节目编排</span>
-        <span class="bus-status" id="busStatusBadge">空闲</span>
-      </div>
-      <svg class="pl-chevron" id="busChevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-    </div>
-    <div class="bus-body" id="busBody">
-      <div class="bus-controls">
-        <button class="bus-btn" id="busPlayBtn" title="播放下一首">▶</button>
-        <button class="bus-btn" id="busPauseBtn" title="暂停">⏸</button>
-        <button class="bus-btn" id="busNextBtn" title="跳过">⏭</button>
-        <button class="bus-btn" id="busClearBtn" title="清空">✕</button>
-      </div>
-      <div class="bus-say-row">
-        <input class="bus-say-input" id="busSayInput" type="text" placeholder="输入串场文本，回车合成语音…" spellcheck="false">
-        <select class="bus-spk-input" id="busSpkSelect" title="说话人"></select>
-        <button class="bus-say-btn" id="busSayBtn">Say</button>
-      </div>
-      <div class="bus-play-row">
-        <input class="bus-say-input" id="busPlayInput" type="text" placeholder="输入音频 URL，回车添加到编排队列…" spellcheck="false">
-        <button class="bus-say-btn" id="busPlayAddBtn" style="background:var(--surface);border:1px solid var(--border);color:var(--text-dim);box-shadow:none;">Add</button>
-      </div>
-      <div class="bus-queue" id="busQueue"></div>
     </div>
   </div>
 </div>
@@ -1031,7 +688,6 @@ function load(i) {
   document.getElementById('trackMode').textContent=t.mode||'';
   audio.src=t.url; audio.load();
   npCover.classList.add('spinning');
-  tryReadMetadata(audio, t);
   renderPL();
 }
 
@@ -1055,51 +711,20 @@ function prev() {
   load(n); if (audio.paused) { audio.play(); playing=true; toggle(); }
 }
 
-function getFavorites() {
-  try { return JSON.parse(localStorage.getItem('hanako_audio_favs'))||[]; } catch(e) { return []; }
-}
-function isFav(url) {
-  return getFavorites().indexOf(url) !== -1;
-}
-function toggleFav(url) {
-  var favs = getFavorites();
-  var pos = favs.indexOf(url);
-  if (pos === -1) favs.push(url); else favs.splice(pos,1);
-  try { localStorage.setItem('hanako_audio_favs', JSON.stringify(favs)); } catch(e) {}
-}
-
 function renderPL() {
   document.getElementById('plCount').textContent=trks.length;
   if (!trks.length) { document.getElementById('plBody').innerHTML='<div class="pl-empty">暂无曲目，添加 URL 或点击电台开始</div>'; return; }
-  // 收藏的排前面
-  var favOnly = document.getElementById('favFilterBtn').classList.contains('active');
-  var filtered = trks.map(function(t,i){return {t:t,i:i};}).filter(function(item){
-    return !favOnly || isFav(item.t.url);
-  });
-  var sorted = filtered.sort(function(a,b){
-    var fa=isFav(a.t.url)?1:0, fb=isFav(b.t.url)?1:0;
-    if(fa!==fb) return fb-fa;
-    return a.i-b.i;
-  });
-  if (!sorted.length && favOnly) {
-    document.getElementById('plBody').innerHTML='<div class="pl-empty">没有收藏的曲目</div>';
-    return;
-  }
-  document.getElementById('plBody').innerHTML=sorted.map(function(item,n){
-    var t=item.t, i=item.i;
-    var a=i===idx;
-    var star=isFav(t.url);
-    return '<div class="pl-item'+(a?' active':'')+'" data-i="'+i+'" draggable="true">'
-      +'<span class="pl-handle" title="拖动排序">⋮⋮</span>'
-      +'<span class="pl-status">'+(a?'♫':(n+1))+'</span>'
+  document.getElementById('plBody').innerHTML=trks.map(function(t,i) {
+    const a=i===idx;
+    return '<div class="pl-item'+(a?' active':'')+'" data-i="'+i+'">'
+      +'<span class="pl-status">'+(a?'♫':(i+1))+'</span>'
       +'<span class="pl-name">'+esc(t.name)+'</span>'
-      +'<button class="pl-star'+(star?' starred':'')+'" data-star="'+i+'" title="收藏">'+(star?'★':'☆')+'</button>'
       +'<span class="pl-dur">'+fmt(t.dur||0)+'</span>'
-      +'<button class="pl-rm" data-rm="'+i+'" title="移除">✕</button></div>';
+      +'<button class="pl-rm" data-rm="'+i+'">✕</button></div>';
   }).join('');
   document.getElementById('plBody').querySelectorAll('.pl-item').forEach(function(el){
     el.addEventListener('click',function(e){
-      if(e.target.closest('.pl-rm')||e.target.closest('.pl-star')||e.target.closest('.pl-handle'))return;
+      if(e.target.closest('.pl-rm'))return;
       const i=parseInt(this.dataset.i);
       if(i===idx){toggle();return;}
       load(i);if(audio.paused){audio.play();playing=true;toggle();}
@@ -1113,46 +738,6 @@ function renderPL() {
       if(i<=idx)idx=Math.max(0,idx-1);
       if(idx>=trks.length)idx=trks.length-1;
       if(trks.length)load(idx);else load(-1);
-      renderPL();
-    });
-  });
-  document.getElementById('plBody').querySelectorAll('.pl-star').forEach(function(el){
-    el.addEventListener('click',function(e){
-      e.stopPropagation();
-      const i=parseInt(this.dataset.star);
-      toggleFav(trks[i].url);
-      renderPL();
-    });
-  });
-  // ── 拖拽排序 ──
-  var dragIdx=null;
-  document.getElementById('plBody').querySelectorAll('.pl-item').forEach(function(el){
-    el.addEventListener('dragstart',function(){
-      dragIdx=parseInt(this.dataset.i);
-      this.classList.add('dragging');
-    });
-    el.addEventListener('dragend',function(){
-      this.classList.remove('dragging');
-      document.getElementById('plBody').querySelectorAll('.pl-item').forEach(function(e){e.classList.remove('drag-over');});
-    });
-    el.addEventListener('dragover',function(e){
-      e.preventDefault();
-      this.classList.add('drag-over');
-    });
-    el.addEventListener('dragleave',function(){
-      this.classList.remove('drag-over');
-    });
-    el.addEventListener('drop',function(e){
-      e.preventDefault();
-      this.classList.remove('drag-over');
-      var dropIdx=parseInt(this.dataset.i);
-      if(dragIdx===null||dragIdx===dropIdx)return;
-      var moved=trks.splice(dragIdx,1)[0];
-      trks.splice(dropIdx,0,moved);
-      // 修正 idx
-      if(dragIdx===idx)idx=dropIdx;
-      else if(dragIdx<idx&&dropIdx>=idx)idx--;
-      else if(dragIdx>idx&&dropIdx<=idx)idx++;
       renderPL();
     });
   });
@@ -1275,186 +860,6 @@ function tok(url) {
   return url + (url.indexOf('?') > -1 ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN);
 }
 
-// ── 主题切换 ──
-function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme);
-  try { localStorage.setItem('hanako_audio_theme', theme); } catch(e) {}
-  var icon = document.getElementById('themeIcon');
-  if (theme === 'light') {
-    icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
-  } else {
-    icon.innerHTML = '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
-  }
-}
-document.getElementById('themeBtn').addEventListener('click',function(){
-  var cur = document.documentElement.getAttribute('data-theme') || 'dark';
-  applyTheme(cur === 'dark' ? 'light' : 'dark');
-});
-(function initTheme(){
-  var saved = 'dark';
-  try { saved = localStorage.getItem('hanako_audio_theme') || 'dark'; } catch(e) {}
-  applyTheme(saved);
-})();
-
-// ── 音频元数据读取 ──
-function tryReadMetadata(audioEl, track) {
-  // 浏览器原生不提供 ID3 API，但可以用 MediaSession 或解析文件头
-  // 这里用文件名做智能提取 + URL 参数补全
-  if (track._metaTried) return;
-  track._metaTried = true;
-  // 如果 name 看起来是文件名（有扩展名或 URL 末段），尝试美化
-  var rawName = track.name;
-  if (/\.(mp3|wav|ogg|flac|m4a)$/i.test(rawName)) {
-    var baseName = rawName.replace(/\.[^.]+$/, '');
-    // 常见模式：歌手 - 歌名 或 歌名 - 歌手
-    if (baseName.indexOf(' - ') !== -1) {
-      var parts = baseName.split(' - ');
-      track.name = parts[0] + ' — ' + parts[1];
-    } else {
-      track.name = baseName;
-    }
-    // 更新 UI
-    if (trks[idx] === track) {
-      document.getElementById('trackName').textContent = track.name;
-    }
-    renderPL();
-  }
-  // 尝试通过 fetch 读取 ID3v2 头（仅同源或 CORS 允许时）
-  if (track.url && !track.url.startsWith('data:')) {
-    fetch(track.url, { method:'GET', headers:{'Range':'bytes=0-255'} })
-      .then(function(r){ return r.arrayBuffer(); })
-      .then(function(buf){
-        var dv = new DataView(buf);
-        // ID3v2 签名: 'ID3'
-        if (dv.getUint8(0)===0x49 && dv.getUint8(1)===0x44 && dv.getUint8(2)===0x33) {
-          var ver = dv.getUint8(3);
-          // ID3v2.3/2.4 文本帧
-          if (ver >= 3) {
-            var text = new TextDecoder('utf-8').decode(new Uint8Array(buf).slice(10, 256));
-            // 找 TIT2 (标题) 帧
-            var tit2Pos = text.indexOf('TIT2');
-            if (tit2Pos !== -1) {
-              var titleStart = tit2Pos + 4 + 4 + 2; // frame ID + size + flags + encoding
-              var titleBytes = new Uint8Array(buf).slice(10 + tit2Pos + 4 + 4 + 2 + 1, 256);
-              var titleStr = '';
-              for (var j=0; j<titleBytes.length && titleBytes[j]!==0; j++) { titleStr += String.fromCharCode(titleBytes[j]); }
-              if (titleStr.trim()) {
-                track.name = titleStr.trim();
-                if (trks[idx] === track) {
-                  document.getElementById('trackName').textContent = track.name;
-                }
-                renderPL();
-              }
-            }
-          }
-        }
-      })
-      .catch(function(){ /* 静默失败，CORS 或非音频文件 */ });
-  }
-}
-
-// ── 收藏筛选 ──
-document.getElementById('favFilterBtn').addEventListener('click',function(e){
-  e.stopPropagation();
-  this.classList.toggle('active');
-  var icon=document.getElementById('favFilterIcon');
-  icon.textContent=this.classList.contains('active')?'★':'☆';
-  renderPL();
-});
-
-// ── Bus 面板 ──
-var busOpen=false;
-document.getElementById('busToggle').addEventListener('click',function(){
-  busOpen=!busOpen;
-  document.getElementById('busBody').classList.toggle('open',busOpen);
-  this.classList.toggle('open',busOpen);
-  if(busOpen) refreshBus();
-});
-function refreshBus(){
-  fetch(API+'/widget/api/bus/state').then(function(r){return r.json();}).then(function(s){
-    var badge=document.getElementById('busStatusBadge');
-    var st=s.status||'idle';
-    badge.textContent=st==='idle'?'空闲':st==='playing'?'播放中':st==='paused'?'暂停':'错误';
-    badge.className='bus-status'+(st==='playing'?' playing':st==='error'?' error':'');
-    var qEl=document.getElementById('busQueue');
-    if(!s.queue||!s.queue.length){
-      qEl.innerHTML='<div class="bus-empty">编排队列为空</div>';
-      return;
-    }
-    qEl.innerHTML=s.queue.map(function(item,i){
-      var tp=item.type||'play';
-      var label='';
-      if(tp==='say') label=(item.text||'').slice(0,30);
-      else if(tp==='play') label=item.name||item.url||'';
-      else if(tp==='segue') label='过渡 '+(item.duration||3000)+'ms';
-      else if(tp==='reason') label=(item.text||'').slice(0,30);
-      var isCur = s.current && s.current.id===item.id;
-      return '<div class="bus-queue-item">'
-        +'<span class="bus-q-type '+tp+'">'+tp+'</span>'
-        +'<span class="bus-q-name'+(isCur?' bus-q-current':'')+'">'+esc(label)+'</span>'
-        +'</div>';
-    }).join('');
-  }).catch(function(){});
-}
-function busControl(action,extra){
-  var body=Object.assign({action:action},extra||{});
-  return fetch(API+'/widget/api/bus/control',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(body)
-  }).then(function(r){return r.json();}).then(function(res){
-    refreshBus();
-    // 如果 bus 返回了播放条目，推入播放器
-    if(res.event==='track_start' && res.item && res.item.url){
-      var url=res.item.url;
-      if(TOKEN) url=tok(url);
-      addTrack(res.item.name||'Bus', url, res.item.mode||'编排');
-    }
-    return res;
-  });
-}
-document.getElementById('busPlayBtn').addEventListener('click',function(){
-  fetch(API+'/widget/api/bus/state').then(function(r){return r.json();}).then(function(s){
-    if(s.status==='paused'){busControl('resume');}
-    else if(s.status==='playing'){}
-    else if(s.queue && s.queue.length){busControl('next');}
-  }).catch(function(){});
-});
-document.getElementById('busPauseBtn').addEventListener('click',function(){busControl('pause');});
-document.getElementById('busNextBtn').addEventListener('click',function(){busControl('next');});
-document.getElementById('busClearBtn').addEventListener('click',function(){busControl('clear');});
-document.getElementById('busSayBtn').addEventListener('click',function(){
-  var text=document.getElementById('busSayInput').value.trim();
-  if(!text)return;
-  var spk=document.getElementById('busSpkSelect').value||'my_voice';
-  document.getElementById('busSayInput').value='';
-  busControl('say',{text:text,spk:spk});
-});
-document.getElementById('busSayInput').addEventListener('keydown',function(e){
-  if(e.key==='Enter')document.getElementById('busSayBtn').click();
-});
-// 添加播放条目到 Bus 队列
-document.getElementById('busPlayAddBtn').addEventListener('click',function(){
-  var url=document.getElementById('busPlayInput').value.trim();
-  if(!url)return;
-  document.getElementById('busPlayInput').value='';
-  busControl('play',{url:url,name:url.split('/').pop().split('?')[0]||'音频'});
-});
-document.getElementById('busPlayInput').addEventListener('keydown',function(e){
-  if(e.key==='Enter')document.getElementById('busPlayAddBtn').click();
-});
-// 加载说话人列表
-fetch(API+'/widget/api/speakers').then(function(r){return r.json();}).then(function(data){
-  if(data&&data.speakers){
-    var sel=document.getElementById('busSpkSelect');
-    sel.innerHTML=data.speakers.map(function(s){
-      return '<option value="'+s.id+'">'+s.name+'</option>';
-    }).join('');
-  }
-}).catch(function(){});
-// 定时刷新 bus 状态（面板打开时）
-setInterval(function(){ if(busOpen) refreshBus(); }, 3000);
-
 // 初始化
 loadPresets();
 
@@ -1463,9 +868,8 @@ fetch(API+'/widget/api/queue').then(function(r){return r.json();}).then(function
   if(data&&data.length){data.forEach(function(t){addTrack(t.name,tok(t.url),t.mode);});}
 }).catch(function(){});
 
-// 定时检查新队列 + 验证已有曲目文件是否仍存在
+// 定时检查新队列
 setInterval(function(){
-  // 检查新队列
   fetch(API+'/widget/api/queue').then(function(r){return r.json();}).then(function(data){
     if(data&&data.length){data.forEach(function(t){
       var found=false;
@@ -1473,31 +877,6 @@ setInterval(function(){
       if(!found) addTrack(t.name,tok(t.url),t.mode);
     });}
   }).catch(function(){});
-  // 验证本地文件是否仍存在（仅检查 /widget/media/ 开头的 URL）
-  var toRemove=[];
-  trks.forEach(function(t,i){
-    if(t.url && t.url.indexOf('/widget/media/')!==-1 && t._checked){
-      // 已经检测过 404 的，标记移除
-      if(t._missing) toRemove.push(i);
-    }
-  });
-  // 异步 HEAD 检查（每次最多检查 3 首，避免请求风暴）
-  var checked=0;
-  trks.forEach(function(t,i){
-    if(t.url && t.url.indexOf('/widget/media/')!==-1 && !t._checked && checked<3){
-      t._checked=true; checked++;
-      fetch(t.url,{method:'HEAD'}).then(function(r){
-        if(!r.ok) t._missing=true;
-      }).catch(function(){ t._missing=true; });
-    }
-  });
-  // 移除缺失的曲目
-  if(toRemove.length){
-    toRemove.reverse().forEach(function(i){ trks.splice(i,1); });
-    if(idx>=trks.length) idx=Math.max(0,trks.length-1);
-    if(trks.length) load(idx); else load(-1);
-    renderPL();
-  }
 }, 5000);
 
 function notifySize() {

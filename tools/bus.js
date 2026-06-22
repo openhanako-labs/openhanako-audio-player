@@ -83,7 +83,6 @@ export class AudioBus {
         this.queue = JSON.parse(fs.readFileSync(this.queuePath, "utf-8"));
       }
     } catch (e) {
-      console.warn("[bus] load queue failed:", e.message);
       this.queue = [];
     }
     try {
@@ -93,7 +92,7 @@ export class AudioBus {
         this.status = st.status || "idle";
       }
     } catch (e) {
-      console.warn("[bus] load state failed:", e.message);
+      /* ignore */
     }
   }
 
@@ -335,7 +334,11 @@ export class AudioBus {
 let busInstance = null;
 
 export function getBus(ctx) {
-  if (!busInstance) busInstance = new AudioBus(ctx);
+  if (!busInstance) {
+    busInstance = new AudioBus(ctx);
+  }
+  // 每次获取时重新从文件加载队列和状态（防止 reload 时模块缓存导致数据不同步）
+  busInstance._loadPersistent();
   return busInstance;
 }
 
