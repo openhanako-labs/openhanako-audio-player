@@ -197,7 +197,9 @@ setTimeout(n,100);
   app.get("/widget/api/bus/state", (c) => {
     try {
       const bus = getBus(ctx);
-      return c.json(bus.getState());
+      const state = bus.getState();
+      state._debugDataDir = ctx.dataDir;
+      return c.json(state);
     } catch (e) {
       return c.json({ ok: false, error: e.message }, 500);
     }
