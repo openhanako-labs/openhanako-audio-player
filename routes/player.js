@@ -674,6 +674,15 @@ body {
 }
 .bus-say-input::placeholder { color:var(--text-faint); }
 .bus-say-input:focus { border-color:var(--accent); }
+.bus-spk-input {
+  width:70px; flex-shrink:0;
+  background:var(--surface); border:1px solid var(--border); border-radius:7px;
+  color:var(--text); font-size:11px; padding:5px 8px;
+  outline:none; font-family:inherit;
+  transition: border-color 0.15s;
+}
+.bus-spk-input::placeholder { color:var(--text-faint); }
+.bus-spk-input:focus { border-color:var(--accent); }
 .bus-say-btn {
   background:linear-gradient(135deg, var(--accent), #c48454);
   border:none; border-radius:7px; color:#fff;
@@ -760,6 +769,15 @@ body {
 }
 .bus-say-input::placeholder { color:var(--text-faint); }
 .bus-say-input:focus { border-color:var(--accent); }
+.bus-spk-input {
+  width:70px; flex-shrink:0;
+  background:var(--surface); border:1px solid var(--border); border-radius:7px;
+  color:var(--text); font-size:11px; padding:5px 8px;
+  outline:none; font-family:inherit;
+  transition: border-color 0.15s;
+}
+.bus-spk-input::placeholder { color:var(--text-faint); }
+.bus-spk-input:focus { border-color:var(--accent); }
 .bus-say-btn {
   background:var(--accent-soft); border:1px solid var(--accent); border-radius:7px;
   color:var(--accent); font-size:11px; padding:5px 12px;
@@ -919,6 +937,7 @@ body {
       </div>
       <div class="bus-say-row">
         <input class="bus-say-input" id="busSayInput" type="text" placeholder="输入串场文本，回车合成语音…" spellcheck="false">
+        <input class="bus-spk-input" id="busSpkInput" type="text" placeholder="说话人" spellcheck="false" value="my_voice" title="说话人ID">
         <button class="bus-say-btn" id="busSayBtn">Say</button>
       </div>
       <div class="bus-queue" id="busQueue"></div>
