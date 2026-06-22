@@ -196,131 +196,145 @@ setTimeout(n,100);
   // ── Bus API（节目编排引擎）──
   app.get("/widget/api/bus/state", (c) => {
     try {
-      const bus = getBus(ctx);
-      // 每次请求时强制从文件刷新队列（绕过模块缓存导致的旧实例问题）
-      try {
-        if (fs.existsSync(bus.queuePath)) {
-          bus.queue = JSON.parse(fs.readFileSync(bus.queuePath, "utf-8"));
-        }
-      } catch(e) { /* 忽略，保留旧值 */ }
-      const state = bus.getState();
-      state.currentIndex = bus.currentIndex;
-      state.queueLength = bus.queue.length;
-      return c.json(state);
+      const q = busFile.readQueue();
+      const st = busFile.readState();
+      return c.json({ ok: true, status: st.status || "idle", current: st.current, currentIndex: st.currentIndex ?? -1, queue: q, history: (st.history || []).slice(-20) });
     } catch (e) {
       return c.json({ ok: false, error: e.message }, 500);
     }
   });
 
+  // ── Bus 文件直读直写辅助（彻底绕过 require 缓存问题）──
+  const busFile = {
+    queuePath: path.join(ctx.dataDir, "bus-queue.json"),
+    statePath: path.join(ctx.dataDir, "bus-state.json"),
+    readQueue() {
+      try {
+        if (fs.existsSync(this.queuePath))
+          return JSON.parse(fs.readFileSync(this.queuePath, "utf-8"));
+      } catch(e) {}
+      return [];
+    },
+    writeQueue(q) {
+      try {
+        const tmp = this.queuePath + ".tmp." + process.pid;
+        fs.writeFileSync(tmp, JSON.stringify(q, null, 2), "utf-8");
+        fs.renameSync(tmp, this.queuePath);
+      } catch(e) {}
+    },
+    readState() {
+      try {
+        if (fs.existsSync(this.statePath))
+          return JSON.parse(fs.readFileSync(this.statePath, "utf-8"));
+      } catch(e) {}
+      return { status: "idle", current: null, history: [], currentIndex: -1 };
+    },
+    writeState(s) {
+      try {
+        const tmp = this.statePath + ".tmp." + process.pid;
+        fs.writeFileSync(tmp, JSON.stringify(s, null, 2), "utf-8");
+        fs.renameSync(tmp, this.statePath);
+      } catch(e) {}
+    }
+  };
+
   app.post("/widget/api/bus/control", async (c) => {
     try {
-      const bus = getBus(ctx);
-      // 强制从文件刷新队列（绕过模块缓存导致的旧实例空队列问题）
-      try {
-        if (fs.existsSync(bus.queuePath)) {
-          bus.queue = JSON.parse(fs.readFileSync(bus.queuePath, "utf-8"));
-        }
-      } catch(e) { /* ignore */ }
       const body = await c.req.json();
       const action = body.action || "state";
       switch (action) {
-        case "load":
-          return c.json(bus.load(body.playlist || []));
-        case "say":
+        case "load": {
+          const playlist = body.playlist || [];
+          busFile.writeQueue(playlist);
+          const st = busFile.readState();
+          st.status = "idle"; st.current = null; st.currentIndex = -1;
+          busFile.writeState(st);
+          return c.json({ ok: true, queue: playlist });
+        }
+        case "say": {
           if (!body.text) return c.json({ ok: false, code: "missing_text" });
-          return c.json(await bus.say(body.text, { spk: body.spk, instruct: body.instruct, translate: body.translate }));
-        case "play":
+          // 添加 say 条目到队列末尾
+          const q = busFile.readQueue();
+          const item = { type: "say", text: body.text, spk: body.spk || "my_voice", instruct: body.instruct || "", translate: body.translate || "", id: `say_${Date.now()}` };
+          q.push(item);
+          busFile.writeQueue(q);
+          return c.json({ ok: true, queued: item, queueLength: q.length });
+        }
+        case "play": {
           if (!body.url) return c.json({ ok: false, code: "missing_url" });
-          return c.json(bus.play(body.url, { name: body.name, mode: body.mode }));
+          const q = busFile.readQueue();
+          const item = { type: "play", url: body.url, name: body.name || path.basename(body.url), mode: body.mode || (body.url.startsWith("http") ? "在线" : "本地"), id: `play_${Date.now()}` };
+          q.push(item);
+          busFile.writeQueue(q);
+          return c.json({ ok: true, queued: item, queueLength: q.length });
+        }
         case "next": {
-          // 路由层直接实现指针式 next（绕过可能被 require 缓存的旧版 bus.next）
-          try {
-            if (fs.existsSync(bus.queuePath)) {
-              bus.queue = JSON.parse(fs.readFileSync(bus.queuePath, "utf-8"));
-            }
-          } catch(e) { /* ignore */ }
-          if (!bus.queue || !bus.queue.length) {
-            bus.current = null;
-            bus.status = "idle";
-            bus._saveState();
+          const q = busFile.readQueue();
+          const st = busFile.readState();
+          if (!q.length) {
+            st.status = "idle"; st.current = null;
+            busFile.writeState(st);
             return c.json({ ok: true, event: "bus_idle" });
           }
-          // 指针前进
-          if (bus.currentIndex < bus.queue.length - 1) {
-            bus.currentIndex++;
-          } else {
-            bus.currentIndex = 0; // 循环
-          }
-          const item = bus.queue[bus.currentIndex];
+          let ci = st.currentIndex ?? -1;
+          if (ci < q.length - 1) ci++; else ci = 0;
+          const item = q[ci];
 
-          // say 类型：触发 TTS 合成
+          // say 类型：TTS 合成
           if (item.type === "say") {
-            bus.current = item;
-            bus.status = "playing";
-            bus._saveState();
+            st.status = "playing"; st.current = item; st.currentIndex = ci;
+            busFile.writeState(st);
             let ttsResult = null;
             try {
-              ttsResult = await bus.ttsBus.synthesize(item.text, {
-                spk: item.spk || "my_voice",
-                instruct: item.instruct || "",
-              });
+              const bus = getBus(ctx);
+              ttsResult = await bus.ttsBus.synthesize(item.text, { spk: item.spk || "my_voice", instruct: item.instruct || "" });
               if (ttsResult.ok && ttsResult.url) {
-                // 合成成功，替换为 play 条目
-                const playItem = {
-                  ...item,
-                  type: "play",
-                  url: ttsResult.url,
-                  name: item.text.length > 20 ? item.text.slice(0, 20) + "…" : item.text,
-                  mode: ttsResult.layer === "cosyvoice" ? "本地" : "在线",
-                  _origin: { ...item },
-                };
-                bus.queue[bus.currentIndex] = playItem;
-                bus.current = playItem;
-                try { bus._saveQueue(); } catch(e) {}
-                bus._saveState();
+                const playItem = { ...item, type: "play", url: ttsResult.url, name: item.text.length > 20 ? item.text.slice(0, 20) + "…" : item.text, mode: ttsResult.layer === "cosyvoice" ? "本地" : "在线", _origin: { ...item } };
+                q[ci] = playItem;
+                busFile.writeQueue(q);
+                st.current = playItem;
+                busFile.writeState(st);
                 return c.json({ ok: true, event: "track_start", item: playItem });
               }
-            } catch(e) {
-              console.warn("[bus] say TTS error:", e.message);
-            }
-            // TTS 失败，跳过当前条月，继续录音带数前进
-            bus.history.push({ ...item, playedAt: Date.now(), skipped: true });
-            bus._saveState();
-            // 跳过：不移动指针，让下次 next 自动前进
+            } catch(e) {}
+            // TTS 失败
+            st.history = st.history || [];
+            st.history.push({ ...item, playedAt: Date.now(), skipped: true });
+            busFile.writeState(st);
             return c.json({ ok: true, event: "say_skipped", item, _reason: "TTS failed" });
           }
 
           // play / other 类型
-          bus.current = item;
-          bus.status = "playing";
-          try { bus._saveQueue(); } catch(e) {}
-          bus._saveState();
+          st.status = "playing"; st.current = item; st.currentIndex = ci;
+          st.history = st.history || [];
+          st.history.push({ ...item, playedAt: Date.now() });
+          busFile.writeState(st);
           return c.json({ ok: true, event: "track_start", item });
         }
-        case "pause":
-          return c.json(bus.pause());
-        case "resume":
-          return c.json(bus.resume());
         case "remove": {
-          // 路由层直接实现 remove（绕过 require 缓存）
-          try {
-            if (fs.existsSync(bus.queuePath)) {
-              bus.queue = JSON.parse(fs.readFileSync(bus.queuePath, "utf-8"));
-            }
-          } catch(e) { /* ignore */ }
+          const q = busFile.readQueue();
+          const st = busFile.readState();
           const rmIdx = body.index;
-          if (rmIdx < 0 || rmIdx >= bus.queue.length) return c.json({ ok: false, code: "bad_index" });
-          bus.queue.splice(rmIdx, 1);
-          if (rmIdx <= bus.currentIndex) bus.currentIndex = Math.max(-1, bus.currentIndex - 1);
-          try { bus._saveQueue(); } catch(e) {}
-          bus._saveState();
-          return c.json({ ok: true, queueLength: bus.queue.length });
+          if (rmIdx < 0 || rmIdx >= q.length) return c.json({ ok: false, code: "bad_index" });
+          q.splice(rmIdx, 1);
+          if (rmIdx <= (st.currentIndex ?? -1)) st.currentIndex = Math.max(-1, st.currentIndex - 1);
+          busFile.writeQueue(q);
+          busFile.writeState(st);
+          return c.json({ ok: true, queueLength: q.length });
         }
-        case "clear":
-          return c.json(bus.clear());
+        case "clear": {
+          busFile.writeQueue([]);
+          const st = busFile.readState();
+          st.status = "idle"; st.current = null; st.currentIndex = -1;
+          busFile.writeState(st);
+          return c.json({ ok: true, event: "bus_idle" });
+        }
         case "state":
-        default:
-          return c.json(bus.getState());
+        default: {
+          const q = busFile.readQueue();
+          const st = busFile.readState();
+          return c.json({ ok: true, status: st.status || "idle", current: st.current, currentIndex: st.currentIndex ?? -1, queue: q, history: (st.history || []).slice(-20) });
+        }
       }
     } catch (e) {
       return c.json({ ok: false, error: e.message }, 500);
