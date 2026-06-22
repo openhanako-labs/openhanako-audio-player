@@ -9,6 +9,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { getBus } from "../tools/bus.js";
 
 const MIME = { mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac", m4a: "audio/mp4" };
 
@@ -156,6 +157,47 @@ setTimeout(n,100);
         try { fs.writeFileSync(prodQueuePath, JSON.stringify(body, null, 2), "utf-8"); } catch (e) { console.warn('[queue] prod sync write failed:', e.message); }
       }
       return c.json({ ok: true });
+    } catch (e) {
+      return c.json({ ok: false, error: e.message }, 500);
+    }
+  });
+
+  // ── Bus API（节目编排引擎）──
+  app.get("/widget/api/bus/state", (c) => {
+    try {
+      const bus = getBus(ctx);
+      return c.json(bus.getState());
+    } catch (e) {
+      return c.json({ ok: false, error: e.message }, 500);
+    }
+  });
+
+  app.post("/widget/api/bus/control", async (c) => {
+    try {
+      const bus = getBus(ctx);
+      const body = await c.req.json();
+      const action = body.action || "state";
+      switch (action) {
+        case "load":
+          return c.json(bus.load(body.playlist || []));
+        case "say":
+          if (!body.text) return c.json({ ok: false, code: "missing_text" });
+          return c.json(await bus.say(body.text, { spk: body.spk, instruct: body.instruct, translate: body.translate }));
+        case "play":
+          if (!body.url) return c.json({ ok: false, code: "missing_url" });
+          return c.json(bus.play(body.url, { name: body.name, mode: body.mode }));
+        case "next":
+          return c.json(await bus.next());
+        case "pause":
+          return c.json(bus.pause());
+        case "resume":
+          return c.json(bus.resume());
+        case "clear":
+          return c.json(bus.clear());
+        case "state":
+        default:
+          return c.json(bus.getState());
+      }
     } catch (e) {
       return c.json({ ok: false, error: e.message }, 500);
     }
@@ -582,6 +624,182 @@ body {
   cursor:pointer; opacity:0; transition:opacity 0.15s;
 }
 .preset-wrap:hover .preset-del { opacity:1; }
+
+/* ── Bus Panel ── */
+.bus-section {
+  border-top:1px solid var(--border);
+}
+.bus-toggle {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 14px; cursor:pointer;
+  transition: background 0.15s;
+}
+.bus-toggle:hover { background:var(--surface); }
+.bus-toggle-left { display:flex; align-items:center; gap:6px; }
+.bus-status {
+  font-size:9px; padding:1px 6px; border-radius:8px;
+  background:var(--surface); color:var(--text-faint);
+  text-transform:uppercase; letter-spacing:0.5px;
+}
+.bus-status.playing { background:var(--accent-soft); color:var(--accent); }
+.bus-status.error { background:rgba(239,68,68,0.12); color:#ef4444; }
+.bus-body {
+  max-height:0; overflow:hidden;
+  transition:max-height 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+.bus-body.open { max-height:260px; overflow-y:auto; }
+.bus-body::-webkit-scrollbar { width:3px; }
+.bus-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
+.bus-controls {
+  display:flex; gap:6px; padding:8px 14px 4px;
+}
+.bus-btn {
+  background:var(--surface); border:1px solid var(--border); border-radius:6px;
+  color:var(--text-dim); font-size:13px;
+  width:30px; height:28px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  transition: all 0.15s; font-family:inherit;
+}
+.bus-btn:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+.bus-btn:active { transform:scale(0.94); }
+.bus-say-row {
+  display:flex; gap:6px; padding:4px 14px 8px;
+}
+.bus-say-input {
+  flex:1; min-width:0;
+  background:var(--surface); border:1px solid var(--border); border-radius:7px;
+  color:var(--text); font-size:11px; padding:5px 10px;
+  outline:none; font-family:inherit;
+  transition: border-color 0.15s;
+}
+.bus-say-input::placeholder { color:var(--text-faint); }
+.bus-say-input:focus { border-color:var(--accent); }
+.bus-say-btn {
+  background:linear-gradient(135deg, var(--accent), #c48454);
+  border:none; border-radius:7px; color:#fff;
+  font-size:11px; padding:5px 14px; cursor:pointer;
+  font-family:inherit; font-weight:500; white-space:nowrap;
+  box-shadow: 0 2px 8px var(--accent-glow);
+  transition: all 0.15s;
+}
+.bus-say-btn:hover { box-shadow:0 3px 12px var(--accent-glow); }
+.bus-queue { padding:0 14px 8px; }
+.bus-queue-item {
+  display:flex; align-items:center; gap:6px;
+  padding:4px 0; font-size:11px;
+  border-bottom:1px solid var(--border);
+}
+.bus-queue-item:last-child { border-bottom:none; }
+.bus-q-type {
+  font-size:9px; padding:1px 5px; border-radius:4px;
+  text-transform:uppercase; letter-spacing:0.5px; flex-shrink:0;
+}
+.bus-q-type.say { background:rgba(99,102,241,0.15); color:#818cf8; }
+.bus-q-type.play { background:var(--accent-soft); color:var(--accent); }
+.bus-q-type.segue { background:rgba(34,197,94,0.15); color:#4ade80; }
+.bus-q-type.reason { background:rgba(234,179,8,0.15); color:#facc15; }
+.bus-q-name { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-dim); }
+.bus-q-current { color:var(--accent); font-weight:500; }
+.bus-empty { padding:12px 0; text-align:center; color:var(--text-faint); font-size:11px; }
+
+/* ── Bus Panel（节目编排）── */
+.bus-section {
+  border-top:1px solid var(--border);
+}
+.bus-toggle {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 14px; cursor:pointer;
+  transition: background 0.15s;
+}
+.bus-toggle:hover { background:var(--surface); }
+.bus-toggle-left { display:flex; align-items:center; gap:6px; }
+.bus-toggle-left svg { width:13px; height:13px; stroke:var(--text-dim); fill:none; stroke-width:2; }
+.bus-toggle-text { font-size:12px; color:var(--text-dim); }
+.bus-badge {
+  font-size:9px; color:var(--accent);
+  background:var(--accent-soft); border-radius:4px;
+  padding:1px 5px; font-variant-numeric:tabular-nums;
+}
+.bus-chevron { width:14px; height:14px; stroke:var(--text-faint); fill:none; stroke-width:2; transition:transform 0.25s; }
+.bus-toggle.open .bus-chevron { transform:rotate(180deg); }
+
+.bus-body {
+  max-height:0; overflow:hidden;
+  transition:max-height 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+.bus-body.open { max-height:400px; overflow-y:auto; }
+.bus-body::-webkit-scrollbar { width:3px; }
+.bus-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
+
+.bus-controls {
+  display:flex; gap:4px; padding:6px 14px 4px;
+}
+.bus-btn {
+  background:var(--surface); border:1px solid var(--border); border-radius:6px;
+  color:var(--text-dim); font-size:11px; padding:4px 10px;
+  cursor:pointer; transition:all 0.15s; font-family:inherit;
+  display:flex; align-items:center; gap:3px;
+}
+.bus-btn:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+.bus-btn.primary {
+  background:linear-gradient(135deg, var(--accent), #c48454);
+  border:none; color:#fff;
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+.bus-btn.primary:hover { box-shadow:0 3px 12px var(--accent-glow); }
+
+.bus-say-row {
+  display:flex; gap:4px; padding:4px 14px 6px;
+}
+.bus-say-input {
+  flex:1; min-width:0;
+  background:var(--surface); border:1px solid var(--border); border-radius:7px;
+  color:var(--text); font-size:11px; padding:5px 10px;
+  outline:none; font-family:inherit;
+  transition: border-color 0.15s;
+}
+.bus-say-input::placeholder { color:var(--text-faint); }
+.bus-say-input:focus { border-color:var(--accent); }
+.bus-say-btn {
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:7px;
+  color:var(--accent); font-size:11px; padding:5px 12px;
+  cursor:pointer; font-family:inherit; white-space:nowrap;
+  transition: all 0.15s;
+}
+.bus-say-btn:hover { background:var(--accent); color:#fff; }
+
+.bus-queue { padding:0 14px 8px; }
+.bus-queue-item {
+  display:flex; align-items:center; gap:6px;
+  padding:4px 0; font-size:11px;
+  border-bottom:1px solid var(--border);
+}
+.bus-queue-item:last-child { border-bottom:none; }
+.bus-queue-type {
+  font-size:9px; padding:1px 5px; border-radius:3px;
+  flex-shrink:0; font-weight:500; letter-spacing:0.3px;
+}
+.bus-queue-type.say { background:rgba(100,180,255,0.12); color:#64b4ff; }
+.bus-queue-type.play { background:var(--accent-soft); color:var(--accent); }
+.bus-queue-type.segue { background:rgba(180,180,180,0.1); color:var(--text-faint); }
+.bus-queue-type.reason { background:rgba(200,150,255,0.1); color:#c896ff; }
+.bus-queue-text {
+  flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  color:var(--text-dim);
+}
+.bus-queue-playing { color:var(--accent); font-weight:500; }
+.bus-empty { padding:10px 14px; text-align:center; color:var(--text-faint); font-size:11px; }
+.bus-status {
+  padding:4px 14px 8px; font-size:10px; color:var(--text-faint);
+  display:flex; align-items:center; gap:4px;
+}
+.bus-status-dot {
+  width:6px; height:6px; border-radius:50%;
+  background:var(--text-faint);
+}
+.bus-status-dot.playing { background:#4ade80; box-shadow:0 0 4px rgba(74,222,128,0.5); }
+.bus-status-dot.paused { background:#fbbf24; }
+.bus-status-dot.idle { background:var(--text-faint); }
 </style>
 </head>
 <body>
@@ -679,6 +897,31 @@ body {
       <div class="preset-wrap"><button class="preset-btn" data-url="https://music.163.com/song/media/outer/url?id=569213220.mp3">起风了</button><span class="preset-del" data-name="起风了">✕</span></div>
       <div class="preset-wrap"><button class="preset-btn" data-url="https://music.163.com/song/media/outer/url?id=27599862.mp3">夜に駆ける</button><span class="preset-del" data-name="夜に駆ける">✕</span></div>
       <div class="preset-wrap"><button class="preset-btn" data-url="https://music.163.com/song/media/outer/url?id=1387099973.mp3">Lemon</button><span class="preset-del" data-name="Lemon">✕</span></div>
+    </div>
+  </div>
+
+  <!-- Bus Panel -->
+  <div class="bus-section">
+    <div class="bus-toggle" id="busToggle">
+      <div class="bus-toggle-left">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m11-7h-6m-6 0H1m16.5-5.5L14 7m-4 6l-3.5 3.5M18.5 18.5L15 15M9 9L5.5 5.5"/></svg>
+        <span style="font-size:12px;color:var(--text-dim);">节目编排</span>
+        <span class="bus-status" id="busStatusBadge">空闲</span>
+      </div>
+      <svg class="pl-chevron" id="busChevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+    </div>
+    <div class="bus-body" id="busBody">
+      <div class="bus-controls">
+        <button class="bus-btn" id="busPlayBtn" title="播放下一首">▶</button>
+        <button class="bus-btn" id="busPauseBtn" title="暂停">⏸</button>
+        <button class="bus-btn" id="busNextBtn" title="跳过">⏭</button>
+        <button class="bus-btn" id="busClearBtn" title="清空">✕</button>
+      </div>
+      <div class="bus-say-row">
+        <input class="bus-say-input" id="busSayInput" type="text" placeholder="输入串场文本，回车合成语音…" spellcheck="false">
+        <button class="bus-say-btn" id="busSayBtn">Say</button>
+      </div>
+      <div class="bus-queue" id="busQueue"></div>
     </div>
   </div>
 </div>
@@ -1067,6 +1310,73 @@ document.getElementById('favFilterBtn').addEventListener('click',function(e){
   icon.textContent=this.classList.contains('active')?'★':'☆';
   renderPL();
 });
+
+// ── Bus 面板 ──
+var busOpen=false;
+document.getElementById('busToggle').addEventListener('click',function(){
+  busOpen=!busOpen;
+  document.getElementById('busBody').classList.toggle('open',busOpen);
+  this.classList.toggle('open',busOpen);
+  if(busOpen) refreshBus();
+});
+function refreshBus(){
+  fetch(API+'/widget/api/bus/state').then(function(r){return r.json();}).then(function(s){
+    var badge=document.getElementById('busStatusBadge');
+    var st=s.status||'idle';
+    badge.textContent=st==='idle'?'空闲':st==='playing'?'播放中':st==='paused'?'暂停':'错误';
+    badge.className='bus-status'+(st==='playing'?' playing':st==='error'?' error':'');
+    var qEl=document.getElementById('busQueue');
+    if(!s.queue||!s.queue.length){
+      qEl.innerHTML='<div class="bus-empty">编排队列为空</div>';
+      return;
+    }
+    qEl.innerHTML=s.queue.map(function(item,i){
+      var tp=item.type||'play';
+      var label='';
+      if(tp==='say') label=(item.text||'').slice(0,30);
+      else if(tp==='play') label=item.name||item.url||'';
+      else if(tp==='segue') label='过渡 '+(item.duration||3000)+'ms';
+      else if(tp==='reason') label=(item.text||'').slice(0,30);
+      var isCur = s.current && s.current.id===item.id;
+      return '<div class="bus-queue-item">'
+        +'<span class="bus-q-type '+tp+'">'+tp+'</span>'
+        +'<span class="bus-q-name'+(isCur?' bus-q-current':'')+'">'+esc(label)+'</span>'
+        +'</div>';
+    }).join('');
+  }).catch(function(){});
+}
+function busControl(action,extra){
+  var body=Object.assign({action:action},extra||{});
+  return fetch(API+'/widget/api/bus/control',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)
+  }).then(function(r){return r.json();}).then(function(res){
+    refreshBus();
+    // 如果 bus 返回了播放条目，推入播放器
+    if(res.event==='track_start' && res.item && res.item.url){
+      var url=res.item.url;
+      if(TOKEN) url=tok(url);
+      addTrack(res.item.name||'Bus', url, res.item.mode||'编排');
+    }
+    return res;
+  });
+}
+document.getElementById('busPlayBtn').addEventListener('click',function(){busControl('resume');});
+document.getElementById('busPauseBtn').addEventListener('click',function(){busControl('pause');});
+document.getElementById('busNextBtn').addEventListener('click',function(){busControl('next');});
+document.getElementById('busClearBtn').addEventListener('click',function(){busControl('clear');});
+document.getElementById('busSayBtn').addEventListener('click',function(){
+  var text=document.getElementById('busSayInput').value.trim();
+  if(!text)return;
+  document.getElementById('busSayInput').value='';
+  busControl('say',{text:text});
+});
+document.getElementById('busSayInput').addEventListener('keydown',function(e){
+  if(e.key==='Enter')document.getElementById('busSayBtn').click();
+});
+// 定时刷新 bus 状态（面板打开时）
+setInterval(function(){ if(busOpen) refreshBus(); }, 3000);
 
 // 初始化
 loadPresets();
