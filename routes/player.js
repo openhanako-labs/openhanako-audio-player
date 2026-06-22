@@ -839,6 +839,15 @@ body {
 .bus-q-pending .bus-q-name::after { content:' ⏳合成中…'; font-size:10px; color:var(--text-faint); }
 .bus-empty { padding:12px 0; text-align:center; color:var(--text-faint); font-size:11px; }
 
+/* ── Scene presets（场景调度）── */
+.scene-section { padding:10px 14px 6px; border-top:1px solid var(--border); }
+.scene-label { display:flex; align-items:center; gap:6px; margin-bottom:8px; }
+.scene-auto-badge { font-size:10px; color:var(--accent); background:rgba(232,160,68,0.1); padding:1px 6px; border-radius:8px; margin-left:auto; }
+.scene-list { display:flex; gap:6px; }
+.scene-btn { background:var(--surface); border:1px solid var(--border); color:var(--text-dim); padding:5px 12px; border-radius:6px; font-size:11px; cursor:pointer; transition:all .15s; }
+.scene-btn:hover { border-color:var(--accent); color:var(--accent); }
+.scene-btn.active { background:rgba(232,160,68,0.15); border-color:var(--accent); color:var(--accent); font-weight:500; }
+
 /* ── Bus Panel（节目编排）── */
 .bus-section {
   border-top:1px solid var(--border);
@@ -1038,6 +1047,20 @@ body {
   </div>
 
   <!-- Bus Panel -->
+  <!-- Scene presets -->
+  <div class="scene-section" id="sceneSection">
+    <div class="scene-label">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      <span style="font-size:12px;color:var(--text-dim);">场景调度</span>
+      <span class="scene-auto-badge" id="sceneBadge">—</span>
+    </div>
+    <div class="scene-list" id="sceneList">
+      <button class="scene-btn" data-scene="work">💻 工作</button>
+      <button class="scene-btn" data-scene="chill">☕ 休息</button>
+      <button class="scene-btn" data-scene="late_night">🌙 深夜</button>
+    </div>
+  </div>
+
   <div class="bus-section">
     <div class="bus-toggle" id="busToggle">
       <div class="bus-toggle-left">
@@ -1599,6 +1622,86 @@ fetch(API+'/widget/api/speakers').then(function(r){return r.json();}).then(funct
 }).catch(function(){});
 // 定时刷新 bus 状态（面板打开时）
 setInterval(function(){ if(busOpen) refreshBus(); }, 3000);
+
+// ── Scene presets（场景调度）──
+var SCENES = {
+  work: {
+    label: "💻 工作",
+    playlist: [
+      { type: "play", url: "https://streams.ilovemusic.de/iloveradio16.mp3", name: "Deep Focus", mode: "在线" },
+      { type: "play", url: "https://streams.ilovemusic.de/iloveradio19.mp3", name: "Ambient", mode: "在线" },
+      { type: "segue", duration: 2000, effect: "silence" },
+      { type: "play", url: "https://streams.ilovemusic.de/iloveradio17.mp3", name: "Lo-fi Beats", mode: "在线" }
+    ]
+  },
+  chill: {
+    label: "☕ 休息",
+    playlist: [
+      { type: "play", url: "https://streams.ilovemusic.de/iloveradio13.mp3", name: "Chillout", mode: "在线" },
+      { type: "play", url: "https://streams.ilovemusic.de/iloveradio14.mp3", name: "Lounge", mode: "在线" },
+      { type: "play", url: "https://streams.ilovemusic.de/iloveradio15.mp3", name: "Piano", mode: "在线" }
+    ]
+  },
+  late_night: {
+    label: "🌙 深夜",
+    playlist: [
+      { type: "play", url: "https://streams.ilovemusic.de/iloveradio19.mp3", name: "Ambient", mode: "在线" },
+      { type: "play", url: "https://streams.ilovemusic.de/iloveradio15.mp3", name: "Piano", mode: "在线" },
+      { type: "segue", duration: 3000, effect: "silence" },
+      { type: "play", url: "https://streams.ilovemusic.de/iloveradio13.mp3", name: "Chillout", mode: "在线" }
+    ]
+  }
+};
+
+// 根据当前时间自动推茬场景
+function autoScene(){
+  var h=new Date().getHours();
+  if(h>=9 && h<12) return "work";
+  if(h>=12 && h<14) return "chill";
+  if(h>=14 && h<18) return "work";
+  if(h>=18 && h<22) return "chill";
+  return "late_night";
+}
+
+function applyScene(key){
+  var scene=SCENES[key];
+  if(!scene) return;
+  // UI 高亮
+  document.querySelectorAll('.scene-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.scene===key); });
+  // 加载到 Bus
+  fetch(API+'/widget/api/bus/control',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'load', playlist:scene.playlist})
+  }).then(function(r){return r.json();}).then(function(res){
+    refreshBus();
+    // 自动开始播放第一个
+    if(res.ok) setTimeout(function(){busControl('next');}, 300);
+  });
+}
+
+// 场景按钮点击
+document.getElementById('sceneList').addEventListener('click', function(e){
+  var btn=e.target.closest('.scene-btn');
+  if(!btn) return;
+  applyScene(btn.dataset.scene);
+});
+
+// 初始化：显示推荐场景
+(function initScene(){
+  var rec=autoScene();
+  var badge=document.getElementById('sceneBadge');
+  badge.textContent='推荐: '+SCENES[rec].label;
+  // 高亮但不自动加载
+  document.querySelectorAll('.scene-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.scene===rec); });
+})();
+
+// 每分钟检查时间，更新推荐
+setInterval(function(){
+  var rec=autoScene();
+  var badge=document.getElementById('sceneBadge');
+  badge.textContent='推荐: '+SCENES[rec].label;
+}, 60000);
 
 // 初始化
 loadPresets();
