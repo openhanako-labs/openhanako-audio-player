@@ -252,9 +252,47 @@ setTimeout(n,100);
             bus.currentIndex = 0; // 循环
           }
           const item = bus.queue[bus.currentIndex];
+
+          // say 类型：触发 TTS 合成
+          if (item.type === "say") {
+            bus.current = item;
+            bus.status = "playing";
+            bus._saveState();
+            let ttsResult = null;
+            try {
+              ttsResult = await bus.ttsBus.synthesize(item.text, {
+                spk: item.spk || "my_voice",
+                instruct: item.instruct || "",
+              });
+              if (ttsResult.ok && ttsResult.url) {
+                // 合成成功，替换为 play 条目
+                const playItem = {
+                  ...item,
+                  type: "play",
+                  url: ttsResult.url,
+                  name: item.text.length > 20 ? item.text.slice(0, 20) + "…" : item.text,
+                  mode: ttsResult.layer === "cosyvoice" ? "本地" : "在线",
+                  _origin: { ...item },
+                };
+                bus.queue[bus.currentIndex] = playItem;
+                bus.current = playItem;
+                try { bus._saveQueue(); } catch(e) {}
+                bus._saveState();
+                return c.json({ ok: true, event: "track_start", item: playItem });
+              }
+            } catch(e) {
+              console.warn("[bus] say TTS error:", e.message);
+            }
+            // TTS 失败，跳过当前条月，继续录音带数前进
+            bus.history.push({ ...item, playedAt: Date.now(), skipped: true });
+            bus._saveState();
+            // 跳过：不移动指针，让下次 next 自动前进
+            return c.json({ ok: true, event: "say_skipped", item, _reason: "TTS failed" });
+          }
+
+          // play / other 类型
           bus.current = item;
           bus.status = "playing";
-          // 写回文件确保不丢数据
           try { bus._saveQueue(); } catch(e) {}
           bus._saveState();
           return c.json({ ok: true, event: "track_start", item });
@@ -797,6 +835,8 @@ body {
 .bus-q-rm { background:none; border:none; color:var(--text-dim); opacity:0.35; cursor:pointer; font-size:11px; padding:0 4px; transition:opacity .15s; }
 .bus-q-rm:hover { opacity:1; color:#e8a044; }
 .bus-q-current { color:var(--accent); font-weight:500; }
+.bus-q-pending { opacity:0.7; }
+.bus-q-pending .bus-q-name::after { content:' ⏳合成中…'; font-size:10px; color:var(--text-faint); }
 .bus-empty { padding:12px 0; text-align:center; color:var(--text-faint); font-size:11px; }
 
 /* ── Bus Panel（节目编排）── */
@@ -1460,13 +1500,21 @@ function refreshBus(){
   }).catch(function(){});
 }
 function busControl(action,extra){
+  // 乐观更新：立即反映 UI 变化，再异步确认
+  if(action==='next') busOptimisticNext();
+  else if(action==='remove' && extra && extra.index!=null) busOptimisticRemove(extra.index);
+  else if(action==='clear') busOptimisticClear();
+  else if(action==='say') busOptimisticSay(extra);
+
   var body=Object.assign({action:action},extra||{});
   return fetch(API+'/widget/api/bus/control',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify(body)
   }).then(function(r){return r.json();}).then(function(res){
-    refreshBus();
+    refreshBus(); // 后端确认后刷新真实状态
+    // say 合成失败：自动跳到下一个
+    if(res.event==='say_skipped') { setTimeout(function(){busControl('next');}, 500); }
     // 如果 bus 返回了播放条目，推入播放器
     if(res.event==='track_start' && res.item && res.item.url){
       var url=res.item.url;
@@ -1475,6 +1523,41 @@ function busControl(action,extra){
     }
     return res;
   });
+}
+
+// ── 乐观更新函数 ──
+function busOptimisticNext(){
+  var items=document.getElementById('busQueue').querySelectorAll('.bus-queue-item');
+  if(!items.length) return;
+  // 找到当前高亮的，移到下一个
+  var curIdx=-1;
+  items.forEach(function(el,i){ if(el.querySelector('.bus-q-current')) curIdx=i; });
+  var nextIdx = curIdx<items.length-1 ? curIdx+1 : 0;
+  items.forEach(function(el,i){
+    var name=el.querySelector('.bus-q-name');
+    if(name) name.classList.toggle('bus-q-current', i===nextIdx);
+  });
+  // 更新状态徽章
+  var badge=document.getElementById('busStatusBadge');
+  if(badge){ badge.textContent='播放中'; badge.className='bus-status playing'; }
+}
+function busOptimisticRemove(idx){
+  var items=document.getElementById('busQueue').querySelectorAll('.bus-queue-item');
+  if(items[idx]) items[idx].style.opacity='0.3'; // 淡出，等服务端确认后 refreshBus 会移除
+}
+function busOptimisticClear(){
+  document.getElementById('busQueue').innerHTML='<div class="bus-empty">编排队列为空</div>';
+  var badge=document.getElementById('busStatusBadge');
+  if(badge){ badge.textContent='空闲'; badge.className='bus-status'; }
+}
+function busOptimisticSay(extra){
+  if(!extra || !extra.text) return;
+  var qEl=document.getElementById('busQueue');
+  var div=document.createElement('div');
+  div.className='bus-queue-item bus-q-pending';
+  div.innerHTML='<span class="bus-q-type say">say</span><span class="bus-q-name bus-q-current">🔊 ' +esc(extra.text.slice(0,30))+ '</span>';
+  qEl.appendChild(div);
+}
 }
 document.getElementById('busPlayBtn').addEventListener('click',function(){
   fetch(API+'/widget/api/bus/state').then(function(r){return r.json();}).then(function(s){
