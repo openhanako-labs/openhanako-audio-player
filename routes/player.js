@@ -1581,7 +1581,6 @@ function busOptimisticSay(extra){
   div.innerHTML='<span class="bus-q-type say">say</span><span class="bus-q-name bus-q-current">🔊 ' +esc(extra.text.slice(0,30))+ '</span>';
   qEl.appendChild(div);
 }
-}
 document.getElementById('busPlayBtn').addEventListener('click',function(){
   fetch(API+'/widget/api/bus/state').then(function(r){return r.json();}).then(function(s){
     if(s.status==='paused'){busControl('resume');}
