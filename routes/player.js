@@ -263,6 +263,21 @@ setTimeout(n,100);
           return c.json(bus.pause());
         case "resume":
           return c.json(bus.resume());
+        case "remove": {
+          // 路由层直接实现 remove（绕过 require 缓存）
+          try {
+            if (fs.existsSync(bus.queuePath)) {
+              bus.queue = JSON.parse(fs.readFileSync(bus.queuePath, "utf-8"));
+            }
+          } catch(e) { /* ignore */ }
+          const rmIdx = body.index;
+          if (rmIdx < 0 || rmIdx >= bus.queue.length) return c.json({ ok: false, code: "bad_index" });
+          bus.queue.splice(rmIdx, 1);
+          if (rmIdx <= bus.currentIndex) bus.currentIndex = Math.max(-1, bus.currentIndex - 1);
+          try { bus._saveQueue(); } catch(e) {}
+          bus._saveState();
+          return c.json({ ok: true, queueLength: bus.queue.length });
+        }
         case "clear":
           return c.json(bus.clear());
         case "state":
@@ -779,6 +794,8 @@ body {
 .bus-q-type.segue { background:rgba(34,197,94,0.15); color:#4ade80; }
 .bus-q-type.reason { background:rgba(234,179,8,0.15); color:#facc15; }
 .bus-q-name { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-dim); }
+.bus-q-rm { background:none; border:none; color:var(--text-dim); opacity:0.35; cursor:pointer; font-size:11px; padding:0 4px; transition:opacity .15s; }
+.bus-q-rm:hover { opacity:1; color:#e8a044; }
 .bus-q-current { color:var(--accent); font-weight:500; }
 .bus-empty { padding:12px 0; text-align:center; color:var(--text-faint); font-size:11px; }
 
@@ -993,7 +1010,6 @@ body {
     <div class="bus-body" id="busBody">
       <div class="bus-controls">
         <button class="bus-btn" id="busPlayBtn" title="播放下一首">▶</button>
-        <button class="bus-btn" id="busPauseBtn" title="暂停">⏸</button>
         <button class="bus-btn" id="busNextBtn" title="跳过">⏭</button>
         <button class="bus-btn" id="busClearBtn" title="清空">✕</button>
       </div>
@@ -1427,11 +1443,20 @@ function refreshBus(){
       else if(tp==='segue') label='过渡 '+(item.duration||3000)+'ms';
       else if(tp==='reason') label=(item.text||'').slice(0,30);
       var isCur = s.current && s.current.id===item.id;
-      return '<div class="bus-queue-item">'
+      return '<div class="bus-queue-item" data-bus-idx="'+i+'" data-bus-id="'+esc(item.id||'')+'">'
         +'<span class="bus-q-type '+tp+'">'+tp+'</span>'
         +'<span class="bus-q-name'+(isCur?' bus-q-current':'')+'">'+esc(label)+'</span>'
+        +'<button class="bus-q-rm" data-bus-rm="'+i+'" title="移除">✕</button>'
         +'</div>';
     }).join('');
+    // Bus 队列条目删除事件委托
+    qEl.onclick=function(e){
+      var btn=e.target.closest('[data-bus-rm]');
+      if(!btn) return;
+      e.stopPropagation();
+      var idx=parseInt(btn.dataset.busRm);
+      busControl('remove',{index:idx});
+    };
   }).catch(function(){});
 }
 function busControl(action,extra){
@@ -1458,7 +1483,6 @@ document.getElementById('busPlayBtn').addEventListener('click',function(){
     else if(s.queue && s.queue.length){busControl('next');}
   }).catch(function(){});
 });
-document.getElementById('busPauseBtn').addEventListener('click',function(){busControl('pause');});
 document.getElementById('busNextBtn').addEventListener('click',function(){busControl('next');});
 document.getElementById('busClearBtn').addEventListener('click',function(){busControl('clear');});
 document.getElementById('busSayBtn').addEventListener('click',function(){
