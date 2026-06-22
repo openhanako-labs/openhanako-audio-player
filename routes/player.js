@@ -203,7 +203,10 @@ setTimeout(n,100);
           bus.queue = JSON.parse(fs.readFileSync(bus.queuePath, "utf-8"));
         }
       } catch(e) { /* 忽略，保留旧值 */ }
-      return c.json(bus.getState());
+      const state = bus.getState();
+      state.currentIndex = bus.currentIndex;
+      state.queueLength = bus.queue.length;
+      return c.json(state);
     } catch (e) {
       return c.json({ ok: false, error: e.message }, 500);
     }
@@ -212,6 +215,12 @@ setTimeout(n,100);
   app.post("/widget/api/bus/control", async (c) => {
     try {
       const bus = getBus(ctx);
+      // 强制从文件刷新队列（绕过模块缓存导致的旧实例空队列问题）
+      try {
+        if (fs.existsSync(bus.queuePath)) {
+          bus.queue = JSON.parse(fs.readFileSync(bus.queuePath, "utf-8"));
+        }
+      } catch(e) { /* ignore */ }
       const body = await c.req.json();
       const action = body.action || "state";
       switch (action) {
@@ -223,8 +232,33 @@ setTimeout(n,100);
         case "play":
           if (!body.url) return c.json({ ok: false, code: "missing_url" });
           return c.json(bus.play(body.url, { name: body.name, mode: body.mode }));
-        case "next":
-          return c.json(await bus.next());
+        case "next": {
+          // 路由层直接实现指针式 next（绕过可能被 require 缓存的旧版 bus.next）
+          try {
+            if (fs.existsSync(bus.queuePath)) {
+              bus.queue = JSON.parse(fs.readFileSync(bus.queuePath, "utf-8"));
+            }
+          } catch(e) { /* ignore */ }
+          if (!bus.queue || !bus.queue.length) {
+            bus.current = null;
+            bus.status = "idle";
+            bus._saveState();
+            return c.json({ ok: true, event: "bus_idle" });
+          }
+          // 指针前进
+          if (bus.currentIndex < bus.queue.length - 1) {
+            bus.currentIndex++;
+          } else {
+            bus.currentIndex = 0; // 循环
+          }
+          const item = bus.queue[bus.currentIndex];
+          bus.current = item;
+          bus.status = "playing";
+          // 写回文件确保不丢数据
+          try { bus._saveQueue(); } catch(e) {}
+          bus._saveState();
+          return c.json({ ok: true, event: "track_start", item });
+        }
         case "pause":
           return c.json(bus.pause());
         case "resume":
@@ -1272,7 +1306,11 @@ function addTrack(name,url,mode) {
 
 function tok(url) {
   if (!TOKEN) return url;
-  return url + (url.indexOf('?') > -1 ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN);
+  // 只对本地 /api/ 或 /widget/ 路径添加 token，外部 URL 不加（避免 CORS）
+  if (url.startsWith('/api/') || url.startsWith('/widget/')) {
+    return url + (url.indexOf('?') > -1 ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN);
+  }
+  return url;
 }
 
 // ── 主题切换 ──
