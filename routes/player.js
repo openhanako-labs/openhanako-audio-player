@@ -442,6 +442,17 @@ body {
   background:var(--surface); border-radius:8px;
   padding:1px 7px; font-variant-numeric:tabular-nums;
 }
+.pl-toggle-right { display:flex; align-items:center; gap:6px; }
+.pl-filter-btn {
+  background:var(--surface); border:1px solid var(--border); border-radius:6px;
+  color:var(--text-faint); font-size:11px; padding:2px 8px;
+  cursor:pointer; transition:all 0.15s; font-family:inherit;
+  display:flex; align-items:center; gap:3px;
+}
+.pl-filter-btn:hover { border-color:var(--accent); color:var(--accent); }
+.pl-filter-btn.active {
+  background:var(--accent-soft); border-color:var(--accent); color:var(--accent);
+}
 .pl-chevron { width:14px; height:14px; stroke:var(--text-faint); fill:none; stroke-width:2; transition:transform 0.25s; }
 .pl-toggle.open .pl-chevron { transform:rotate(180deg); }
 
@@ -639,7 +650,13 @@ body {
       <span class="pl-toggle-text">播放列表</span>
       <span class="pl-count" id="plCount">0</span>
     </div>
-    <svg class="pl-chevron" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+    <div class="pl-toggle-right">
+      <button class="pl-filter-btn" id="favFilterBtn" title="只显示收藏">
+        <span id="favFilterIcon">☆</span>
+        <span style="font-size:10px;">收藏</span>
+      </button>
+      <svg class="pl-chevron" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+    </div>
   </div>
   <div class="pl-body" id="plBody"></div>
 
@@ -761,11 +778,19 @@ function renderPL() {
   document.getElementById('plCount').textContent=trks.length;
   if (!trks.length) { document.getElementById('plBody').innerHTML='<div class="pl-empty">暂无曲目，添加 URL 或点击电台开始</div>'; return; }
   // 收藏的排前面
-  var sorted = trks.map(function(t,i){return {t:t,i:i};}).sort(function(a,b){
+  var favOnly = document.getElementById('favFilterBtn').classList.contains('active');
+  var filtered = trks.map(function(t,i){return {t:t,i:i};}).filter(function(item){
+    return !favOnly || isFav(item.t.url);
+  });
+  var sorted = filtered.sort(function(a,b){
     var fa=isFav(a.t.url)?1:0, fb=isFav(b.t.url)?1:0;
     if(fa!==fb) return fb-fa;
     return a.i-b.i;
   });
+  if (!sorted.length && favOnly) {
+    document.getElementById('plBody').innerHTML='<div class="pl-empty">没有收藏的曲目</div>';
+    return;
+  }
   document.getElementById('plBody').innerHTML=sorted.map(function(item,n){
     var t=item.t, i=item.i;
     var a=i===idx;
@@ -1034,6 +1059,15 @@ function tryReadMetadata(audioEl, track) {
   }
 }
 
+// ── 收藏筛选 ──
+document.getElementById('favFilterBtn').addEventListener('click',function(e){
+  e.stopPropagation();
+  this.classList.toggle('active');
+  var icon=document.getElementById('favFilterIcon');
+  icon.textContent=this.classList.contains('active')?'★':'☆';
+  renderPL();
+});
+
 // 初始化
 loadPresets();
 
@@ -1042,8 +1076,9 @@ fetch(API+'/widget/api/queue').then(function(r){return r.json();}).then(function
   if(data&&data.length){data.forEach(function(t){addTrack(t.name,tok(t.url),t.mode);});}
 }).catch(function(){});
 
-// 定时检查新队列
+// 定时检查新队列 + 验证已有曲目文件是否仍存在
 setInterval(function(){
+  // 检查新队列
   fetch(API+'/widget/api/queue').then(function(r){return r.json();}).then(function(data){
     if(data&&data.length){data.forEach(function(t){
       var found=false;
@@ -1051,6 +1086,31 @@ setInterval(function(){
       if(!found) addTrack(t.name,tok(t.url),t.mode);
     });}
   }).catch(function(){});
+  // 验证本地文件是否仍存在（仅检查 /widget/media/ 开头的 URL）
+  var toRemove=[];
+  trks.forEach(function(t,i){
+    if(t.url && t.url.indexOf('/widget/media/')!==-1 && t._checked){
+      // 已经检测过 404 的，标记移除
+      if(t._missing) toRemove.push(i);
+    }
+  });
+  // 异步 HEAD 检查（每次最多检查 3 首，避免请求风暴）
+  var checked=0;
+  trks.forEach(function(t,i){
+    if(t.url && t.url.indexOf('/widget/media/')!==-1 && !t._checked && checked<3){
+      t._checked=true; checked++;
+      fetch(t.url,{method:'HEAD'}).then(function(r){
+        if(!r.ok) t._missing=true;
+      }).catch(function(){ t._missing=true; });
+    }
+  });
+  // 移除缺失的曲目
+  if(toRemove.length){
+    toRemove.reverse().forEach(function(i){ trks.splice(i,1); });
+    if(idx>=trks.length) idx=Math.max(0,trks.length-1);
+    if(trks.length) load(idx); else load(-1);
+    renderPL();
+  }
 }, 5000);
 
 function notifySize() {
