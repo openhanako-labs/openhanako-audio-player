@@ -1609,8 +1609,8 @@ function doPlaylistImport(){
     el.innerHTML='<div class="music-empty" style="padding-bottom:6px">歌单 '+res.tracks.length+' 首</div>'
       +'<div style="display:flex;gap:4px;padding:0 0 8px">'
       +'<button class="music-play" style="font-size:10px;padding:3px 8px">全部播放</button>'
-      +<button class="music-add" style="font-size:10px;padding:3px 8px;opacity:1">加入队列</button>'
-      +<button class="music-scene" style="font-size:10px;padding:3px 8px;opacity:1">加入场景</button>'
+      +'<button class="music-add" style="font-size:10px;padding:3px 8px;opacity:1">加入队列</button>'
+      +'<button class="music-scene" style="font-size:10px;padding:3px 8px;opacity:1">加入场景</button>'
       +'</div>'
       + res.tracks.map(function(t){
         return '<div class="music-item" data-title="'+esc(t.title)+'" data-url="'+esc(t.url)+'">'
