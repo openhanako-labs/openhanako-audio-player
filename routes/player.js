@@ -1,4 +1,4 @@
-/**
+﻿/**
  * hanako-audio-player/routes/player.js
  *
  * 播放器路由：
@@ -629,6 +629,13 @@ body {
 }
 .progress-bar:hover .progress-fill::after { opacity:1; }
 
+/* ── Visualizer ── */
+.visualizer {
+  display:block; width:100%; height:32px;
+  margin:0 auto -2px; padding:0 14px;
+  border-radius:0 0 8px 8px;
+}
+
 /* ── Controls ── */
 .controls {
   display:flex; align-items:center; justify-content:center;
@@ -1046,6 +1053,7 @@ body {
   <div class="progress-bar" id="progressBar">
     <div class="progress-fill" id="progressFill"></div>
   </div>
+  <canvas class="visualizer" id="visualizer" width="300" height="32"></canvas>
 </div>
 
 <!-- Controls -->
@@ -1664,6 +1672,102 @@ function doPlaylistImport(){
       setTimeout(function(){ document.addEventListener('click',function cls(){menu.remove();document.removeEventListener('click',cls);}); },0);
     }
   });
+})();
+
+
+// ── Visualizer ──
+(function(){
+  var canvas = document.getElementById('visualizer');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var actx = null, analyser = null, dataArr = null, visRAF = null;
+  var BAR_COUNT = 48;
+  var BAR_GAP = 1.5;
+  var AMBER = '#d4a76a';
+  var AMBER_DIM = 'rgba(212,167,106,0.15)';
+  var LIGHT_AMBER = '#c49a5a';
+
+  // 尊 prefers-reduced-motion
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  function initAudio() {
+    if (actx) return;
+    try {
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = actx.createAnalyser();
+      analyser.fftSize = 128;
+      analyser.smoothingTimeConstant = 0.78;
+      var src = actx.createMediaElementSource(audio);
+      src.connect(analyser);
+      analyser.connect(actx.destination);
+      dataArr = new Uint8Array(analyser.frequencyBinCount);
+    } catch(e) {
+      console.warn('Visualizer: AudioContext init failed', e);
+      actx = null;
+    }
+  }
+
+  function draw() {
+    visRAF = requestAnimationFrame(draw);
+    var w = canvas.width = canvas.clientWidth * (window.devicePixelRatio||1);
+    var h = canvas.height = canvas.clientHeight * (window.devicePixelRatio||1);
+    ctx.clearRect(0,0,w,h);
+    // 停止或没分析器时画静默条
+    if (!analyser || !dataArr || audio.paused) {
+      drawSilent(w,h);
+      return;
+    }
+    analyser.getByteFrequencyData(dataArr);
+    var step = Math.floor(dataArr.length / BAR_COUNT);
+    var barW = (w - BAR_GAP * (BAR_COUNT-1)) / BAR_COUNT;
+    for (var i=0; i<BAR_COUNT; i++) {
+      var val = dataArr[i * step] || 0;
+      var barH = Math.max(2, (val/255) * h * 0.92);
+      var x = i * (barW + BAR_GAP);
+      var y = h - barH;
+      // 渐变：底部暗琥珀 → 顶部亮琥珀
+      var grd = ctx.createLinearGradient(x, h, x, y);
+      grd.addColorStop(0, AMBER_DIM);
+      grd.addColorStop(1, AMBER);
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      var r = Math.min(barW/2, 2);
+      ctx.moveTo(x+r, y);
+      ctx.lineTo(x+barW-r, y);
+      ctx.quadraticCurveTo(x+barW, y, x+barW, y+r);
+      ctx.lineTo(x+barW, h);
+      ctx.lineTo(x, h);
+      ctx.lineTo(x, y+r);
+      ctx.quadraticCurveTo(x, y, x+r, y);
+      ctx.fill();
+    }
+  }
+
+  function drawSilent(w,h) {
+    var barW = (w - BAR_GAP * (BAR_COUNT-1)) / BAR_COUNT;
+    for (var i=0; i<BAR_COUNT; i++) {
+      var x = i * (barW + BAR_GAP);
+      ctx.fillStyle = AMBER_DIM;
+      ctx.fillRect(x, h-2, barW, 2);
+    }
+  }
+
+  // 首次交互时初始化 AudioContext（浏览器限制）
+  function startVis() {
+    initAudio();
+    if (actx && actx.state === 'suspended') actx.resume();
+    if (!visRAF) draw();
+  }
+
+  audio.addEventListener('play', startVis);
+  audio.addEventListener('pause', function(){});
+  // 点击任何控件也可能触发
+  document.addEventListener('click', function onFirstClick(){
+    if (!actx) { startVis(); }
+  }, {once:true});
+
+  // 初始画静默条
+  draw();
 })();
 
 var busOpen=false;
