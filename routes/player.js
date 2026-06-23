@@ -9,6 +9,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { createHmac } from "node:crypto";
 import { getBus } from "../tools/bus.js";
 
 const MIME = { mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac", m4a: "audio/mp4" };
@@ -175,6 +176,72 @@ setTimeout(n,100);
       console.warn('[speakers] endpoint error:', e.message);
       return c.json({ ok:false, speakers:[{id:"my_voice",name:"我的声音"}] });
     }
+  });
+
+  // ── Meting 音乐搜索代理（HTTP 代理到公共/本地 Meting 实例） ──
+  const METING_BASE = process.env.METING_API_URL || "https://api.i-meto.com/meting/api";
+  const METING_TOKEN = process.env.METING_TOKEN || "token";
+  const metingAuth = (server, type, id) => createHmac("sha1", METING_TOKEN).update(`${server}${type}${id}`).digest("hex");
+  const metingCache = new Map();
+  const metingCacheTTL = 5 * 60 * 1000;
+
+  app.get("/widget/api/music/search", async (c) => {
+    const keyword = c.req.query("keyword") || "";
+    const server = c.req.query("server") || "netease";
+    if (!keyword) return c.json({ ok: false, error: "keyword required" }, 400);
+    if (!["netease","tencent","kugou","baidu","kuwo"].includes(server)) return c.json({ ok:false, error:"invalid server" }, 400);
+    try {
+      const cacheKey = `${server}/search/${keyword}`;
+      const cached = metingCache.get(cacheKey);
+      if (cached && Date.now() - cached.ts < metingCacheTTL) return c.json({ ok:true, results:cached.data });
+      const metingUrl = `${METING_BASE}?server=${encodeURIComponent(server)}&type=search&id=${encodeURIComponent(keyword)}`;
+      const resp = await fetch(metingUrl);
+      const raw = await resp.json();
+      const data = raw.map(x => ({
+        title: x.title || "", author: x.author || "",
+        url: x.url || "", pic: x.pic || "", lrc: x.lrc || "",
+      }));
+      metingCache.set(cacheKey, { ts: Date.now(), data });
+      return c.json({ ok:true, results:data });
+    } catch(e) { return c.json({ ok:false, error:e.message }, 500); }
+  });
+
+  app.get("/widget/api/music/url", async (c) => {
+    // 公共实例返回的搜索结果里 url 字段已经是带 auth 的完整地址，直接 302
+    const url = c.req.query("url") || "";
+    if (!url) return c.json({ ok:false, error:"url required" }, 400);
+    return c.redirect(url);
+  });
+
+  app.get("/widget/api/music/pic", async (c) => {
+    const url = c.req.query("url") || "";
+    if (!url) return c.json({ ok:false, error:"url required" }, 400);
+    return c.redirect(url);
+  });
+
+  app.get("/widget/api/music/lrc", async (c) => {
+    const url = c.req.query("url") || "";
+    if (!url) return c.json({ ok:false, error:"url required" }, 400);
+    try {
+      const resp = await fetch(url);
+      const text = await resp.text();
+      return c.text(text, 200, { "Content-Type":"text/plain; charset=utf-8" });
+    } catch(e) { return c.json({ ok:false, error:e.message }, 500); }
+  });
+
+  app.get("/widget/api/music/playlist", async (c) => {
+    const id = c.req.query("id"); const server = c.req.query("server") || "netease";
+    if (!id) return c.json({ ok:false, error:"id required" }, 400);
+    try {
+      const metingUrl = `${METING_BASE}?server=${encodeURIComponent(server)}&type=playlist&id=${encodeURIComponent(id)}`;
+      const resp = await fetch(metingUrl);
+      const raw = await resp.json();
+      const data = raw.map(x => ({
+        title: x.title || "", author: x.author || "",
+        url: x.url || "", pic: x.pic || "", lrc: x.lrc || "",
+      }));
+      return c.json({ ok:true, tracks:data });
+    } catch(e) { return c.json({ ok:false, error:e.message }, 500); }
   });
 
   // ── Bus API（节目编排引擎）──
@@ -719,53 +786,6 @@ body {
 .add-btn:hover { box-shadow:0 3px 12px var(--accent-glow); transform:translateY(-1px); }
 .add-btn:active { transform:translateY(0); }
 
-.add-secondary {
-  display:flex; align-items:center; gap:6px; margin-top:6px;
-}
-.add-mini-input {
-  flex:0.5; min-width:0;
-  background:var(--surface); border:1px solid var(--border); border-radius:6px;
-  color:var(--text); font-size:11px; padding:4px 8px;
-  outline:none; font-family:inherit;
-  transition: border-color 0.15s;
-}
-.add-mini-input::placeholder { color:var(--text-faint); }
-.add-mini-input:focus { border-color:var(--accent); }
-.add-mini-btn {
-  background:none; border:1px solid var(--border); border-radius:6px;
-  color:var(--text-dim); font-size:10px; padding:4px 8px;
-  cursor:pointer; font-family:inherit; white-space:nowrap;
-  transition: all 0.15s;
-}
-.add-mini-btn:hover { border-color:var(--accent); color:var(--accent); }
-
-/* ── Presets ── */
-.preset-section { padding:0 14px 10px; }
-.preset-label {
-  font-size:10px; color:var(--text-faint);
-  margin-bottom:5px; letter-spacing:0.5px;
-  text-transform:uppercase;
-}
-.preset-list { display:flex; flex-wrap:wrap; gap:5px; }
-.preset-wrap { position:relative; display:inline-flex; }
-.preset-btn {
-  background:var(--surface); border:1px solid var(--border); border-radius:12px;
-  color:var(--text-dim); font-size:11px; padding:3px 11px;
-  cursor:pointer; transition: all 0.15s; font-family:inherit;
-}
-.preset-btn:hover {
-  border-color:var(--accent); color:var(--accent);
-  background:var(--accent-soft);
-}
-.preset-del {
-  position:absolute; top:-4px; right:-4px;
-  width:13px; height:13px; border-radius:50%;
-  background:rgba(0,0,0,0.5); color:#fff;
-  font-size:8px; line-height:13px; text-align:center;
-  cursor:pointer; opacity:0; transition:opacity 0.15s;
-}
-.preset-wrap:hover .preset-del { opacity:1; }
-
 /* ── Bus Panel ── */
 .bus-section {
   border-top:1px solid var(--border);
@@ -946,6 +966,40 @@ body {
   pointer-events:auto;
 }
 .toast-item.show { opacity:1; transform:translateY(0); }
+
+/* ═══ Music Search ═══ */
+.music-section { border-top:1px solid var(--border); }
+.music-toggle { display:flex; align-items:center; justify-content:space-between; padding:8px 14px; cursor:pointer; transition:background .15s; }
+.music-toggle:hover { background:var(--surface); }
+.music-toggle-left { display:flex; align-items:center; gap:6px; color:var(--text-dim); }
+.music-toggle-left svg { width:13px; height:13px; stroke:var(--text-dim); fill:none; stroke-width:2; }
+.music-toggle-text { font-size:12px; }
+.music-chevron { width:14px; height:14px; stroke:var(--text-faint); fill:none; stroke-width:2; transition:transform .25s; }
+.music-toggle.open .music-chevron { transform:rotate(180deg); }
+.music-body { max-height:0; overflow:hidden; transition:max-height .3s cubic-bezier(.4,0,.2,1); }
+.music-body.open { max-height:400px; overflow-y:auto; }
+.music-body::-webkit-scrollbar { width:3px; }
+.music-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
+.music-search-row { display:flex; gap:4px; padding:6px 14px; }
+.music-input { flex:1; min-width:0; background:var(--surface); border:1px solid var(--border); border-radius:7px; color:var(--text); font-size:11px; padding:5px 10px; outline:none; font-family:inherit; transition:border-color .15s; }
+.music-input::placeholder { color:var(--text-faint); }
+.music-input:focus { border-color:var(--accent); }
+.music-server { width:62px; flex-shrink:0; background:var(--surface); border:1px solid var(--border); border-radius:7px; color:var(--text); font-size:11px; padding:4px 6px; outline:none; font-family:inherit; cursor:pointer; }
+.music-server:focus { border-color:var(--accent); }
+.music-go { background:var(--accent-soft); border:1px solid var(--accent); border-radius:7px; color:var(--accent); font-size:11px; padding:5px 12px; cursor:pointer; font-family:inherit; white-space:nowrap; transition:all .15s; }
+.music-go:hover { background:var(--accent); color:#fff; }
+.music-results { padding:0 14px 8px; }
+.music-item { display:flex; align-items:center; gap:6px; padding:5px 0; border-bottom:1px solid var(--border); font-size:11px; }
+.music-item:last-child { border-bottom:none; }
+.music-info { flex:1; min-width:0; overflow:hidden; }
+.music-title { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-dim); }
+.music-author { font-size:10px; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.music-play { background:none; border:1px solid var(--border); border-radius:5px; color:var(--text-dim); font-size:10px; padding:3px 8px; cursor:pointer; flex-shrink:0; transition:all .12s; }
+.music-play:hover { border-color:var(--accent); color:var(--accent); }
+.music-add { background:none; border:none; color:var(--text-faint); font-size:10px; cursor:pointer; padding:3px 6px; flex-shrink:0; opacity:.6; transition:all .12s; }
+.music-add:hover { opacity:1; color:var(--accent); }
+.music-empty { padding:12px 0; text-align:center; color:var(--text-faint); font-size:11px; }
+.music-loading { padding:12px 0; text-align:center; color:var(--text-faint); font-size:11px; }
 </style>
 </head>
 <body>
@@ -1031,19 +1085,24 @@ body {
       <input class="add-input" id="urlInput" type="text" placeholder="粘贴 URL 或本地路径…" spellcheck="false">
       <button class="add-btn" id="addBtn">添加</button>
     </div>
-    <div class="add-secondary">
-      <input class="add-mini-input" id="presetNameInput" type="text" placeholder="电台名…" spellcheck="false">
-      <button class="add-mini-btn" id="savePresetBtn">存为电台</button>
-    </div>
   </div>
 
-  <!-- Presets -->
-  <div class="preset-section">
-    <div class="preset-label">在线电台</div>
-    <div class="preset-list" id="presetsList">
-      <div class="preset-wrap"><button class="preset-btn" data-url="https://music.163.com/song/media/outer/url?id=569213220.mp3">起风了</button><span class="preset-del" data-name="起风了">✕</span></div>
-      <div class="preset-wrap"><button class="preset-btn" data-url="https://music.163.com/song/media/outer/url?id=27599862.mp3">夜に駆ける</button><span class="preset-del" data-name="夜に駆ける">✕</span></div>
-      <div class="preset-wrap"><button class="preset-btn" data-url="https://music.163.com/song/media/outer/url?id=1387099973.mp3">Lemon</button><span class="preset-del" data-name="Lemon">✕</span></div>
+  <!-- Music Search -->
+  <div class="music-section">
+    <div class="music-toggle" id="musicToggle">
+      <div class="music-toggle-left"><svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg><span class="music-toggle-text">搜索音乐</span></div>
+      <svg class="music-chevron" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+    </div>
+    <div class="music-body" id="musicBody">
+      <div class="music-search-row">
+        <input class="music-input" id="musicInput" type="text" placeholder="搜索歌曲、歌手…" spellcheck="false">
+        <select class="music-server" id="musicServer" title="平台">
+          <option value="netease">网易云</option>
+          <option value="tencent">QQ</option>
+        </select>
+        <button class="music-go" id="musicGo">搜索</button>
+      </div>
+      <div class="music-results" id="musicResults"></div>
     </div>
   </div>
 
@@ -1307,56 +1366,6 @@ document.getElementById('urlInput').addEventListener('keydown',function(e){
   if(e.key==='Enter')document.getElementById('addBtn').click();
 });
 
-// ── Presets ──
-function addPresetDOM(name, url) {
-  var list = document.getElementById('presetsList');
-  for (var i=0; i<list.children.length; i++) {
-    var b = list.children[i].querySelector('.preset-btn');
-    if (b && b.dataset.url === url) return;
-  }
-  var wrap = document.createElement('div'); wrap.className = 'preset-wrap';
-  var btn = document.createElement('button'); btn.className = 'preset-btn'; btn.textContent = name; btn.dataset.url = url;
-  var del = document.createElement('span'); del.className = 'preset-del'; del.textContent = '✕';
-  wrap.appendChild(btn); wrap.appendChild(del);
-  list.appendChild(wrap);
-}
-
-document.getElementById('presetsList').addEventListener('click', function(e) {
-  var btn = e.target.closest('.preset-btn');
-  var del = e.target.closest('.preset-del');
-  if (btn) { addTrack(btn.textContent, btn.dataset.url, '电台'); }
-  else if (del) { del.parentElement.remove(); savePresets(); }
-});
-
-function savePresets() {
-  var presets = [];
-  document.querySelectorAll('#presetsList .preset-wrap').forEach(function(w) {
-    var btn = w.querySelector('.preset-btn');
-    if (btn) presets.push({ name: btn.textContent, url: btn.dataset.url });
-  });
-  try { localStorage.setItem('hanako_audio_presets', JSON.stringify(presets)); } catch(e) {}
-}
-
-function loadPresets() {
-  var saved;
-  try { saved = JSON.parse(localStorage.getItem('hanako_audio_presets')); } catch(e) {}
-  if (!saved || !saved.length) return;
-  var list = document.getElementById('presetsList');
-  list.innerHTML = '';
-  saved.forEach(function(p) { addPresetDOM(p.name, p.url); });
-}
-
-document.getElementById('savePresetBtn').addEventListener('click',function(){
-  var url=document.getElementById('urlInput').value.trim();
-  var name=document.getElementById('presetNameInput').value.trim();
-  if(!url)return;
-  if(!name)name=url.split('/').pop().split('?')[0].replace(/\\.\\w+$/,'')||'电台';
-  addPresetDOM(name, url);
-  savePresets();
-  document.getElementById('urlInput').value='';
-  document.getElementById('presetNameInput').value='';
-});
-
 document.getElementById('popBtn').addEventListener('click',function(){
   var url = 'http://localhost:14500' + API + '/widget?standalone=1&token=' + encodeURIComponent(TOKEN);
   window.open(url, 'hanako-player', 'width=480,height=400');
@@ -1484,6 +1493,46 @@ document.getElementById('favFilterBtn').addEventListener('click',function(e){
 });
 
 // ── Bus 面板 ──
+// ── Music Search ──
+var musicOpen = false;
+document.getElementById('musicToggle').addEventListener('click', function(){
+  musicOpen=!musicOpen;
+  document.getElementById('musicBody').classList.toggle('open', musicOpen);
+  this.classList.toggle('open', musicOpen);
+});
+document.getElementById('musicGo').addEventListener('click', doMusicSearch);
+document.getElementById('musicInput').addEventListener('keydown', function(e){ if(e.key==='Enter') doMusicSearch(); });
+
+function doMusicSearch(){
+  var kw=document.getElementById('musicInput').value.trim();
+  if(!kw) return;
+  var sv=document.getElementById('musicServer').value;
+  var el=document.getElementById('musicResults');
+  el.innerHTML='<div class="music-loading">搜索中…</div>';
+  fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(kw)+'&server='+sv).then(function(r){return r.json();}).then(function(res){
+    if(!res.ok||!res.results||!res.results.length){ el.innerHTML='<div class="music-empty">没有结果</div>'; return; }
+    el.innerHTML=res.results.map(function(t){
+      return '<div class="music-item" data-title="'+esc(t.title)+'" data-url="'+esc(t.url)+'">'
+        +'<div class="music-info"><div class="music-title">'+esc(t.title)+'</div><div class="music-author">'+esc(t.author)+'</div></div>'
+        +'<button class="music-play" title="播放">▶</button>'
+        +'<button class="music-add" title="加入队列">+</button>'
+        +'</div>';
+    }).join('');
+  }).catch(function(){ el.innerHTML='<div class="music-empty">搜索失败，Meting 服务不可用</div>'; });
+}
+
+document.getElementById('musicResults').addEventListener('click', function(e){
+  var item = e.target.closest('.music-item');
+  if(!item) return;
+  var title = item.dataset.title;
+  var url = item.dataset.url; // Meting 返回的已带 auth 的完整 URL
+  if(e.target.closest('.music-play')){
+    addTrack(title, url, '在线');
+  } else if(e.target.closest('.music-add')){
+    busControl('play', {url:url, name:title, mode:'在线'});
+  }
+});
+
 var busOpen=false;
 document.getElementById('busToggle').addEventListener('click',function(){
   busOpen=!busOpen;
@@ -1695,7 +1744,6 @@ setInterval(function(){
 }, 60000);
 
 // 初始化
-loadPresets();
 
 // 加载队列
 fetch(API+'/widget/api/queue').then(function(r){return r.json();}).then(function(data){
