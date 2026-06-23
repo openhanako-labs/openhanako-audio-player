@@ -96,31 +96,15 @@ export class AudioBus {
     }
   }
 
+  // [Hijacked] 路由层已完全接管文件读写，旧单例不再写文件
+  // 任何通过旧单例调用 _saveQueue/_saveState 的定时器或事件
+  // 都只会更新内存状态，不会覆写文件
   _saveQueue() {
-    try {
-      const tmp = this.queuePath + ".tmp." + process.pid;
-      fs.writeFileSync(tmp, JSON.stringify(this.queue, null, 2), "utf-8");
-      fs.renameSync(tmp, this.queuePath);
-    } catch (e) {
-      console.warn("[bus] save queue failed:", e.message);
-    }
+    // no-op: route layer handles file persistence now
   }
 
   _saveState() {
-    try {
-      const st = {
-        status: this.status,
-        current: this.current,
-        currentIndex: this.currentIndex,
-        history: this.history.slice(-100),
-        updatedAt: Date.now(),
-      };
-      const tmp = this.statePath + ".tmp." + process.pid;
-      fs.writeFileSync(tmp, JSON.stringify(st, null, 2), "utf-8");
-      fs.renameSync(tmp, this.statePath);
-    } catch (e) {
-      console.warn("[bus] save state failed:", e.message);
-    }
+    // no-op: route layer handles file persistence now
   }
 
   // ── 协议解析 ──

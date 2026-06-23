@@ -221,6 +221,8 @@ setTimeout(n,100);
         fs.writeFileSync(tmp, JSON.stringify(q, null, 2), "utf-8");
         fs.renameSync(tmp, this.queuePath);
       } catch(e) {}
+      // 同步旧单例内存（防止旧定时器 _saveQueue 覆写文件）
+      try { const bus = getBus(ctx); if(bus) bus.queue = q.map(x => ({...x})); } catch(e) {}
     },
     readState() {
       try {
@@ -235,6 +237,8 @@ setTimeout(n,100);
         fs.writeFileSync(tmp, JSON.stringify(s, null, 2), "utf-8");
         fs.renameSync(tmp, this.statePath);
       } catch(e) {}
+      // 同步旧单例内存（防止旧定时器 _saveState 覆写文件）
+      try { const bus = getBus(ctx); if(bus) { bus.status = s.status; bus.current = s.current; bus.currentIndex = s.currentIndex; bus.history = s.history || []; } } catch(e) {}
     }
   };
 
@@ -413,6 +417,21 @@ function esc(s) {
 }
 function escAttr(s) {
   return esc(s);
+}
+
+function showToast(msg, dur) {
+  dur = dur || 2500;
+  var c = document.getElementById('toastContainer');
+  if (!c) return;
+  var t = document.createElement('div');
+  t.className = 'toast-item';
+  t.textContent = msg;
+  c.appendChild(t);
+  requestAnimationFrame(function() { t.classList.add('show'); });
+  setTimeout(function() {
+    t.classList.remove('show');
+    setTimeout(function() { t.remove(); }, 300);
+  }, dur);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -960,9 +979,25 @@ body {
 .bus-status-dot.playing { background:#4ade80; box-shadow:0 0 4px rgba(74,222,128,0.5); }
 .bus-status-dot.paused { background:#fbbf24; }
 .bus-status-dot.idle { background:var(--text-faint); }
+
+/* ═══ Toast 通知 ═══ */
+#toastContainer {
+  position:fixed; top:12px; left:50%; transform:translateX(-50%);
+  z-index:9999; display:flex; flex-direction:column; gap:6px; align-items:center;
+  pointer-events:none;
+}
+.toast-item {
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  color:var(--text); font-size:11px; padding:8px 16px;
+  box-shadow:0 4px 16px rgba(0,0,0,0.4); opacity:0;
+  transform:translateY(-8px); transition:opacity .25s, transform .25s;
+  pointer-events:auto;
+}
+.toast-item.show { opacity:1; transform:translateY(0); }
 </style>
 </head>
 <body>
+<div id="toastContainer"></div>
 
 <!-- Header -->
 <div class="header">
@@ -1558,8 +1593,11 @@ function busControl(action,extra){
     body:JSON.stringify(body)
   }).then(function(r){return r.json();}).then(function(res){
     refreshBus(); // 后端确认后刷新真实状态
-    // say 合成失败：自动跳到下一个
-    if(res.event==='say_skipped') { setTimeout(function(){busControl('next');}, 500); }
+    // say 合成失败：显示提示 + 自动跳到下一个
+    if(res.event==='say_skipped') {
+      showToast('语音生成失败（TTS 未启动），已跳过', 3000);
+      setTimeout(function(){busControl('next');}, 500);
+    }
     // 如果 bus 返回了播放条目，推入播放器
     if(res.event==='track_start' && res.item && res.item.url){
       var url=res.item.url;
