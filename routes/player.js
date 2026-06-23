@@ -1340,6 +1340,21 @@ function renderPL() {
 }
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+function showToast(msg,dur) {
+  dur = dur || 2500;
+  var c = document.getElementById('toastContainer');
+  if (!c) return;
+  var t = document.createElement('div');
+  t.className = 'toast-item';
+  t.textContent = msg;
+  c.appendChild(t);
+  requestAnimationFrame(function() { t.classList.add('show'); });
+  setTimeout(function() {
+    t.classList.remove('show');
+    setTimeout(function() { t.remove(); }, 300);
+  }, dur);
+}
+
 // ── Events ──
 document.getElementById('playBtn').addEventListener('click',toggle);
 document.getElementById('nextBtn').addEventListener('click',next);
