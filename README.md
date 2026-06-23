@@ -1,149 +1,115 @@
-# 🎵 openhanako-audio-player
+# 🎵 hanako-audio-player
 
-Hanako 音频播放器插件。侧边栏常驻播放器，支持 TTS 结果播放、本地音乐、在线音乐。
-
-参考了 Hanako 内置的「语音合成」插件（edge-tts）的对话播放器实现。
+Hanako 音频播放器插件。侧边栏常驻播放器，支持本地音乐、在线流、音乐搜索、场景调度、Bus 编排。
 
 ## 功能
 
-- ✅ **侧边栏常驻播放器** — 像 TODO 插件一样固定在面板
-- ✅ **播放列表** — 曲目管理、删除、切换
-- ✅ **在线电台** — 预设电台 + 自定义 URL 存为电台
-- ✅ **本地音频** — 路径添加本地音乐
+### 🎧 播放器核心
+- ✅ **深色玻璃主题 + 亮色切换** — 暖琥珀色点缀，一键切亮色（#FFF8E7）
+- ✅ **播放列表** — 曲目管理、删除、拖拽排序
+- ✅ **收藏筛选** — ★/☆ 收藏，收藏置顶筛选
+- ✅ **播放列表持久化** — localStorage 存储，刷新不丢失
+- ✅ **URL/本地路径添加** — 粘贴链接或路径 → 添加
+- ✅ **ID3v2 元数据读取** — Range 请求解析 TIT2，文件名美化回退
+- ✅ **本地文件删除同步** — HEAD 检测本地文件是否仍存在
 - ✅ **弹出独立窗口** ↗ — 不占面板位置
-- ✅ **播放队列持久化** — 重启后保留
-- ✅ **对话内嵌播放器** — TTS 合成结果直接在对话中播放
-- ✅ **CosyVoice TTS 集成**（可选）— 零样本语音克隆 + 情感控制
+- ✅ **MutationObserver** — 自动修复父 iframe `writing-mode: vertical-lr` 注入
 
-## 依赖
+### 🔍 音乐搜索（Meting）
+- ✅ **搜索歌曲/歌手** — 网易云 / QQ 双源
+- ✅ **封面缩略图** — 搜索结果带专辑封面
+- ✅ **一键操作** — ▶ 播放 / + 加入 Bus 队列 / ☾ 加入场景
+- ✅ **导入歌单** — 粘贴歌单 ID 或链接 → 批量导入
+- ✅ **歌单批量操作** — 全部播放 / 加入队列 / 加入场景
 
-对话播放卡片依赖「语音合成」插件（由群友「梅小板」开发，`tts_generate_speech` 工具），请确保该插件已安装并启用。
+> 搜索功能通过 HTTP 代理访问公共 Meting 实例（api.i-meto.com），零本地依赖。
+> 可通过环境变量 `METING_API_URL` 切换到自建实例。
+
+### 🌙 场景调度
+- ✅ **3 场景预设** — 💻 工作 / ☕ 休息 / 🌙 深夜
+- ✅ **时段自动推荐** — 根据当前时间推荐最合适的场景
+- ✅ **搜索结果加场景** — ☾ 按钮将歌曲追加到指定场景
+- ✅ **场景持久化** — 自定义场景曲目存 localStorage
+
+### 🚌 Bus 编排
+- ✅ **播放/跳过/清空** — Bus 队列控制
+- ✅ **队列 × 删除** — 点 × 移除单条，持久化到文件
+- ✅ **Add URL** — 添加任意音频 URL 到编排队列
+- ✅ **Segue 自动前进** — 过渡条目自动定时 next
+- ✅ **Toast 通知** — 操作反馈 + TTS 失败提示
+
+### 🛡 稳定性
+- ✅ **Bus 文件直写** — 绕过 require 缓存问题，路由层完全接管文件读写
+- ✅ **旧单例 no-op** — bus.js 的 _saveQueue/_saveState 改空操作，防旧定时器覆写
+- ✅ **内存同步** — 写文件后同步旧单例内存（防御性）
+- ✅ **Fetch 拦截器** — Authorization 只加本地 URL，外部流不加（修复 CORS）
+- ✅ **AbortError 静默** — audio.play() 的 AbortError 不再刷控制台
+
+## 技术栈
+
+- **后端**: Node.js + Hono (Bun 兼容)
+- **前端**: 原生 HTML/CSS/JS，CSS Custom Properties 主题系统
+- **音乐搜索**: Meting-API HTTP 代理 (api.i-meto.com)
+- **TTS**: CosyVoice 本地模型 / 浏览器原生 (降级链)
 
 ## 安装
 
-### 1. 复制插件到 Hanako
+### 开发模式
 
 ```bash
-cp -r openhanako-audio-player ~/.hanako/plugins/hanako-audio-player
+# 克隆到工作目录
+git clone <repo> W:/Games/Hanako/Work/hanako-audio-player
+
+# 在 Hana 中安装 dev 插件（通过 plugin_dev_install 或 UI）
+# 修改后热加载：plugin_dev_reload
 ```
 
-### 2. 重启 Hanako
-
-重启后在侧边栏可见「音频播放器」图标。
-
-## 使用方法
-
-### 播放器界面
-
-| 操作 | 方式 |
-|------|------|
-| 播放/暂停 | 点击 ▶ ⏸ 或按空格键 |
-| 切换曲目 | ⏮ ⏭ 按钮 |
-| 播放列表 | 点击标题栏展开/收起 |
-| 添加 URL | 粘贴到输入框 → 点击「添加」|
-| 存为电台 | 填写名称 → 点击「存为电台」|
-| 删除电台 | 悬停电台 → 点击 ✕ |
-| 弹出窗口 | 点击 ↗ 按钮 |
-
-### 工具命令
+### 正式安装
 
 ```bash
-# 添加音频到播放器
-play source="path/to/audio.mp3" title="曲目名"
-
-# CosyVoice TTS 合成（需额外配置）
-tts text="你好世界" spk="my_voice"
-tts text="你好" spk="丹瑾" instruct="开心"
+cp -r hanako-audio-player ~/.hanako/plugins/hanako-audio-player
+# 重启 Hana
 ```
 
-### 在线电台 URL 格式
+## 环境变量
 
-```
-# 网易云音乐
-https://music.163.com/song/media/outer/url?id={歌曲ID}.mp3
-
-# 任意直链 MP3
-https://example.com/song.mp3
-```
-
-
-### 环境要求
-
-- Python 3.10+
-- CosyVoice 项目（建议 CosyVoice2-0.5B）
-- CUDA 可用 GPU（推荐）
-
-### 安装依赖
-
-```bash
-cd /path/to/CosyVoice
-python -m venv venv
-source venv/bin/activate      # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-pip install soundfile openai-whisper
-```
-
-### 设置环境变量（可选）
-
-```bash
-# 通常不需要设置，executor 会自动搜索 CosyVoice 项目
-# 如需指定：
-set COSYVOICE_BASE=D:/path/to/CosyVoice
-set COSYVOICE_MODEL_DIR=D:/path/to/models/CosyVoice2-0.5B
-```
-
-`executor.py` 会自动搜索 CosyVoice 项目（按 `COSYVOICE_BASE` 环境变量 → 缓存文件 → 当前目录向上搜索 → 用户目录 → 驱动器根目录），首次找到后缓存路径。
-
-模型目录自动检测，优先级：`CosyVoice2-0.5B` → `CosyVoice3-0.5B` → `CosyVoice-300M`。
-
-### 合成模式
-
-| mode | 行为 |
-|------|------|
-| `auto`（默认） | 有 refAudio → 零样本克隆；有 instruct → Instruct；否则 SFT |
-| `zero_shot` | 强制零样本克隆（需 `refAudio`，`refText` 可选）|
-| `instruct` | 强制情感控制（需 `instruct` 参数）|
-| `sft` | 强制使用已克隆的说话人 |
-
-> **自动转录**：`zero_shot` 或 `auto` 模式下，只需提供 `refAudio`（参考音频），
-> `refText` 留空时 executor 会自动调用 Whisper base 进行中文语音转录，
-> 结果写回任务文件供后续复用。
-
-### 克隆音色（SFT 模式用）
-
-参考 CosyVoice 官方文档，以下代码将音色添加到模型：
-
-```python
-from cosyvoice.cli.cosyvoice import CosyVoice
-cosy = CosyVoice(model_dir='models/CosyVoice2-0.5B')
-cosy.add_zero_shot_spk('参考文本', '参考音频.wav', '说话人ID')
-cosy.frontend.spk2info['说话人ID']['embedding'] = cosy.frontend.spk2info['说话人ID']['llm_embedding']
-cosy.save_spkinfo()
-```
-
-### 启动执行器
-
-```bash
-python executor.py --input <taskId> --mode auto
-```
-
-执行器由 `tts` 工具自动调用，通常不需要手动执行。
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `METING_API_URL` | Meting 实例地址 | `https://api.i-meto.com/meting/api` |
+| `METING_TOKEN` | Meting HMAC 鉴权密钥 | `token` |
+| `COSYVOICE_BASE` | CosyVoice 项目路径 | 自动搜索 |
 
 ## 文件结构
 
 ```
 hanako-audio-player/
 ├── manifest.json        # 插件清单
-├── index.js             # 入口
-├── SKILL.md             # AI 使用指南
+├── index.js             # 入口 + 生命周期
+├── README.md             # 本文件
 ├── routes/
-│   └── player.js        # widget 页面 + 播放路由 + 队列 API
+│   └── player.js        # widget HTML + API 路由 + Bus 文件直写
 ├── tools/
+│   ├── bus.js            # AudioBus 编排引擎 (singleton, _save* 已 no-op)
 │   ├── generate_speech.js # 对话内嵌播放卡片
-│   ├── play.js          # 添加音频到播放器
-│   └── tts.js           # CosyVoice TTS 合成
-└── README.md
+│   ├── play.js           # 添加音频到播放器
+│   └── tts.js            # TTS Bus (L1 CosyVoice → L2 HTTP → L3 浏览器原生)
 ```
+
+## API 路由
+
+| 路由 | 方法 | 说明 |
+|------|------|------|
+| `/widget` | GET | 播放器 widget HTML |
+| `/widget/api/queue` | GET | 返回 media 目录文件列表 |
+| `/widget/api/speakers` | GET | 返回可用 TTS 说话人 |
+| `/widget/api/bus/state` | GET | Bus 状态 (纯文件读取) |
+| `/widget/api/bus/control` | POST | Bus 控制 (load/say/play/next/remove/clear) |
+| `/widget/api/music/search` | GET | 音乐搜索 (keyword, server) |
+| `/widget/api/music/playlist` | GET | 歌单导入 (id, server) |
+| `/widget/api/music/url` | GET | 音频 URL 302 跳转 |
+| `/widget/api/music/pic` | GET | 封面图 302 跳转 |
+| `/widget/api/music/lrc` | GET | 歌词文本 |
+| `/widget/media/:filename` | GET | 本地音频文件服务 |
 
 ## 许可
 

@@ -991,6 +991,8 @@ body {
 .music-results { padding:0 14px 8px; }
 .music-item { display:flex; align-items:center; gap:6px; padding:5px 0; border-bottom:1px solid var(--border); font-size:11px; }
 .music-item:last-child { border-bottom:none; }
+.music-thumb { width:28px; height:28px; border-radius:4px; object-fit:cover; flex-shrink:0; background:var(--surface); }
+.music-thumb-placeholder { width:28px; height:28px; border-radius:4px; flex-shrink:0; background:var(--surface); display:flex; align-items:center; justify-content:center; font-size:12px; color:var(--text-faint); }
 .music-info { flex:1; min-width:0; overflow:hidden; }
 .music-title { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-dim); }
 .music-author { font-size:10px; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -1107,6 +1109,10 @@ body {
         </select>
         <button class="music-go" id="musicGo">搜索</button>
       </div>
+      <div class="music-search-row" style="padding-top:0">
+        <input class="music-input" id="playlistInput" type="text" placeholder="粘贴歌单 ID 或链接…" spellcheck="false">
+        <button class="music-go" id="playlistGo" style="background:var(--surface);border:1px solid var(--border);color:var(--text-dim)">导入歌单</button>
+      </div>
       <div class="music-results" id="musicResults"></div>
     </div>
   </div>
@@ -1194,6 +1200,10 @@ if (TOKEN) {
 const audio = document.getElementById('audio');
 const npCover = document.getElementById('npCover');
 let trks = [], idx = 0, playing = false, shuffled = false, prevVol = 0.8;
+
+function saveTrks() { try { localStorage.setItem('hanako_audio_playlist', JSON.stringify(trks)); } catch(e) {} }
+function loadTrks() { try { var s = JSON.parse(localStorage.getItem('hanako_audio_playlist')); if(s && s.length) { trks = s; idx = 0; } } catch(e) {} }
+loadTrks();
 
 function fmt(s) {
   if (!s||!isFinite(s)) return '0:00';
@@ -1295,6 +1305,7 @@ function renderPL() {
       if(idx>=trks.length)idx=trks.length-1;
       if(trks.length)load(idx);else load(-1);
       renderPL();
+      saveTrks();
     });
   });
   document.getElementById('plBody').querySelectorAll('.pl-star').forEach(function(el){
@@ -1335,6 +1346,7 @@ function renderPL() {
       else if(dragIdx<idx&&dropIdx>=idx)idx--;
       else if(dragIdx>idx&&dropIdx<=idx)idx++;
       renderPL();
+      saveTrks();
     });
   });
 }
@@ -1414,6 +1426,7 @@ function addTrack(name,url,mode) {
   load(trks.length-1);
   if(audio.paused){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});}
   renderPL();
+  saveTrks();
 }
 
 function tok(url) {
@@ -1533,6 +1546,7 @@ function doMusicSearch(){
     if(!res.ok||!res.results||!res.results.length){ el.innerHTML='<div class="music-empty">没有结果</div>'; return; }
     el.innerHTML=res.results.map(function(t){
       return '<div class="music-item" data-title="'+esc(t.title)+'" data-url="'+esc(t.url)+'">'
+        +(t.pic ? '<img class="music-thumb" src="'+esc(t.pic)+'" loading="lazy">' : '<div class="music-thumb-placeholder">♫</div>')
         +'<div class="music-info"><div class="music-title">'+esc(t.title)+'</div><div class="music-author">'+esc(t.author)+'</div></div>'
         +'<button class="music-play" title="播放">▶</button>'
         +'<button class="music-add" title="加入队列">+</button>'
@@ -1574,6 +1588,83 @@ document.getElementById('musicResults').addEventListener('click', function(e){
     setTimeout(function(){ document.addEventListener('click', function cls(){ menu.remove(); document.removeEventListener('click', cls); }); }, 0);
   }
 });
+
+// ── Playlist Import ──
+document.getElementById('playlistGo').addEventListener('click', doPlaylistImport);
+document.getElementById('playlistInput').addEventListener('keydown', function(e){ if(e.key==='Enter') doPlaylistImport(); });
+
+function doPlaylistImport(){
+  var raw=document.getElementById('playlistInput').value.trim();
+  if(!raw) return;
+  // 提取 ID：支持纯数字或 ?id=xxx 格式的链接
+  var id=raw;
+  var idMatch=raw.match(/[?&]id=(\d+)/);
+  if(idMatch) id=idMatch[1];
+  var sv=document.getElementById('musicServer').value;
+  var el=document.getElementById('musicResults');
+  el.innerHTML='<div class="music-loading">加载歌单中…</div>';
+  fetch(API+'/widget/api/music/playlist?id='+encodeURIComponent(id)+'&server='+sv).then(function(r){return r.json();}).then(function(res){
+    if(!res.ok||!res.tracks||!res.tracks.length){ el.innerHTML='<div class="music-empty">歌单为空或无法获取</div>'; return; }
+    // 显示歌单 + 操作按钮
+    el.innerHTML='<div class="music-empty" style="padding-bottom:6px">歌单 '+res.tracks.length+' 首</div>'
+      +'<div style="display:flex;gap:4px;padding:0 0 8px">'
+      +'<button class="music-play" style="font-size:10px;padding:3px 8px">全部播放</button>'
+      +<button class="music-add" style="font-size:10px;padding:3px 8px;opacity:1">加入队列</button>'
+      +<button class="music-scene" style="font-size:10px;padding:3px 8px;opacity:1">加入场景</button>'
+      +'</div>'
+      + res.tracks.map(function(t){
+        return '<div class="music-item" data-title="'+esc(t.title)+'" data-url="'+esc(t.url)+'">'
+          +(t.pic ? '<img class="music-thumb" src="'+esc(t.pic)+'" loading="lazy">' : '<div class="music-thumb-placeholder">♫</div>')
+          +'<div class="music-info"><div class="music-title">'+esc(t.title)+'</div><div class="music-author">'+esc(t.author)+'</div></div>'
+          +'<button class="music-play" title="播放">▶</button>'
+          +'<button class="music-add" title="加入队列">+</button>'
+          +'<button class="music-scene" title="加入场景">☾</button>'
+          +'</div>';
+      }).join('');
+    // 存歌单数据供批量操作
+    el._playlistTracks = res.tracks;
+  }).catch(function(){ el.innerHTML='<div class="music-empty">歌单加载失败</div>'; });
+}
+
+// 歌单批量操作：全部播放 / 加入队列 / 加入场景
+(function(){
+  var el=document.getElementById('musicResults');
+  var origClick = el.onclick;
+  el.addEventListener('click', function(e){
+    var tracks = el._playlistTracks;
+    if(!tracks || !tracks.length) return;
+    // “全部播放” 按钮（歌单操作栏第一个 music-play）
+    if(e.target.closest('.music-play') && !e.target.closest('.music-item .music-play')){
+      tracks.forEach(function(t, i){ if(i===0) addTrack(t.title, t.url, '在线'); else { addTrack(t.title, t.url, '在线'); } });
+      showToast('已添加 '+tracks.length+' 首到播放列表', 2000);
+    }
+    // “加入队列” 按钮（歌单操作栏第一个 music-add）
+    if(e.target.closest('.music-add') && !e.target.closest('.music-item .music-add')){
+      tracks.forEach(function(t){ busControl('play', {url:t.url, name:t.title, mode:'在线'}); });
+      showToast('已加入 '+tracks.length+' 首到编排队列', 2000);
+    }
+    // “加入场景” 按钮（歌单操作栏第一个 music-scene）
+    if(e.target.closest('.music-scene') && !e.target.closest('.music-item .music-scene')){
+      var existing = document.getElementById('musicSceneMenu');
+      if(existing) existing.remove();
+      var menu = document.createElement('div');
+      menu.id = 'musicSceneMenu';
+      menu.className = 'music-scene-menu';
+      menu.innerHTML = Object.keys(SCENES).map(function(k){ return '<div data-scene="'+k+'">'+SCENES[k].label+'</div>'; }).join('');
+      el.parentElement.appendChild(menu);
+      menu.style.position='relative';
+      menu.addEventListener('click', function(ev){
+        var opt=ev.target.closest('[data-scene]'); if(!opt) return;
+        var key=opt.dataset.scene;
+        tracks.forEach(function(t){ SCENES[key].playlist.push({type:'play',url:t.url,name:t.title,mode:'在线'}); });
+        saveScenes();
+        showToast('已加入 '+tracks.length+' 首到 '+SCENES[key].label, 2000);
+        menu.remove();
+      });
+      setTimeout(function(){ document.addEventListener('click',function cls(){menu.remove();document.removeEventListener('click',cls);}); },0);
+    }
+  });
+})();
 
 var busOpen=false;
 document.getElementById('busToggle').addEventListener('click',function(){
@@ -1838,6 +1929,7 @@ setInterval(function(){
     if(idx>=trks.length) idx=Math.max(0,trks.length-1);
     if(trks.length) load(idx); else load(-1);
     renderPL();
+    saveTrks();
   }
 }, 5000);
 
