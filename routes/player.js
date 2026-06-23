@@ -1228,7 +1228,22 @@ function load(i) {
   idx=i; const t=trks[i];
   document.getElementById('trackName').textContent=t.name;
   document.getElementById('trackMode').textContent=t.mode||'';
-  audio.src=t.url; audio.load();
+  if(t.url) { audio.src=t.url; audio.load(); }
+  else if(t.searchKey) {
+    // 无 URL 但有搜索关键词 → 自动搜索完整音频
+    showToast('搜索 '+t.name+'…', 1500);
+    var sv = t.searchServer || 'netease';
+    fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(t.searchKey)+'&server='+sv).then(function(r){return r.json();}).then(function(res){
+      if(res.ok && res.results && res.results.length) {
+        t.url = res.results[0].url;
+        t.name = res.results[0].title;
+        saveTrks();
+        audio.src=t.url; audio.load();
+        audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
+        playing=true; toggle();
+      } else { showToast('未找到完整音频: '+t.name, 2000); }
+    }).catch(function(){ showToast('搜索失败: '+t.name, 2000); });
+  }
   npCover.classList.add('spinning');
   tryReadMetadata(audio, t);
   renderPL();
@@ -1568,32 +1583,49 @@ document.getElementById('musicResults').addEventListener('click', function(e){
   var item = e.target.closest('.music-item');
   if(!item) return;
   var title = item.dataset.title;
-  var url = item.dataset.url;
+  var searchKey = item.dataset.search; // 歌单条目：搜索关键词
+  var url = item.dataset.url; // 搜索结果：直链
+  var server = item.dataset.server; // 歌单条目的源
+  // 歌单条目没有 data-url → 需要先搜索拿 URL
+  function withUrl(cb) {
+    if (url) { cb(url, title); return; }
+    if (!searchKey) { showToast('无法获取音频', 2000); return; }
+    showToast('搜索完整音频…', 2000);
+    var sv = server || document.getElementById('musicServer').value;
+    fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(searchKey)+'&server='+sv).then(function(r){return r.json();}).then(function(res){
+      if(res.ok && res.results && res.results.length) {
+        cb(res.results[0].url, res.results[0].title);
+      } else {
+        showToast('未找到完整音频', 2000);
+      }
+    }).catch(function(){ showToast('搜索失败', 2000); });
+  }
   if(e.target.closest('.music-play')){
-    addTrack(title, url, '在线');
+    withUrl(function(u, t){ addTrack(t, u, '在线'); });
   } else if(e.target.closest('.music-add')){
-    busControl('play', {url:url, name:title, mode:'在线'});
+    withUrl(function(u, t){ busControl('play', {url:u, name:t, mode:'在线'}); });
   } else if(e.target.closest('.music-scene')){
-    // 弹出场景菜单
-    var existing = document.getElementById('musicSceneMenu');
-    if(existing) existing.remove();
-    var menu = document.createElement('div');
-    menu.id = 'musicSceneMenu';
-    menu.className = 'music-scene-menu';
-    menu.innerHTML = Object.keys(SCENES).map(function(k){ return '<div data-scene="'+k+'">'+SCENES[k].label+'</div>'; }).join('');
-    item.style.position = 'relative';
-    item.appendChild(menu);
-    menu.addEventListener('click', function(ev){
-      var opt = ev.target.closest('[data-scene]');
-      if(!opt) return;
-      var key = opt.dataset.scene;
-      SCENES[key].playlist.push({ type:'play', url:url, name:title, mode:'在线' });
-      saveScenes();
-      showToast('已加入 '+SCENES[key].label+' 场景', 2000);
-      menu.remove();
+    withUrl(function(u, t){
+      var existing = document.getElementById('musicSceneMenu');
+      if(existing) existing.remove();
+      var menu = document.createElement('div');
+      menu.id = 'musicSceneMenu';
+      menu.className = 'music-scene-menu';
+      menu.innerHTML = Object.keys(SCENES).map(function(k){ return '<div data-scene="'+k+'">'+SCENES[k].label+'</div>'; }).join('');
+      item.style.position = 'relative';
+      item.appendChild(menu);
+      menu.addEventListener('click', function(ev){
+        var opt = ev.target.closest('[data-scene]');
+        if(!opt) return;
+        var key = opt.dataset.scene;
+        SCENES[key].playlist.push({ type:'play', url:u, name:t, mode:'在线' });
+        saveScenes();
+        showToast('已加入 '+SCENES[key].label+' 场景', 2000);
+        menu.remove();
+      });
+      // 点外部关闭
+      setTimeout(function(){ document.addEventListener('click', function cls(){ menu.remove(); document.removeEventListener('click', cls); }); }, 0);
     });
-    // 点外部关闭
-    setTimeout(function(){ document.addEventListener('click', function cls(){ menu.remove(); document.removeEventListener('click', cls); }); }, 0);
   }
 });
 
@@ -1604,7 +1636,6 @@ document.getElementById('playlistInput').addEventListener('keydown', function(e)
 function doPlaylistImport(){
   var raw=document.getElementById('playlistInput').value.trim();
   if(!raw) return;
-  // 提取 ID：支持纯数字或 ?id=xxx 格式的链接
   var id=raw;
   var idMatch=raw.match(/[?&]id=(\\d+)/);
   if(idMatch) id=idMatch[1];
@@ -1613,15 +1644,15 @@ function doPlaylistImport(){
   el.innerHTML='<div class="music-loading">加载歌单中…</div>';
   fetch(API+'/widget/api/music/playlist?id='+encodeURIComponent(id)+'&server='+sv).then(function(r){return r.json();}).then(function(res){
     if(!res.ok||!res.tracks||!res.tracks.length){ el.innerHTML='<div class="music-empty">歌单为空或无法获取</div>'; return; }
-    // 显示歌单 + 操作按钮
-    el.innerHTML='<div class="music-empty" style="padding-bottom:6px">歌单 '+res.tracks.length+' 首</div>'
+    el.innerHTML='<div class="music-empty" style="padding-bottom:6px">歌单 '+res.tracks.length+' 首 <span style="color:var(--text-faint);font-size:10px">（点击播放时自动搜索完整音频）</span></div>'
       +'<div style="display:flex;gap:4px;padding:0 0 8px">'
       +'<button class="music-play" style="font-size:10px;padding:3px 8px">全部播放</button>'
       +'<button class="music-add" style="font-size:10px;padding:3px 8px;opacity:1">加入队列</button>'
       +'<button class="music-scene" style="font-size:10px;padding:3px 8px;opacity:1">加入场景</button>'
       +'</div>'
       + res.tracks.map(function(t){
-        return '<div class="music-item" data-title="'+esc(t.title)+'" data-url="'+esc(t.url)+'">'
+        var searchKey = (t.title+' '+t.author).trim();
+        return '<div class="music-item" data-title="'+esc(t.title)+'" data-search="'+esc(searchKey)+'" data-server="'+sv+'" data-pic="'+esc(t.pic||'')+'">'
           +(t.pic ? '<img class="music-thumb" src="'+esc(t.pic)+'" loading="lazy">' : '<div class="music-thumb-placeholder">♫</div>')
           +'<div class="music-info"><div class="music-title">'+esc(t.title)+'</div><div class="music-author">'+esc(t.author)+'</div></div>'
           +'<button class="music-play" title="播放">▶</button>'
@@ -1629,8 +1660,8 @@ function doPlaylistImport(){
           +'<button class="music-scene" title="加入场景">☾</button>'
           +'</div>';
       }).join('');
-    // 存歌单数据供批量操作
     el._playlistTracks = res.tracks;
+    el._playlistServer = sv;
   }).catch(function(){ el.innerHTML='<div class="music-empty">歌单加载失败</div>'; });
 }
 
@@ -1641,14 +1672,32 @@ function doPlaylistImport(){
   el.addEventListener('click', function(e){
     var tracks = el._playlistTracks;
     if(!tracks || !tracks.length) return;
+    var sv = el._playlistServer || 'netease';
     // “全部播放” 按钮（歌单操作栏第一个 music-play）
     if(e.target.closest('.music-play') && !e.target.closest('.music-item .music-play')){
-      tracks.forEach(function(t, i){ if(i===0) addTrack(t.title, t.url, '在线'); else { addTrack(t.title, t.url, '在线'); } });
-      showToast('已添加 '+tracks.length+' 首到播放列表', 2000);
+      // 搜索第一首的完整 URL 播放，其余以名字加入（播放时自动搜索）
+      var first = tracks[0];
+      var firstKey = (first.title+' '+first.author).trim();
+      showToast('搜索 '+first.title+' …', 1500);
+      fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(firstKey)+'&server='+sv).then(function(r){return r.json();}).then(function(res){
+        if(res.ok && res.results && res.results.length) {
+          addTrack(res.results[0].title, res.results[0].url, '在线');
+        }
+      });
+      // 其余用搜索关键词加入（type=search 标记自动搜索）
+      for(var i=1; i<tracks.length; i++){
+        var t = tracks[i];
+        trks.push({name:t.title, url:'', mode:'在线', dur:0, searchKey:(t.title+' '+t.author).trim(), searchServer:sv});
+      }
+      renderPL(); saveTrks();
+      showToast('已添加 '+tracks.length+' 首（首首自动搜索完整音频）', 2500);
     }
     // “加入队列” 按钮（歌单操作栏第一个 music-add）
     if(e.target.closest('.music-add') && !e.target.closest('.music-item .music-add')){
-      tracks.forEach(function(t){ busControl('play', {url:t.url, name:t.title, mode:'在线'}); });
+      tracks.forEach(function(t){
+        var key = (t.title+' '+t.author).trim();
+        busControl('play', {url:'', name:t.title, mode:'在线', searchKey:key, searchServer:sv});
+      });
       showToast('已加入 '+tracks.length+' 首到编排队列', 2000);
     }
     // “加入场景” 按钮（歌单操作栏第一个 music-scene）
@@ -1664,7 +1713,10 @@ function doPlaylistImport(){
       menu.addEventListener('click', function(ev){
         var opt=ev.target.closest('[data-scene]'); if(!opt) return;
         var key=opt.dataset.scene;
-        tracks.forEach(function(t){ SCENES[key].playlist.push({type:'play',url:t.url,name:t.title,mode:'在线'}); });
+        tracks.forEach(function(t){
+          var key2 = (t.title+' '+t.author).trim();
+          SCENES[key].playlist.push({type:'play',url:'',name:t.title,mode:'在线',searchKey:key2,searchServer:sv});
+        });
         saveScenes();
         showToast('已加入 '+tracks.length+' 首到 '+SCENES[key].label, 2000);
         menu.remove();
@@ -1690,6 +1742,20 @@ function doPlaylistImport(){
   // 尊 prefers-reduced-motion
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
+  var isLocalSrc = true; // 跟踪当前源是否本地 (无 CORS 限制)
+  var simPhase = 0; // 模拟波形相位
+
+  // 监听音频源变化，检测是否外部链接
+  var origSrc = '';
+  function checkSrc() {
+    var cur = audio.currentSrc || audio.src || '';
+    if (cur !== origSrc) {
+      origSrc = cur;
+      // 以 /widget/ 开头的是本地代理，其他 http URL 是外部的
+      isLocalSrc = cur.startsWith('/widget/') || (!cur.startsWith('http'));
+    }
+  }
+
   function initAudio() {
     if (actx) return;
     try {
@@ -1707,40 +1773,64 @@ function doPlaylistImport(){
     }
   }
 
+  // 简单伪随机 (基于种子的正弦混合)
+  function pseudoBar(i, phase) {
+    return 0.3 + 0.35 * Math.sin(i*0.7+phase*1.3) + 0.2 * Math.sin(i*1.9+phase*0.7) + 0.15 * Math.cos(i*2.3+phase*2.1);
+  }
+
   function draw() {
     visRAF = requestAnimationFrame(draw);
     var w = canvas.width = canvas.clientWidth * (window.devicePixelRatio||1);
     var h = canvas.height = canvas.clientHeight * (window.devicePixelRatio||1);
     ctx.clearRect(0,0,w,h);
-    // 停止或没分析器时画静默条
-    if (!analyser || !dataArr || audio.paused) {
-      drawSilent(w,h);
-      return;
+    checkSrc();
+    if (audio.paused) { drawSilent(w,h); return; }
+
+    // 本地音频 → 真实频谱; 外部音频 → 模拟波形 (避免 CORS 静音)
+    if (isLocalSrc && analyser && dataArr) {
+      try { analyser.getByteFrequencyData(dataArr); } catch(e) { dataArr = null; }
     }
-    analyser.getByteFrequencyData(dataArr);
-    var step = Math.floor(dataArr.length / BAR_COUNT);
+    var useReal = isLocalSrc && dataArr && dataArr.some(function(v){return v>0;});
+
     var barW = (w - BAR_GAP * (BAR_COUNT-1)) / BAR_COUNT;
-    for (var i=0; i<BAR_COUNT; i++) {
-      var val = dataArr[i * step] || 0;
-      var barH = Math.max(2, (val/255) * h * 0.92);
-      var x = i * (barW + BAR_GAP);
-      var y = h - barH;
-      // 渐变：底部暗琥珀 → 顶部亮琥珀
-      var grd = ctx.createLinearGradient(x, h, x, y);
-      grd.addColorStop(0, AMBER_DIM);
-      grd.addColorStop(1, AMBER);
-      ctx.fillStyle = grd;
-      ctx.beginPath();
-      var r = Math.min(barW/2, 2);
-      ctx.moveTo(x+r, y);
-      ctx.lineTo(x+barW-r, y);
-      ctx.quadraticCurveTo(x+barW, y, x+barW, y+r);
-      ctx.lineTo(x+barW, h);
-      ctx.lineTo(x, h);
-      ctx.lineTo(x, y+r);
-      ctx.quadraticCurveTo(x, y, x+r, y);
-      ctx.fill();
+    if (useReal) {
+      var step = Math.max(1, Math.floor(dataArr.length / BAR_COUNT));
+      for (var i=0; i<BAR_COUNT; i++) {
+        var val = dataArr[i * step] || 0;
+        drawBar(w,h,barW,i, val/255);
+      }
+    } else if (!audio.paused) {
+      // 模拟模式：随时间变化的伪随机波形
+      simPhase += 0.04;
+      var vol = audio.volume || 1;
+      for (var i=0; i<BAR_COUNT; i++) {
+        var val = pseudoBar(i, simPhase) * vol;
+        drawBar(w,h,barW,i, val);
+      }
+    } else {
+      drawSilent(w,h);
     }
+  }
+
+  function drawBar(w,h,barW,i, norm) {
+    norm = Math.max(0.02, Math.min(1, norm));
+    var barH = Math.max(2, norm * h * 0.92);
+    var x = i * (barW + BAR_GAP);
+    var y = h - barH;
+    var grd = ctx.createLinearGradient(x, h, x, y);
+    grd.addColorStop(0, AMBER_DIM);
+    grd.addColorStop(1, AMBER);
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    var r = Math.min(barW/2, 2);
+    ctx.moveTo(x+r, y);
+    ctx.lineTo(x+barW-r, y);
+    ctx.quadraticCurveTo(x+barW, y, x+barW, y+r);
+    ctx.lineTo(x+barW, h);
+    ctx.lineTo(x, h);
+    ctx.lineTo(x, y+r);
+    ctx.quadraticCurveTo(x, y, x+r, y);
+    ctx.fill();
   }
 
   function drawSilent(w,h) {
