@@ -1152,8 +1152,8 @@ body {
     </button>
     <input type="range" class="vol-slider" id="volumeSlider" min="0" max="100" value="80">
   </div>
-  <button class="ctrl-btn" id="modeBtn" title="播放模式" style="width:26px;height:26px;">
-    <svg id="modeIcon" viewBox="0 0 24 24" width="16" height="16"></svg>
+  <button class="ctrl-btn" id="modeBtn" title="播放模式" style="width:26px;height:26px;opacity:0.65">
+    <svg id="modeIcon" viewBox="0 0 24 24" width="16" height="16"><line x1="5" y1="5" x2="5" y2="19" stroke="currentColor" stroke-width="2"/><polygon points="8 12 18 5 18 19" fill="currentColor"/></svg>
   </button>
 </div>
 
@@ -1410,13 +1410,11 @@ function renderPL() {
   var html='';
   groups.forEach(function(glabel){
     var g=groupMap[glabel];
-    if(groups.length>1){
       html+='<div class="pl-group-header" data-group="'+esc(glabel)+'">'
         +'<svg class="pl-chevron" viewBox="0 0 24 24" width="12" height="12"><polyline points="6 9 12 15 18 9"/></svg>'
         +'<span class="pl-group-name">'+esc(glabel)+'</span>'
         +'<span class="pl-group-count">'+g.items.length+'</span>'
         +'</div>';
-    }
     html+='<div class="pl-group-body" data-group="'+esc(glabel)+'">';
     g.items.forEach(function(item,n){
       var t=item.t, i=item.i;
@@ -2026,7 +2024,7 @@ function doPlaylistImport(){
       var t=trks[idx];
       if(!t||!t.url) return;
       // 尝试从 Meting URL 提取 id
-      var idM=t.url.match(/[?&]id=(\d+)/);
+      var idM=t.url.match(/[?&]id=(\\d+)/);
       var svM=t.url.match(/server=(netease|tencent)/);
       if(!idM) return;
       var songId=idM[1];
