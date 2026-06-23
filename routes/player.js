@@ -998,6 +998,11 @@ body {
 .music-play:hover { border-color:var(--accent); color:var(--accent); }
 .music-add { background:none; border:none; color:var(--text-faint); font-size:10px; cursor:pointer; padding:3px 6px; flex-shrink:0; opacity:.6; transition:all .12s; }
 .music-add:hover { opacity:1; color:var(--accent); }
+.music-scene { background:none; border:none; color:var(--text-faint); font-size:10px; cursor:pointer; padding:3px 6px; flex-shrink:0; opacity:.5; transition:all .12s; }
+.music-scene:hover { opacity:1; color:var(--accent); }
+.music-scene-menu { position:absolute; right:14px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:4px 0; box-shadow:0 4px 12px rgba(0,0,0,.3); z-index:10; font-size:11px; min-width:90px; }
+.music-scene-menu div { padding:4px 12px; cursor:pointer; color:var(--text-dim); white-space:nowrap; }
+.music-scene-menu div:hover { background:var(--accent-soft); color:var(--accent); }
 .music-empty { padding:12px 0; text-align:center; color:var(--text-faint); font-size:11px; }
 .music-loading { padding:12px 0; text-align:center; color:var(--text-faint); font-size:11px; }
 </style>
@@ -1516,6 +1521,7 @@ function doMusicSearch(){
         +'<div class="music-info"><div class="music-title">'+esc(t.title)+'</div><div class="music-author">'+esc(t.author)+'</div></div>'
         +'<button class="music-play" title="播放">▶</button>'
         +'<button class="music-add" title="加入队列">+</button>'
+        +'<button class="music-scene" title="加入场景">☾</button>'
         +'</div>';
     }).join('');
   }).catch(function(){ el.innerHTML='<div class="music-empty">搜索失败，Meting 服务不可用</div>'; });
@@ -1525,11 +1531,32 @@ document.getElementById('musicResults').addEventListener('click', function(e){
   var item = e.target.closest('.music-item');
   if(!item) return;
   var title = item.dataset.title;
-  var url = item.dataset.url; // Meting 返回的已带 auth 的完整 URL
+  var url = item.dataset.url;
   if(e.target.closest('.music-play')){
     addTrack(title, url, '在线');
   } else if(e.target.closest('.music-add')){
     busControl('play', {url:url, name:title, mode:'在线'});
+  } else if(e.target.closest('.music-scene')){
+    // 弹出场景菜单
+    var existing = document.getElementById('musicSceneMenu');
+    if(existing) existing.remove();
+    var menu = document.createElement('div');
+    menu.id = 'musicSceneMenu';
+    menu.className = 'music-scene-menu';
+    menu.innerHTML = Object.keys(SCENES).map(function(k){ return '<div data-scene="'+k+'">'+SCENES[k].label+'</div>'; }).join('');
+    item.style.position = 'relative';
+    item.appendChild(menu);
+    menu.addEventListener('click', function(ev){
+      var opt = ev.target.closest('[data-scene]');
+      if(!opt) return;
+      var key = opt.dataset.scene;
+      SCENES[key].playlist.push({ type:'play', url:url, name:title, mode:'在线' });
+      saveScenes();
+      showToast('已加入 '+SCENES[key].label+' 场景', 2000);
+      menu.remove();
+    });
+    // 点外部关闭
+    setTimeout(function(){ document.addEventListener('click', function cls(){ menu.remove(); document.removeEventListener('click', cls); }); }, 0);
   }
 });
 
@@ -1741,7 +1768,19 @@ setInterval(function(){
   var rec=autoScene();
   var badge=document.getElementById('sceneBadge');
   badge.textContent='推荐: '+SCENES[rec].label;
-}, 60000);
+}}, 60000);
+
+// 场景持久化：修改后保存到 localStorage
+function saveScenes(){
+  try { localStorage.setItem('hanako_audio_scenes', JSON.stringify(SCENES)); } catch(e) {}
+}
+function loadScenes(){
+  try {
+    var saved = JSON.parse(localStorage.getItem('hanako_audio_scenes'));
+    if(saved){ Object.keys(saved).forEach(function(k){ if(SCENES[k]) SCENES[k].playlist = saved[k].playlist; }); }
+  } catch(e) {}
+}
+loadScenes();
 
 // 初始化
 
