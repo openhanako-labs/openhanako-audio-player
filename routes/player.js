@@ -1768,7 +1768,7 @@ setInterval(function(){
   var rec=autoScene();
   var badge=document.getElementById('sceneBadge');
   badge.textContent='推荐: '+SCENES[rec].label;
-}}, 60000);
+}, 60000);
 
 // 场景持久化：修改后保存到 localStorage
 function saveScenes(){
