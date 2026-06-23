@@ -1598,7 +1598,7 @@ function doPlaylistImport(){
   if(!raw) return;
   // 提取 ID：支持纯数字或 ?id=xxx 格式的链接
   var id=raw;
-  var idMatch=raw.match(/[?&]id=(\d+)/);
+  var idMatch=raw.match(/[?&]id=(\\d+)/);
   if(idMatch) id=idMatch[1];
   var sv=document.getElementById('musicServer').value;
   var el=document.getElementById('musicResults');
