@@ -819,36 +819,6 @@ body {
 }
 .bus-btn:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
 .bus-btn:active { transform:scale(0.94); }
-.bus-say-row {
-  display:flex; gap:6px; padding:4px 14px 8px;
-}
-.bus-say-input {
-  flex:1; min-width:0;
-  background:var(--surface); border:1px solid var(--border); border-radius:7px;
-  color:var(--text); font-size:11px; padding:5px 10px;
-  outline:none; font-family:inherit;
-  transition: border-color 0.15s;
-}
-.bus-say-input::placeholder { color:var(--text-faint); }
-.bus-say-input:focus { border-color:var(--accent); }
-.bus-spk-input {
-  width:80px; flex-shrink:0;
-  background:var(--surface); border:1px solid var(--border); border-radius:7px;
-  color:var(--text); font-size:11px; padding:5px 6px;
-  outline:none; font-family:inherit;
-  transition: border-color 0.15s; cursor:pointer;
-}
-.bus-spk-input:focus { border-color:var(--accent); }
-.bus-play-row { display:flex; gap:6px; padding:0 14px 8px; }
-.bus-say-btn {
-  background:linear-gradient(135deg, var(--accent), #c48454);
-  border:none; border-radius:7px; color:#fff;
-  font-size:11px; padding:5px 14px; cursor:pointer;
-  font-family:inherit; font-weight:500; white-space:nowrap;
-  box-shadow: 0 2px 8px var(--accent-glow);
-  transition: all 0.15s;
-}
-.bus-say-btn:hover { box-shadow:0 3px 12px var(--accent-glow); }
 .bus-queue { padding:0 14px 8px; }
 .bus-queue-item {
   display:flex; align-items:center; gap:6px;
@@ -927,25 +897,23 @@ body {
 }
 .bus-btn.primary:hover { box-shadow:0 3px 12px var(--accent-glow); }
 
-.bus-say-row {
-  display:flex; gap:4px; padding:4px 14px 6px;
-}
-.bus-say-input {
+.bus-play-row { display:flex; gap:6px; padding:2px 14px 8px; }
+.bus-play-input {
   flex:1; min-width:0;
   background:var(--surface); border:1px solid var(--border); border-radius:7px;
   color:var(--text); font-size:11px; padding:5px 10px;
   outline:none; font-family:inherit;
   transition: border-color 0.15s;
 }
-.bus-say-input::placeholder { color:var(--text-faint); }
-.bus-say-input:focus { border-color:var(--accent); }
-.bus-say-btn {
-  background:var(--accent-soft); border:1px solid var(--accent); border-radius:7px;
-  color:var(--accent); font-size:11px; padding:5px 12px;
+.bus-play-input::placeholder { color:var(--text-faint); }
+.bus-play-input:focus { border-color:var(--accent); }
+.bus-play-add-btn {
+  background:var(--surface); border:1px solid var(--border); border-radius:7px;
+  color:var(--text-dim); font-size:11px; padding:5px 12px;
   cursor:pointer; font-family:inherit; white-space:nowrap;
   transition: all 0.15s;
 }
-.bus-say-btn:hover { background:var(--accent); color:#fff; }
+.bus-play-add-btn:hover { border-color:var(--accent); color:var(--accent); }
 
 .bus-queue { padding:0 14px 8px; }
 .bus-queue-item {
@@ -1125,14 +1093,9 @@ body {
         <button class="bus-btn" id="busNextBtn" title="跳过">⏭</button>
         <button class="bus-btn" id="busClearBtn" title="清空">✕</button>
       </div>
-      <div class="bus-say-row">
-        <input class="bus-say-input" id="busSayInput" type="text" placeholder="输入串场文本，回车合成语音…" spellcheck="false">
-        <select class="bus-spk-input" id="busSpkSelect" title="说话人"></select>
-        <button class="bus-say-btn" id="busSayBtn">Say</button>
-      </div>
       <div class="bus-play-row">
-        <input class="bus-say-input" id="busPlayInput" type="text" placeholder="输入音频 URL，回车添加到编排队列…" spellcheck="false">
-        <button class="bus-say-btn" id="busPlayAddBtn" style="background:var(--surface);border:1px solid var(--border);color:var(--text-dim);box-shadow:none;">Add</button>
+        <input class="bus-play-input" id="busPlayInput" type="text" placeholder="输入音频 URL，回车添加到编排队列…" spellcheck="false">
+        <button class="bus-play-add-btn" id="busPlayAddBtn">Add</button>
       </div>
       <div class="bus-queue" id="busQueue"></div>
     </div>
@@ -1584,7 +1547,6 @@ function busControl(action,extra){
   if(action==='next') busOptimisticNext();
   else if(action==='remove' && extra && extra.index!=null) busOptimisticRemove(extra.index);
   else if(action==='clear') busOptimisticClear();
-  else if(action==='say') busOptimisticSay(extra);
 
   var body=Object.assign({action:action},extra||{});
   return fetch(API+'/widget/api/bus/control',{
@@ -1633,14 +1595,6 @@ function busOptimisticClear(){
   var badge=document.getElementById('busStatusBadge');
   if(badge){ badge.textContent='空闲'; badge.className='bus-status'; }
 }
-function busOptimisticSay(extra){
-  if(!extra || !extra.text) return;
-  var qEl=document.getElementById('busQueue');
-  var div=document.createElement('div');
-  div.className='bus-queue-item bus-q-pending';
-  div.innerHTML='<span class="bus-q-type say">say</span><span class="bus-q-name bus-q-current">🔊 ' +esc(extra.text.slice(0,30))+ '</span>';
-  qEl.appendChild(div);
-}
 document.getElementById('busPlayBtn').addEventListener('click',function(){
   fetch(API+'/widget/api/bus/state').then(function(r){return r.json();}).then(function(s){
     if(s.status==='paused'){busControl('resume');}
@@ -1650,16 +1604,6 @@ document.getElementById('busPlayBtn').addEventListener('click',function(){
 });
 document.getElementById('busNextBtn').addEventListener('click',function(){busControl('next');});
 document.getElementById('busClearBtn').addEventListener('click',function(){busControl('clear');});
-document.getElementById('busSayBtn').addEventListener('click',function(){
-  var text=document.getElementById('busSayInput').value.trim();
-  if(!text)return;
-  var spk=document.getElementById('busSpkSelect').value||'my_voice';
-  document.getElementById('busSayInput').value='';
-  busControl('say',{text:text,spk:spk});
-});
-document.getElementById('busSayInput').addEventListener('keydown',function(e){
-  if(e.key==='Enter')document.getElementById('busSayBtn').click();
-});
 // 添加播放条目到 Bus 队列
 document.getElementById('busPlayAddBtn').addEventListener('click',function(){
   var url=document.getElementById('busPlayInput').value.trim();
@@ -1670,15 +1614,6 @@ document.getElementById('busPlayAddBtn').addEventListener('click',function(){
 document.getElementById('busPlayInput').addEventListener('keydown',function(e){
   if(e.key==='Enter')document.getElementById('busPlayAddBtn').click();
 });
-// 加载说话人列表
-fetch(API+'/widget/api/speakers').then(function(r){return r.json();}).then(function(data){
-  if(data&&data.speakers){
-    var sel=document.getElementById('busSpkSelect');
-    sel.innerHTML=data.speakers.map(function(s){
-      return '<option value="'+s.id+'">'+s.name+'</option>';
-    }).join('');
-  }
-}).catch(function(){});
 // 定时刷新 bus 状态（面板打开时）
 setInterval(function(){ if(busOpen) refreshBus(); }, 3000);
 
