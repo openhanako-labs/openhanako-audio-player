@@ -220,13 +220,19 @@ setTimeout(n,100);
   });
 
   app.get("/widget/api/music/lrc", async (c) => {
-    const url = c.req.query("url") || "";
-    if (!url) return c.json({ ok:false, error:"url required" }, 400);
+    const id = c.req.query("id"); const server = c.req.query("server") || "netease";
+    if (!id) return c.json({ok:false, error:"id required"}, 400);
     try {
-      const resp = await fetch(url);
-      const text = await resp.text();
+      const metingUrl = `${METING_BASE}?server=${encodeURIComponent(server)}&type=lrc&id=${encodeURIComponent(id)}`;
+      const resp = await fetch(metingUrl);
+      const data = await resp.json();
+      if (Array.isArray(data) && data.length && data[0].lrc) {
+        return c.text(data[0].lrc, 200, { "Content-Type":"text/plain; charset=utf-8" });
+      }
+      // 有些实例直接返回文本
+      const text = typeof data === "string" ? data : JSON.stringify(data);
       return c.text(text, 200, { "Content-Type":"text/plain; charset=utf-8" });
-    } catch(e) { return c.json({ ok:false, error:e.message }, 500); }
+    } catch(e) { return c.json({ok:false, error:e.message}, 500); }
   });
 
   app.get("/widget/api/music/playlist", async (c) => {
@@ -800,6 +806,17 @@ body {
 .pl-group-body { }
 .pl-group-body.collapsed { display:none; }
 
+/* ── Playlist Context Menu ── */
+.pl-ctx-menu {
+  position:absolute; right:2px; top:100%; z-index:20;
+  background:var(--card); border:1px solid var(--border-strong);
+  border-radius:6px; padding:4px 0; min-width:100px;
+  box-shadow:0 4px 12px rgba(0,0,0,0.3); font-size:11px;
+}
+.pl-ctx-title { padding:4px 10px; color:var(--text-faint); font-size:10px; }
+.pl-ctx-opt { padding:5px 10px; color:var(--text-dim); cursor:pointer; }
+.pl-ctx-opt:hover { background:var(--surface-hover); color:var(--text); }
+
 .pl-item {
   display:flex; align-items:center; gap:8px;
   padding:6px 14px; cursor:pointer;
@@ -1152,7 +1169,7 @@ body {
     </button>
     <input type="range" class="vol-slider" id="volumeSlider" min="0" max="100" value="80">
   </div>
-  <button class="ctrl-btn" id="modeBtn" title="播放模式" style="width:26px;height:26px;opacity:0.65">
+  <button class="ctrl-btn" id="modeBtn" title="播放模式" style="width:26px;height:26px;opacity:0.8">
     <svg id="modeIcon" viewBox="0 0 24 24" width="16" height="16"><line x1="5" y1="5" x2="5" y2="19" stroke="currentColor" stroke-width="2"/><polygon points="8 12 18 5 18 19" fill="currentColor"/></svg>
   </button>
 </div>
@@ -1303,6 +1320,34 @@ let trks = [], idx = 0, playing = false, playMode = 0, prevVol = 0.8;
 function saveTrks() { try { localStorage.setItem('hanako_audio_playlist', JSON.stringify(trks)); } catch(e) {} }
 function loadTrks() { try { var s = JSON.parse(localStorage.getItem('hanako_audio_playlist')); if(s && s.length) { trks = s; idx = 0; } } catch(e) {} }
 loadTrks();
+// 为旧数据补 group 字段
+if(trks.length) {
+  var needsGroup=false;
+  trks.forEach(function(t){ if(!t.group) { needsGroup=true; } });
+  if(needsGroup) {
+    trks.forEach(function(t){
+      if(!t.group) {
+        if(t.mode==='TTS'||t.mode==='编排') t.group='TTS/语音';
+        else if(t.mode==='本地') t.group='本地音乐';
+        else if(t.url && t.url.includes('ilovemusic')) t.group='电台流';
+        else t.group='在线音乐';
+      }
+    });
+    saveTrks();
+  }
+}
+// 如果播放列表为空，添加测试数据
+if(!trks.length) {
+  trks = [
+    {name:'iloveradio19 - Deep Focus', url:'https://streams.ilovemusic.de/iloveradio19.mp3', mode:'在线', dur:0, group:'电台流'},
+    {name:'iloveradio16 - Ambient', url:'https://streams.ilovemusic.de/iloveradio16.mp3', mode:'在线', dur:0, group:'电台流'},
+    {name:'iloveradio13 - Lo-fi Beats', url:'https://streams.ilovemusic.de/iloveradio13.mp3', mode:'在线', dur:0, group:'电台流'},
+    {name:'iloveradio17 - Chillout', url:'https://streams.ilovemusic.de/iloveradio17.mp3', mode:'在线', dur:0, group:'电台流'},
+    {name:'长路归航', url:'', mode:'在线', dur:0, group:'鸣潮', searchKey:'长路归航 战双帕弥什', searchServer:'netease'},
+    {name:'愿 (One More Light)', url:'', mode:'在线', dur:0, group:'鸣潮', searchKey:'愿 One More Light 鸣潮', searchServer:'netease'}
+  ];
+  saveTrks();
+}
 
 function fmt(s) {
   if (!s||!isFinite(s)) return '0:00';
@@ -1440,6 +1485,49 @@ function renderPL() {
       if(!body) return;
       body.classList.toggle('collapsed');
       el.classList.toggle('collapsed',body.classList.contains('collapsed'));
+    });
+    // 双击组名可重命名
+    el.addEventListener('dblclick',function(e){
+      e.preventDefault(); e.stopPropagation();
+      var oldName=el.dataset.group;
+      var newName=prompt('重命名分组：', oldName);
+      if(!newName || newName===oldName) return;
+      // 更新该组下所有条目的 group
+      var items=el.nextElementSibling;
+      if(!items) return;
+      items.querySelectorAll('.pl-item').forEach(function(itemEl){
+        var i=parseInt(itemEl.dataset.i);
+        if(trks[i]) trks[i].group=newName;
+      });
+      saveTrks(); renderPL();
+    });
+  });
+  // 条目右键菜单：移动到其他分组
+  document.getElementById('plBody').querySelectorAll('.pl-item').forEach(function(el){
+    el.addEventListener('contextmenu',function(e){
+      e.preventDefault();
+      var i=parseInt(el.dataset.i);
+      if(isNaN(i)||!trks[i]) return;
+      var curGroup=trks[i].group||'默认';
+      var allGroups=trks.map(function(t){return t.group||'默认';}).filter(function(v,k,a){return a.indexOf(v)===k;});
+      // 加一个“新建分组”选项
+      var opts=allGroups.filter(function(g){return g!==curGroup;}).map(function(g){return g;});
+      var menu=document.createElement('div');
+      menu.className='pl-ctx-menu';
+      menu.innerHTML='<div class="pl-ctx-title">移动到…</div>'
+        +opts.map(function(g){return '<div class="pl-ctx-opt" data-g="'+esc(g)+'">'+esc(g)+'</div>';}).join('')
+        +'<div class="pl-ctx-opt" data-g="__new__">新建分组…</div>';
+      el.style.position='relative';
+      el.appendChild(menu);
+      menu.addEventListener('click',function(ev){
+        var opt=ev.target.closest('[data-g]'); if(!opt) return;
+        var g=opt.dataset.g;
+        if(g==='__new__') { g=prompt('新分组名：'); if(!g) { menu.remove(); return; } }
+        trks[i].group=g;
+        saveTrks(); renderPL();
+        menu.remove();
+      });
+      setTimeout(function(){document.addEventListener('click',function cls(){menu.remove();document.removeEventListener('click',cls);});},0);
     });
   });
   document.getElementById('plBody').querySelectorAll('.pl-item').forEach(function(el){
@@ -1600,7 +1688,7 @@ audio.addEventListener('ended',next);
 audio.addEventListener('play',function(){playing=true;npCover.classList.add('spinning');document.getElementById('playIcon').style.display='none';document.getElementById('pauseIcon').style.display='block';});
 audio.addEventListener('pause',function(){playing=false;npCover.classList.remove('spinning');document.getElementById('playIcon').style.display='block';document.getElementById('pauseIcon').style.display='none';});
 
-function addTrack(name,url,mode,group) {
+function addTrack(name,url,mode,group,lrcUrl) {
   for(let i=0;i<trks.length;i++){if(trks[i].url===url && url){load(i);if(audio.paused){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});}return;}}
   // 自动分组：未指定时按 mode 推断
   if(!group) {
@@ -1609,7 +1697,7 @@ function addTrack(name,url,mode,group) {
     else if(url && url.includes('ilovemusic')) group='电台流';
     else group='在线音乐';
   }
-  trks.push({name:name||url.split('/').pop().split('\\\\').pop().split('?')[0]||'音频',url:url,mode:mode||(url.startsWith('http')?'在线':'本地'),dur:0,group:group});
+  trks.push({name:name||url.split('/').pop().split('\\\\').pop().split('?')[0]||'音频',url:url,mode:mode||(url.startsWith('http')?'在线':'本地'),dur:0,group:group,lrcUrl:lrcUrl||''});
   load(trks.length-1);
   if(audio.paused){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});}
   renderPL();
@@ -1732,7 +1820,7 @@ function doMusicSearch(){
   fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(kw)+'&server='+sv).then(function(r){return r.json();}).then(function(res){
     if(!res.ok||!res.results||!res.results.length){ el.innerHTML='<div class="music-empty">没有结果</div>'; return; }
     el.innerHTML=res.results.map(function(t){
-      return '<div class="music-item" data-title="'+esc(t.title)+'" data-url="'+esc(t.url)+'">'
+      return '<div class="music-item" data-title="'+esc(t.title)+'" data-url="'+esc(t.url)+'" data-lrc="'+esc(t.lrc||'')+">'
         +(t.pic ? '<img class="music-thumb" src="'+esc(t.pic)+'" loading="lazy">' : '<div class="music-thumb-placeholder">♫</div>')
         +'<div class="music-info"><div class="music-title">'+esc(t.title)+'</div><div class="music-author">'+esc(t.author)+'</div></div>'
         +'<button class="music-play" title="播放">▶</button>'
@@ -1765,7 +1853,7 @@ document.getElementById('musicResults').addEventListener('click', function(e){
     }).catch(function(){ showToast('搜索失败', 2000); });
   }
   if(e.target.closest('.music-play')){
-    withUrl(function(u, t){ addTrack(t, u, '在线'); });
+    withUrl(function(u, t){ addTrack(t, u, '在线', null, item.dataset.lrc); });
   } else if(e.target.closest('.music-add')){
     withUrl(function(u, t){ busControl('play', {url:u, name:t, mode:'在线'}); });
   } else if(e.target.closest('.music-scene')){
@@ -2024,12 +2112,12 @@ function doPlaylistImport(){
       var t=trks[idx];
       if(!t||!t.url) return;
       // 尝试从 Meting URL 提取 id
-      var idM=t.url.match(/[?&]id=(\\d+)/);
+      var lrcUrl=t.lrcUrl||'';
       var svM=t.url.match(/server=(netease|tencent)/);
       if(!idM) return;
       var songId=idM[1];
       var sv=svM?svM[1]:'netease';
-      fetch(API+'/widget/api/music/lrc?id='+songId+'&server='+sv).then(function(r){return r.text();}).then(function(raw){
+      fetch(lrcUrl).then(function(r){return r.text();}).then(function(raw){
         if(!raw||raw.length<10) return;
         lrcData=parseLrc(raw);
         currentLrcId=songId;
