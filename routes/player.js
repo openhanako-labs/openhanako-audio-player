@@ -1012,7 +1012,7 @@ body {
 .bus-empty { padding:12px 0; text-align:center; color:var(--text-faint); font-size:11px; }
 
 /* ── Scene presets（场景调度）── */
-.scene-section { padding:8px 10px 5px; border-top:1px solid var(--border); }
+.scene-section { padding:10px 14px 6px; border-top:1px solid var(--border); }
 .scene-label { display:flex; align-items:center; gap:6px; margin-bottom:8px; }
 .scene-auto-badge { font-size:10px; color:var(--accent); background:rgba(232,160,68,0.1); padding:1px 6px; border-radius:8px; margin-left:auto; }
 .scene-list { display:flex; gap:6px; }
@@ -1038,14 +1038,14 @@ body {
   background:var(--accent-soft); border-radius:3px;
   padding:1px 4px; font-variant-numeric:tabular-nums;
 }
-.bus-chevron { width:12px; height:12px; stroke:var(--text-faint); fill:none; stroke-width:2; transition:transform 0.25s; }
+.bus-chevron { width:14px; height:14px; stroke:var(--text-faint); fill:none; stroke-width:2; transition:transform 0.25s; }
 .bus-toggle.open .bus-chevron { transform:rotate(180deg); }
 
 .bus-body {
   max-height:0; overflow:hidden;
   transition:max-height 0.3s cubic-bezier(0.4,0,0.2,1);
 }
-.bus-body.open { max-height:400px; overflow-y:auto; }
+.bus-body.open { max-height:500px; overflow-y:auto; }
 .bus-body::-webkit-scrollbar { width:3px; }
 .bus-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
 
@@ -2323,7 +2323,17 @@ function busControl(action,extra){
       if(res.item.url){
         var url=res.item.url;
         if(TOKEN) url=tok(url);
-        // Bus 独立播放：不再加入主播放列表，只在 Bus 面板显示状态
+        // Bus 播放：添加到主列表并播放，但不切换视图
+        var bareUrl = url.split('?')[0];
+        var exists = trks.some(function(t){ return (t.url||'').split('?')[0] === bareUrl; });
+        if(!exists){
+          trks.push({name:res.item.name||'Bus', url:url, mode:res.item.mode||'编排', dur:0, group:'编排'});
+          load(trks.length-1);
+          if(audio.paused){ audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)}); }
+          saveTrks();
+        }else{
+          for(var i=0;i<trks.length;i++){ if((trks[i].url||'').split('?')[0]===bareUrl){ load(i); if(audio.paused) audio.play().catch(function(){}); break; } }
+        }
         showToast('编排播放: '+res.item.name, 1500);
       }
     }
