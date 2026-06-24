@@ -1193,8 +1193,8 @@ body {
 
 <!-- Controls -->
 <div class="controls">
-  <button class="ctrl-btn" id="prevBtn" title="上一首" style="opacity:0.8">
-    <svg viewBox="0 0 24 24"><polygon points="19 20 9 12 19 4 19 20" fill="currentColor" stroke="none"/><line x1="5" y1="19" x2="5" y2="5"/></svg>
+  <button class="ctrl-btn" id="prevBtn" title="上一首">
+    <svg viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><polygon points="19 20 9 12 19 4 19 20"/><rect x="4" y="4" width="2" height="16" rx="1"/></svg>
   </button>
   <button class="ctrl-play" id="playBtn" title="播放/暂停">
     <svg id="playIcon" viewBox="0 0 24 24"><polygon points="8,5 19,12 8,19" fill="white" stroke="none"/></svg>
@@ -1438,9 +1438,7 @@ function next() {
   var n;
   if (playMode===1) n=idx; // 单曲循环
   else if (playMode===2) n=Math.floor(Math.random()*trks.length); // 随机
-  else if (playMode===3) n=(idx+1)%trks.length; // 列表循环
-  else n=(idx+1)<trks.length?idx+1:-1; // 顺序 → 播完停止
-  if(n<0){playing=false;toggle();return;}
+  else n=(idx+1)%trks.length; // 顺序 & 列表循环 → 自动续播
   load(n); if (audio.paused) { audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)}); playing=true; toggle(); }
 }
 function prev() {
