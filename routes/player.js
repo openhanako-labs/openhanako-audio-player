@@ -1360,6 +1360,17 @@ let trks = [], idx = 0, playing = false, playMode = 0, prevVol = 0.8;
 function saveTrks() { try { localStorage.setItem('hanako_audio_playlist', JSON.stringify(trks)); } catch(e) {} }
 function loadTrks() { try { var s = JSON.parse(localStorage.getItem('hanako_audio_playlist')); if(s && s.length) { trks = s; idx = 0; } } catch(e) {} }
 loadTrks();
+// 自动去重：空 url 条目按 name 去重，保留首次出现的
+if(trks.length) {
+  var _origLen=trks.length;
+  var seen={};
+  trks=trks.filter(function(t){
+    var key=(t.url||'')+'|'+(t.name||'');
+    if(seen[key]) return false;
+    seen[key]=true; return true;
+  });
+  if(trks.length!==_origLen) { saveTrks(); renderPL(); showToast('已清理 '+_origLen+' → '+trks.length+' 条重复',2000); }
+}
 // 为旧数据补 group 字段
 if(trks.length) {
   var needsGroup=false;
