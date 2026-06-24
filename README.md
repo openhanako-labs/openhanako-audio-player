@@ -77,7 +77,37 @@ cp -r hanako-audio-player ~/.hanako/plugins/hanako-audio-player
 |------|------|--------|
 | `METING_API_URL` | Meting 实例地址 | `https://api.i-meto.com/meting/api` |
 | `METING_TOKEN` | Meting HMAC 鉴权密钥 | `token` |
-| `COSYVOICE_BASE` | CosyVoice 项目路径 | 自动搜索 |
+| `COSYVOICE_BASE` | CosyVoice 项目路径 | 自动搜索 `W:/Games/Hanako/Work/cosyvoice-tts` |
+
+## 可选依赖
+
+### CosyVoice TTS（本插件核心功能）
+
+**不是必须**，但如果你需要 TTS 语音合成功能（Bus 编排的 say 类型、对话工具调用），需要：
+
+1. **克隆 CosyVoice 项目**
+```bash
+git clone https://github.com/Fancy666666/CosyVoice ~/CosyVoice
+cd ~/CosyVoice
+git submodule update --init
+```
+
+2. **启动 executor**
+```bash
+cd ~/CosyVoice
+python executor.py
+# 保持后台运行
+```
+
+3. **配置环境变量**（可选）
+```bash
+# 自动搜索默认路径，也可手动指定
+setx COSYVOICE_BASE "W:\Games\Hanako\Work\cosyvoice-tts"
+```
+
+不启动 CosyVoice 时：
+- TTS 会降级到 L3 浏览器原生语音（无本地音频文件）
+- Bus 编排的 say 类型会提示"TTS 未启动"
 
 ## 文件结构
 
@@ -89,7 +119,7 @@ hanako-audio-player/
 ├── routes/
 │   └── player.js        # widget HTML + API 路由 + Bus 文件直写
 ├── tools/
-│   ├── bus.js            # AudioBus 编排引擎 (singleton, _save* 已 no-op)
+│   ├── bus.js            # AudioBus 编排引擎（路由层完全接管文件读写）
 │   ├── generate_speech.js # 对话内嵌播放卡片
 │   ├── play.js           # 添加音频到播放器
 │   └── tts.js            # TTS Bus (L1 CosyVoice → L2 HTTP → L3 浏览器原生)
