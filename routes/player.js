@@ -1770,7 +1770,11 @@ audio.addEventListener('play',function(){playing=true;npCover.classList.add('spi
 audio.addEventListener('pause',function(){playing=false;npCover.classList.remove('spinning');document.getElementById('playIcon').style.display='block';document.getElementById('pauseIcon').style.display='none';});
 
 function addTrack(name,url,mode,group,lrcUrl) {
-  for(let i=0;i<trks.length;i++){if(trks[i].url===url && url){load(i);if(audio.paused){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});}return;}}
+  // 去重：url 非空时按 url 匹配，url 为空时按 name 匹配（歌单导入条目）
+  for(let i=0;i<trks.length;i++){
+    if(url && trks[i].url===url){load(i);if(audio.paused){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});}return;}
+    if(!url && trks[i].name===name && !trks[i].url){return;}
+  }
   // 自动分组：未指定时按 mode 推断
   if(!group) {
     if(mode==='TTS'||mode==='编排') group='TTS/语音';
@@ -2022,7 +2026,12 @@ function doPlaylistImport(){
       // 其余用搜索关键词加入（type=search 标记自动搜索）
       for(var i=1; i<tracks.length; i++){
         var t = tracks[i];
-        trks.push({name:t.title, url:'', mode:'在线', dur:0, searchKey:(t.title+' '+t.author).trim(), searchServer:sv});
+        var tk=(t.title+' '+t.author).trim();
+        // 去重：已有同名且空 url 的条目则跳过
+        var dup=false;
+        for(var j=0;j<trks.length;j++){ if(trks[j].name===t.title && !trks[j].url){dup=true;break;} }
+        if(dup) continue;
+        trks.push({name:t.title, url:'', mode:'在线', dur:0, searchKey:tk, searchServer:sv});
       }
       renderPL(); saveTrks();
       showToast('已添加 '+tracks.length+' 首（首首自动搜索完整音频）', 2500);
