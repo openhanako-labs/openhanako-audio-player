@@ -23,7 +23,9 @@ export default function (app, ctx) {
   const pluginDataMediaDir = home ? path.join(home, ".hanako", "plugin-data", "hanako-audio-player", "media") : null;
 
   // ── 扫描本地媒体文件 ──
+  let _mediaCache = null, _cacheTime = 0;
   function collectMediaFiles() {
+    if (_mediaCache && Date.now() - _cacheTime < 20000) return _mediaCache;
     const results = [];
     const seen = new Set();
     const exts = [".mp3", ".wav", ".ogg", ".flac", ".m4a"];
@@ -59,6 +61,7 @@ export default function (app, ctx) {
     }
     scanDir(mediaDir, `/api/plugins/${pluginId}/widget/media`);
     scanDir(pluginDataMediaDir, `/api/plugins/${pluginId}/widget/media`);
+    _mediaCache = results; _cacheTime = Date.now();
     return results;
   }
 
@@ -183,8 +186,26 @@ setTimeout(n,100);
   });
 
   app.post("/widget/api/queue", async (c) => {
-    // 不再持久化播放列表——前端 trks 是纯内存的
     return c.json({ ok: true });
+  });
+
+  // 增量 diff API
+  let _lastFileSet = null, _lastNameMap = null;
+  app.get("/widget/api/queue/diff", (c) => {
+    try {
+      const files = collectMediaFiles();
+      const currentSet = new Set(files.map(f => f.url.split("/").pop()));
+      const currentMap = new Map(files.map(f => [f.url.split("/").pop(), f]));
+      if (!_lastFileSet) {
+        _lastFileSet = currentSet; _lastNameMap = currentMap;
+        return c.json({ added: files.map(f => ({ name: f.name, url: f.url, mode: "本地" })), removed: [] });
+      }
+      const added = [], removed = [];
+      for (const [fn, f] of currentMap) { if (!_lastFileSet.has(fn)) added.push({ name: f.name, url: f.url, mode: "本地" }); }
+      for (const fn of _lastFileSet) { if (!currentSet.has(fn)) { const old = _lastNameMap.get(fn); if (old) removed.push(old.url); } }
+      _lastFileSet = currentSet; _lastNameMap = currentMap;
+      return c.json({ added, removed });
+    } catch (e) { return c.json({ added: [], removed: [] }); }
   });
 
   // ── Speakers API ──
@@ -1354,11 +1375,11 @@ if (TOKEN) {
 
 const audio = document.getElementById('audio');
 const npCover = document.getElementById('npCover');
-let trks = [], idx = 0, playing = false, playMode = 0, prevVol = 0.8;
+let trks = [], idx = 0, playing = false, playMode = 0, prevVol = 0.8, _batchLoading = false;
 // playMode: 0=顺序, 1=单曲循环, 2=随机, 3=列表循环
 
 function saveTrks() { try { localStorage.setItem('hanako_audio_playlist', JSON.stringify(trks)); } catch(e) {} }
-function loadTrks() { try { var s = JSON.parse(localStorage.getItem('hanako_audio_playlist')); if(s && s.length) { trks = s; idx = 0; } } catch(e) {} }
+function loadTrks() { try { var s = JSON.parse(localStorage.getItem('hanako_audio_playlist')); if(s && s.length) { trks = s; idx = 0; trks.forEach(function(t){ if(t.url) t.url = t.url.split('?token=')[0].split('&token=')[0]; }); } } catch(e) {} }
 loadTrks();
 // 自动去重：按裸 url（去掉 token）+ name 去重，保留首次出现的
 if(trks.length) {
@@ -1801,10 +1822,7 @@ function addTrack(name,url,mode,group,lrcUrl) {
   // 存 lrc 映射
   if(lrcUrl && url) lrcMap[url]=lrcUrl;
   trks.push({name:name||url.split('/').pop().split('\\\\').pop().split('?')[0]||'音频',url:url,mode:mode||(url.startsWith('http')?'在线':'本地'),dur:0,group:group,lrcUrl:lrcUrl||''});
-  load(trks.length-1);
-  if(audio.paused){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});}
-  renderPL();
-  saveTrks();
+  if(!_batchLoading){ load(trks.length-1); if(audio.paused){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});} renderPL(); saveTrks(); }
 }
 
 function tok(url) {
@@ -2504,7 +2522,7 @@ setInterval(function(){
     renderPL();
     saveTrks();
   }
-}, 5000);
+}, 30000);
 
 function notifySize() {
   try { parent.postMessage({type:'resize-request',payload:{height:document.body.scrollHeight}},'*'); } catch(e) {}
