@@ -742,21 +742,22 @@ body {
 
 /* ── Controls ── */
 .controls {
-  display:flex; align-items:center; justify-content:center;
-  padding:4px 20px 10px; gap:18px; box-sizing:border-box; overflow:visible;
+  display:flex; align-items:center; justify-content:flex-end;
+  padding:4px 16px 10px; gap:12px; box-sizing:border-box; overflow:visible;
+  margin-left:20px;
 }
 .ctrl-btn {
   background:none; border:none; color:var(--text-dim); cursor:pointer;
-  width:30px; height:30px; border-radius:8px;
+  width:26px; height:26px; border-radius:6px;
   display:flex; align-items:center; justify-content:center;
   transition: all 0.15s; flex-shrink:0;
 }
 .ctrl-btn:hover { background:var(--surface-hover); color:var(--text); }
-.ctrl-btn svg { width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.ctrl-btn svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
 .ctrl-btn.active { color:var(--accent); }
 
 .ctrl-play {
-  width:40px; height:40px; border-radius:50%;
+  width:34px; height:34px; border-radius:50%;
   background:linear-gradient(135deg, var(--accent), #c48454);
   color:#fff; cursor:pointer; border:none;
   display:flex; align-items:center; justify-content:center;
@@ -769,11 +770,11 @@ body {
 
 /* Volume — compact inline */
 .volume-group {
-  display:flex; align-items:center; gap:4px;
+  display:flex; align-items:center; gap:3px;
   margin-left:auto;
 }
 .vol-slider {
-  width:50px; height:4px; -webkit-appearance:none; appearance:none;
+  width:40px; height:4px; -webkit-appearance:none; appearance:none;
   background:var(--surface); border-radius:2px; cursor:pointer;
   transition: height 0.15s;
 }
@@ -1011,7 +1012,7 @@ body {
 .bus-empty { padding:12px 0; text-align:center; color:var(--text-faint); font-size:11px; }
 
 /* ── Scene presets（场景调度）── */
-.scene-section { padding:10px 14px 6px; border-top:1px solid var(--border); }
+.scene-section { padding:8px 10px 5px; border-top:1px solid var(--border); }
 .scene-label { display:flex; align-items:center; gap:6px; margin-bottom:8px; }
 .scene-auto-badge { font-size:10px; color:var(--accent); background:rgba(232,160,68,0.1); padding:1px 6px; border-radius:8px; margin-left:auto; }
 .scene-list { display:flex; gap:6px; }
@@ -1025,37 +1026,37 @@ body {
 }
 .bus-toggle {
   display:flex; align-items:center; justify-content:space-between;
-  padding:8px 14px; cursor:pointer;
+  padding:6px 10px; cursor:pointer;
   transition: background 0.15s;
 }
 .bus-toggle:hover { background:var(--surface); }
-.bus-toggle-left { display:flex; align-items:center; gap:6px; }
-.bus-toggle-left svg { width:13px; height:13px; stroke:var(--text-dim); fill:none; stroke-width:2; }
-.bus-toggle-text { font-size:12px; color:var(--text-dim); }
+.bus-toggle-left { display:flex; align-items:center; gap:4px; }
+.bus-toggle-left svg { width:11px; height:11px; stroke:var(--text-dim); fill:none; stroke-width:2; }
+.bus-toggle-text { font-size:11px; color:var(--text-dim); }
 .bus-badge {
-  font-size:9px; color:var(--accent);
-  background:var(--accent-soft); border-radius:4px;
-  padding:1px 5px; font-variant-numeric:tabular-nums;
+  font-size:8px; color:var(--accent);
+  background:var(--accent-soft); border-radius:3px;
+  padding:1px 4px; font-variant-numeric:tabular-nums;
 }
-.bus-chevron { width:14px; height:14px; stroke:var(--text-faint); fill:none; stroke-width:2; transition:transform 0.25s; }
+.bus-chevron { width:12px; height:12px; stroke:var(--text-faint); fill:none; stroke-width:2; transition:transform 0.25s; }
 .bus-toggle.open .bus-chevron { transform:rotate(180deg); }
 
 .bus-body {
   max-height:0; overflow:hidden;
   transition:max-height 0.3s cubic-bezier(0.4,0,0.2,1);
 }
-.bus-body.open { max-height:500px; overflow-y:auto; }
+.bus-body.open { max-height:400px; overflow-y:auto; }
 .bus-body::-webkit-scrollbar { width:3px; }
 .bus-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
 
 .bus-controls {
-  display:flex; gap:4px; padding:6px 14px 4px;
+  display:flex; gap:3px; padding:4px 10px 3px;
 }
 .bus-btn {
-  background:var(--surface); border:1px solid var(--border); border-radius:6px;
-  color:var(--text-dim); font-size:11px; padding:4px 10px;
+  background:var(--surface); border:1px solid var(--border); border-radius:5px;
+  color:var(--text-dim); font-size:10px; padding:3px 8px;
   cursor:pointer; transition:all 0.15s; font-family:inherit;
-  display:flex; align-items:center; gap:3px;
+  display:flex; align-items:center; gap:2px;
 }
 .bus-btn:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
 .bus-btn.primary {
@@ -1065,33 +1066,33 @@ body {
 }
 .bus-btn.primary:hover { box-shadow:0 3px 12px var(--accent-glow); }
 
-.bus-play-row { display:flex; gap:6px; padding:2px 14px 8px; }
+.bus-play-row { display:flex; gap:4px; padding:2px 10px 6px; }
 .bus-play-input {
   flex:1; min-width:0;
-  background:var(--surface); border:1px solid var(--border); border-radius:7px;
-  color:var(--text); font-size:11px; padding:5px 10px;
+  background:var(--surface); border:1px solid var(--border); border-radius:6px;
+  color:var(--text); font-size:10px; padding:4px 8px;
   outline:none; font-family:inherit;
   transition: border-color 0.15s;
 }
 .bus-play-input::placeholder { color:var(--text-faint); }
 .bus-play-input:focus { border-color:var(--accent); }
 .bus-play-add-btn {
-  background:var(--surface); border:1px solid var(--border); border-radius:7px;
-  color:var(--text-dim); font-size:11px; padding:5px 12px;
+  background:var(--surface); border:1px solid var(--border); border-radius:6px;
+  color:var(--text-dim); font-size:10px; padding:4px 10px;
   cursor:pointer; font-family:inherit; white-space:nowrap;
   transition: all 0.15s;
 }
 .bus-play-add-btn:hover { border-color:var(--accent); color:var(--accent); }
 
-.bus-queue { padding:0 14px 8px; }
+.bus-queue { padding:0 10px 6px; }
 .bus-queue-item {
-  display:flex; align-items:center; gap:6px;
-  padding:4px 0; font-size:11px;
+  display:flex; align-items:center; gap:4px;
+  padding:3px 0; font-size:10px;
   border-bottom:1px solid var(--border);
 }
 .bus-queue-item:last-child { border-bottom:none; }
 .bus-queue-type {
-  font-size:9px; padding:1px 5px; border-radius:3px;
+  font-size:8px; padding:1px 4px; border-radius:2px;
   flex-shrink:0; font-weight:500; letter-spacing:0.3px;
 }
 .bus-queue-type.say { background:rgba(100,180,255,0.12); color:#64b4ff; }
