@@ -221,8 +221,6 @@ setTimeout(n,100);
       const home = process.env.USERPROFILE || process.env.HOME || "";
       const candidates = [
         cosyBase,
-        "W:/Games/Hanako/Work/cosyvoice-tts",
-        path.join(home, "W", "Games", "Hanako", "Work", "cosyvoice-tts"),
         path.join(home, "cosyvoice-tts"),
         path.join(home, "CosyVoice"),
         path.join(home, "CosyVoice2"),
