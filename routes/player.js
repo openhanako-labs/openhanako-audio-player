@@ -2729,13 +2729,23 @@ loadScenes();
 
 // 加载队列
 fetch(API+'/widget/api/queue').then(function(r){return r.json();}).then(function(data){
-  if(data&&data.length){data.forEach(function(t){
-    // 去重：按 url 去掉 token 后比较
-    var bareUrl=t.url||'';
-    var found=false;
-    for(var i=0;i<trks.length;i++){if(trks[i].url===tok(bareUrl)||trks[i].url===bareUrl){found=true;break;}}
-    if(!found) addTrack(t.name,tok(bareUrl),t.mode);
-  });}
+  if(data&&data.length){
+    var newTracks=[];
+    data.forEach(function(t){
+      var bareUrl=t.url||'';
+      var found=false;
+      for(var i=0;i<trks.length;i++){if(trks[i].url===tok(bareUrl)||trks[i].url===bareUrl){found=true;break;}}
+      if(!found) newTracks.push(t);
+    });
+    if(newTracks.length){
+      showGroupPicker(function(groupName){
+        if(!groupName) groupName='本地音乐';
+        newTracks.forEach(function(t){
+          addTrack(t.name,tok(t.url||''),t.mode,groupName);
+        });
+      });
+    }
+  }
 }).catch(function(){});
 
 // 定时检查新队列 + 验证已有曲目文件是否仍存在
