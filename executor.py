@@ -218,16 +218,14 @@ def process_task(task_id):
         # 用户显式传入参考 → 零样本
         print(f'[零样本克隆] 参考: {ref_audio}', file=sys.stderr)
         result = cosy.inference_zero_shot(text, ref_text, ref_audio, stream=False)
-    elif instruct and spk in spk_list:
-        print(f'[Instruct] spk: {spk} | {instruct}', file=sys.stderr)
-        result = cosy.inference_instruct(text, spk, instruct, stream=False)
     elif spk in spk_list:
-        print(f'[SFT] spk: {spk}', file=sys.stderr)
-        result = cosy.inference_sft(text, spk, stream=False)
+        # 已注册说话人 → 用 zero_shot_spk_id 走 spk2info 完整 prompt
+        print(f'[已注册说话人] spk: {spk}', file=sys.stderr)
+        result = cosy.inference_zero_shot(text, '', '', zero_shot_spk_id=spk, stream=False)
     elif spk_list:
         spk = spk_list[0]
         print(f'[fallback] 说话人: {spk}', file=sys.stderr)
-        result = cosy.inference_sft(text, spk, stream=False)
+        result = cosy.inference_zero_shot(text, '', '', zero_shot_spk_id=spk, stream=False)
     else:
         print('[ERROR] 无可用说话人', file=sys.stderr)
         return False
