@@ -1,0 +1,11 @@
+feat: 完整音频(cookie) + 滚动条/分组折叠/平台选项/歌词修复
+
+- 新增 NETEASE_COOKIE 环境变量，带 cookie 获取完整音频 URL
+- 新增 /widget/api/music/full-url 端点，回退到 Meting 试听 URL
+- 前端 tryFullUrl() 自动尝试完整 URL，失败回退
+- load() searchKey 回调也走 tryFullUrl 逻辑
+- 滚动条 3px->6px
+- 进入插件时分组默认折叠
+- 平台下拉框加酷狗/百度/酷我
+- 歌词: data-lrc/t.lrcUrl/轮询器改用 lrcUrl 变化检测/chevron 旋转/初始占位
+- README 加 cookie 配置说明

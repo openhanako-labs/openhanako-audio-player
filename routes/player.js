@@ -14,6 +14,9 @@ import { getBus } from "../tools/bus.js";
 
 const MIME = { mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac", m4a: "audio/mp4" };
 
+// 环境变量：网易云 cookie（格式：MUSIC_U=xxxxxxxx），用于获取完整音频
+const NETEASE_COOKIE = process.env.NETEASE_COOKIE || "";
+
 export default function (app, ctx) {
   const pluginId = ctx.pluginId;
   const dataDir = ctx.dataDir;
@@ -273,6 +276,44 @@ setTimeout(n,100);
     const url = c.req.query("url") || "";
     if (!url) return c.json({ ok:false, error:"url required" }, 400);
     return c.redirect(url);
+  });
+
+  // ── 完整音频 URL（带 cookie，绕过试听限制）──
+  // 环境变量 NETEASE_COOKIE 在文件顶部已声明
+  app.get("/widget/api/music/full-url", async (c) => {
+    const id = c.req.query("id") || "";
+    const server = c.req.query("server") || "netease";
+    const fallback = c.req.query("fallback") || ""; // Meting 原始 URL
+    if (!id) return c.json({ ok:false, error:"id required" }, 400);
+
+    // 没配 cookie → 直接回退到 Meting URL
+    if (!NETEASE_COOKIE && fallback) return c.redirect(fallback);
+    if (!NETEASE_COOKIE) return c.json({ ok:false, error:"no cookie configured" }, 503);
+
+    try {
+      if (server === "netease") {
+        const apiUrl = `https://music.163.com/api/song/enhance/player/url?ids=[${id}]&br=320000`;
+        const resp = await fetch(apiUrl, {
+          headers: {
+            Cookie: NETEASE_COOKIE,
+            Referer: "https://music.163.com",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          },
+        });
+        const data = await resp.json();
+        const fullUrl = data?.data?.[0]?.url;
+        if (fullUrl) {
+          const httpsUrl = fullUrl.replace("http://", "https://");
+          return c.redirect(httpsUrl);
+        }
+      }
+      // cookie 无效或拿不到 → 回退
+      if (fallback) return c.redirect(fallback);
+      return c.json({ ok:false, error:"failed to get full url" }, 503);
+    } catch (e) {
+      if (fallback) return c.redirect(fallback);
+      return c.json({ ok:false, error:e.message }, 500);
+    }
   });
 
   app.get("/widget/api/music/pic", async (c) => {
@@ -1377,6 +1418,7 @@ body {
 
 const API = ${JSON.stringify(apiBase)};
 const TOKEN = ${JSON.stringify(token)};
+const HAS_NETEASE_COOKIE = ${JSON.stringify(NETEASE_COOKIE ? true : false)};
 if (TOKEN) {
   const _f = window.fetch.bind(window);
   window.fetch = function(u, o) {
@@ -1461,13 +1503,24 @@ function load(i) {
     var sv = t.searchServer || 'netease';
     fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(t.searchKey)+'&server='+sv).then(function(r){return r.json();}).then(function(res){
       if(res.ok && res.results && res.results.length) {
-        t.url = res.results[0].url;
+        var _metaUrl = res.results[0].url;
         t.name = res.results[0].title;
         t.lrcUrl = res.results[0].lrc || '';
         document.getElementById('trackName').textContent=t.name;
         saveTrks();
-        audio.src=t.url; audio.load();
-        audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
+        // 尝试完整 URL，回退到 Meting URL
+        var idMatch = _metaUrl.match(/[?&]id=([^&]+)/);
+        var svMatch = _metaUrl.match(/[?&]server=([^&]+)/);
+        if (HAS_NETEASE_COOKIE && idMatch) {
+          var songId=idMatch[1], sv2=svMatch?svMatch[1]:'netease';
+          var fullApi=API+'/widget/api/music/full-url?id='+encodeURIComponent(songId)+'&server='+sv2+'&fallback='+encodeURIComponent(_metaUrl);
+          fetch(fullApi,{redirect:'manual'}).then(function(r){
+            if((r.status===302||r.status===301)){var loc=r.headers.get('location');if(loc&&!loc.includes('/404')){t.url=loc;audio.src=t.url;audio.load();audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});return;}}
+            t.url=_metaUrl;audio.src=t.url;audio.load();audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
+          }).catch(function(){t.url=_metaUrl;audio.src=t.url;audio.load();audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});});
+        } else {
+          t.url=_metaUrl;audio.src=t.url;audio.load();audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
+        }
         // 不调 toggle()——audio 'play' 事件监听器已处理 UI 状态
       } else { showToast('未找到完整音频: '+t.name, 2000); }
     }).catch(function(){ showToast('搜索失败: '+t.name, 2000); });
@@ -2052,14 +2105,32 @@ document.getElementById('musicResults').addEventListener('click', function(e){
   var url = item.dataset.url; // 搜索结果：直链
   var server = item.dataset.server; // 歌单条目的源
   // 歌单条目没有 data-url → 需要先搜索拿 URL
+  // 尝试获取完整音频 URL（如果配了网易云 cookie）
+  function tryFullUrl(metingUrl, cb) {
+    if (!HAS_NETEASE_COOKIE) { cb(metingUrl); return; }
+    // 从 Meting URL 中提取歌曲 ID 和 server
+    var idMatch = metingUrl.match(/[?&]id=([^&]+)/);
+    var svMatch = metingUrl.match(/[?&]server=([^&]+)/);
+    if (!idMatch) { cb(metingUrl); return; }
+    var songId = idMatch[1];
+    var sv = svMatch ? svMatch[1] : 'netease';
+    var fullUrlApi = API+'/widget/api/music/full-url?id='+encodeURIComponent(songId)+'&server='+sv+'&fallback='+encodeURIComponent(metingUrl);
+    fetch(fullUrlApi, {method:'HEAD', redirect:'manual'}).then(function(r){
+      if (r.status === 302 || r.status === 301) {
+        var loc = r.headers.get('location');
+        if (loc && !loc.includes('/404')) { cb(loc); return; }
+      }
+      cb(metingUrl); // 回退
+    }).catch(function(){ cb(metingUrl); });
+  }
   function withUrl(cb) {
-    if (url) { cb(url, title); return; }
+    if (url) { tryFullUrl(url, cb); return; }
     if (!searchKey) { showToast('无法获取音频', 2000); return; }
     showToast('搜索完整音频…', 2000);
     var sv = server || document.getElementById('musicServer').value;
     fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(searchKey)+'&server='+sv).then(function(r){return r.json();}).then(function(res){
       if(res.ok && res.results && res.results.length) {
-        cb(res.results[0].url, res.results[0].title);
+        tryFullUrl(res.results[0].url, function(u){ cb(u, res.results[0].title); });
       } else {
         showToast('未找到完整音频', 2000);
       }

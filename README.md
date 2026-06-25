@@ -77,37 +77,8 @@ cp -r hanako-audio-player ~/.hanako/plugins/hanako-audio-player
 |------|------|--------|
 | `METING_API_URL` | Meting 实例地址 | `https://api.i-meto.com/meting/api` |
 | `METING_TOKEN` | Meting HMAC 鉴权密钥 | `token` |
-| `COSYVOICE_BASE` | CosyVoice 项目路径 | 自动搜索 `W:/Games/Hanako/Work/cosyvoice-tts` |
-
-## 可选依赖
-
-### CosyVoice TTS（本插件核心功能）
-
-**不是必须**，但如果你需要 TTS 语音合成功能（Bus 编排的 say 类型、对话工具调用），需要：
-
-1. **克隆 CosyVoice 项目**
-```bash
-git clone https://github.com/Fancy666666/CosyVoice ~/CosyVoice
-cd ~/CosyVoice
-git submodule update --init
-```
-
-2. **启动 executor**
-```bash
-cd ~/CosyVoice
-python executor.py
-# 保持后台运行
-```
-
-3. **配置环境变量**（可选）
-```bash
-# 自动搜索默认路径，也可手动指定
-setx COSYVOICE_BASE "W:\Games\Hanako\Work\cosyvoice-tts"
-```
-
-不启动 CosyVoice 时：
-- TTS 会降级到 L3 浏览器原生语音（无本地音频文件）
-- Bus 编排的 say 类型会提示"TTS 未启动"
+| `NETEASE_COOKIE` | 网易云 cookie（获取完整音频，绕过试听限制） | 空（使用匿名试听） |
+| `COSYVOICE_BASE` | CosyVoice 项目路径 | 自动搜索 |
 
 ## 文件结构
 
@@ -119,7 +90,7 @@ hanako-audio-player/
 ├── routes/
 │   └── player.js        # widget HTML + API 路由 + Bus 文件直写
 ├── tools/
-│   ├── bus.js            # AudioBus 编排引擎（路由层完全接管文件读写）
+│   ├── bus.js            # AudioBus 编排引擎 (singleton, _save* 已 no-op)
 │   ├── generate_speech.js # 对话内嵌播放卡片
 │   ├── play.js           # 添加音频到播放器
 │   └── tts.js            # TTS Bus (L1 CosyVoice → L2 HTTP → L3 浏览器原生)
@@ -137,9 +108,34 @@ hanako-audio-player/
 | `/widget/api/music/search` | GET | 音乐搜索 (keyword, server) |
 | `/widget/api/music/playlist` | GET | 歌单导入 (id, server) |
 | `/widget/api/music/url` | GET | 音频 URL 302 跳转 |
+| `/widget/api/music/full-url` | GET | 完整音频 URL（带 cookie，回退到 Meting） |
 | `/widget/api/music/pic` | GET | 封面图 302 跳转 |
 | `/widget/api/music/lrc` | GET | 歌词文本 |
 | `/widget/media/:filename` | GET | 本地音频文件服务 |
+
+## 获取完整音频（绕过 30 秒试听）
+
+默认使用公共 Meting 实例，未登录状态下平台只返回 30 秒试听片段。配置网易云 cookie 后可获取完整音频。
+
+### 配置步骤
+
+1. 浏览器登录 [网易云网页版](https://music.163.com)
+2. 打开开发者工具（F12）→ Network → 随便点一个请求 → 复制 Cookie 头
+3. 提取 `MUSIC_U` 的值
+4. 设置环境变量：
+
+```bash
+# Windows PowerShell
+$env:NETEASE_COOKIE = "MUSIC_U=你的值"
+
+# 或在 Hanako 启动脚本中设置
+set NETEASE_COOKIE=MUSIC_U=你的值
+```
+
+5. 重启 Hanako
+
+> Cookie 有效期通常数周到数月，过期后重新获取即可。
+> 未配置 cookie 时自动回退到 Meting 试听 URL，不影响基本功能。
 
 ## 许可
 
