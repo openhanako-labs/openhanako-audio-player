@@ -2018,8 +2018,8 @@ document.getElementById('plToggle').addEventListener('click',function(){
 document.getElementById('addBtn').addEventListener('click',function(){
   const v=document.getElementById('urlInput').value.trim();
   if(!v)return;
-  // 检测是否是本地文件夹路径
-  if(v.length>=3 && v[1]===':' && (v[2]==='/'||v[2]==='\\')){
+  // 检测是否是本地文件夹路径（盘符开头，如 W:\...）
+  if(v.length>=3 && v[1]===':' && (v.charCodeAt(2)===92 || v.charCodeAt(2)===47)){
     showToast('扫描文件夹…',1500);
     fetch(API+'/widget/api/scan-folder?path='+encodeURIComponent(v)).then(function(r){return r.json();}).then(function(d){
       if(!d.ok||!d.files||!d.files.length){ showToast('未找到音频文件',2000); return; }
