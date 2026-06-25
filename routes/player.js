@@ -1546,7 +1546,26 @@ function load(i) {
   idx=i; const t=trks[i];
   document.getElementById('trackName').textContent=t.name;
   document.getElementById('trackMode').textContent=t.mode||'';
-  if(t.url) { audio.src=t.url; audio.load(); }
+  if(t.url) {
+    // 已有 URL — 如果是 Meting URL（含 id= 参数），尝试升级为完整音频
+    var _idM = t.url.match(/[?&]id=([^&]+)/);
+    var _svM = t.url.match(/[?&]server=([^&]+)/);
+    if (_idM) {
+      var _sv = _svM ? _svM[1] : 'netease';
+      var _hasCookie = (_sv === 'netease' && HAS_NETEASE_COOKIE) || (_sv === 'tencent' && HAS_TENCENT_COOKIE);
+      // 补歌词：Meting URL 可推导出歌词 URL（type=url → type=lrc）
+      if (!t.lrcUrl) { t.lrcUrl = t.url.replace('type=url', 'type=lrc'); saveTrks(); }
+      if (_hasCookie) {
+        var _fullApi=API+'/widget/api/music/full-url?id='+encodeURIComponent(_idM[1])+'&server='+_sv+'&fallback='+encodeURIComponent(t.url);
+        audio.src=t.url; audio.load();
+        fetch(_fullApi).then(function(r){return r.json();}).then(function(d){
+          if(d.ok&&d.url){t.url=d.url;audio.src=t.url;audio.load();saveTrks();}
+        }).catch(function(){});
+      } else { audio.src=t.url; audio.load(); }
+    } else {
+      audio.src=t.url; audio.load();
+    }
+  }
   else if(t.searchKey) {
     // 无 URL 但有搜索关键词 → 自动搜索完整音频
     showToast('搜索 '+t.name+'…', 1500);
