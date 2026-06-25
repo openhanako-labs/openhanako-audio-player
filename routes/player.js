@@ -1639,18 +1639,14 @@ function load(i) {
           }
         }).catch(function(){ audio.src = tok(t.url); audio.load(); audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)}); _ensureLrc(); });
       } else {
-        // 有 Meting URL 和 id → 直接请求完整 URL
+        // 有 Meting URL 和 id → 先播 Meting URL，同时请求完整 URL
+        audio.src = tok(t.url); audio.load();
+        audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
         var _fullApi = API+'/widget/api/music/full-url?id='+encodeURIComponent(_idM[1])+'&server='+_sv+'&fallback='+encodeURIComponent(t.url);
         fetch(_fullApi).then(function(r){return r.json();}).then(function(d){
-          if(d.ok && d.url) { t.url = d.url; saveTrks(); }
-          audio.src = tok(t.url); audio.load();
-          audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
+          if(d.ok && d.url) { t.url = d.url; saveTrks(); audio.src = tok(t.url); audio.load(); audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)}); }
           _ensureLrc();
-        }).catch(function(){
-          audio.src = tok(t.url); audio.load();
-          audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
-          _ensureLrc();
-        });
+        }).catch(function(){ _ensureLrc(); });
       }
     } else {
       // 非 Meting URL 或无 cookie → 直接播放
@@ -1694,7 +1690,7 @@ function load(i) {
     }).catch(function(){ showToast('搜索失败: '+t.name, 2000); });
   }
   npCover.classList.add('spinning');
-  tryReadMetadata(audio, t);
+  if (t.url) { tryReadMetadata(audio, t); }
   renderPL();
 }
 
