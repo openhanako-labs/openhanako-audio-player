@@ -20,18 +20,25 @@ const MIME = { mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "aud
 // 格式：MUSIC_U=xxx; __csrf=xxx
 // 有效期通常数周到数月，过期后重新获取
 function _loadCookies() {
-  try {
-    const envPath = path.join(__dirname, '..', 'cookies.env');
-    if (fs.existsSync(envPath)) {
-      const lines = fs.readFileSync(envPath, 'utf-8').split('\n');
-      const map = {};
-      for (const line of lines) {
-        const m = line.match(/^([A-Z_]+)=(.*)$/);
-        if (m) map[m[1]] = m[2];
+  var paths = [];
+  try { paths.push(path.join(__dirname, '..', 'cookies.env')); } catch(e) {}
+  try { paths.push(path.join(new URL('..', import.meta.url).pathname.replace(/^//, ''), 'cookies.env')); } catch(e) {}
+  var home = process.env.USERPROFILE || process.env.HOME || '';
+  if (home) paths.push(path.join(home, '.hanako', 'plugins', 'hanako-audio-player', 'cookies.env'));
+  for (var i = 0; i < paths.length; i++) {
+    try {
+      if (fs.existsSync(paths[i])) {
+        var lines = fs.readFileSync(paths[i], 'utf-8').split('
+');
+        var map = {};
+        for (var j = 0; j < lines.length; j++) {
+          var m = lines[j].match(/^([A-Z_]+)=(.*)$/);
+          if (m) map[m[1]] = m[2];
+        }
+        return map;
       }
-      return map;
-    }
-  } catch (e) {}
+    } catch(e) {}
+  }
   return {};
 }
 const _cookieMap = _loadCookies();
