@@ -341,7 +341,7 @@ setTimeout(n,100);
         const fullUrl = data?.data?.[0]?.url;
         if (fullUrl) {
           const httpsUrl = fullUrl.replace("http://", "https://");
-          return c.redirect(httpsUrl);
+        return c.json({ ok:true, url:httpsUrl });
         }
       }
       if (server === "tencent" && TENCENT_COOKIE) {
@@ -366,15 +366,15 @@ setTimeout(n,100);
         if (purl) {
           const sip = data.req_0.data.sip.find(s => !s.startsWith("http://ws")) || data.req_0.data.sip[0];
           const fullUrl = (sip + purl).replace("http://", "https://");
-          return c.redirect(fullUrl);
+        return c.json({ ok:true, url:fullUrl });
         }
       }
       // cookie 无效或拿不到 → 回退
-      if (fallback) return c.redirect(fallback);
-      return c.json({ ok:false, error:"failed to get full url" }, 503);
+      if (fallback) return c.json({ ok:true, url:fallback, fallback:true });
+    return c.json({ ok:false, error:"failed to get full url" }, 503);
     } catch (e) {
-      if (fallback) return c.redirect(fallback);
-      return c.json({ ok:false, error:e.message }, 500);
+      if (fallback) return c.json({ ok:true, url:fallback, fallback:true });
+    return c.json({ ok:false, error:e.message }, 500);
     }
   });
 
@@ -1480,7 +1480,7 @@ body {
 
 const API = ${JSON.stringify(apiBase)};
 const TOKEN = ${JSON.stringify(token)};
-const HAS_NETEASE_COOKIE = ${JSON.stringify(NETEASE_COOKIE ? true : false)};
+const HAS_NETEASE_COOKIE = ${JSON.stringify(NETEASE_COOKIE ? true : false)}; console.log("[player] HAS_NETEASE_COOKIE:", HAS_NETEASE_COOKIE, "cookie len:", ${NETEASE_COOKIE.length});
 const HAS_TENCENT_COOKIE = ${JSON.stringify(TENCENT_COOKIE ? true : false)};
 if (TOKEN) {
   const _f = window.fetch.bind(window);
@@ -1619,41 +1619,42 @@ function load(i) {
               var _fa = API+'/widget/api/music/full-url?id='+encodeURIComponent(_newId[1])+'&server='+_newSvVal+'&fallback='+encodeURIComponent(_newUrl);
               fetch(_fa).then(function(r2){return r2.json();}).then(function(d2){
                 t.url = (d2.ok && d2.url) ? d2.url : _newUrl; saveTrks();
-                audio.src = t.url; audio.load();
+                audio.src = tok(t.url); audio.load();
                 audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
                 _ensureLrc();
-              }).catch(function(){ t.url = _newUrl; audio.src = t.url; audio.load(); audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)}); _ensureLrc(); });
+              }).catch(function(){ t.url = _newUrl; audio.src = tok(t.url); audio.load(); audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)}); _ensureLrc(); });
             } else {
               t.url = _newUrl; saveTrks();
-              audio.src = t.url; audio.load();
+              audio.src = tok(t.url); audio.load();
               audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
               _ensureLrc();
             }
           } else {
             // 搜索失败 → 用旧 URL 凑合
-            audio.src = t.url; audio.load();
+            audio.src = tok(t.url); audio.load();
             audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
             _ensureLrc();
           }
-        }).catch(function(){ audio.src = t.url; audio.load(); audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)}); _ensureLrc(); });
+        }).catch(function(){ audio.src = tok(t.url); audio.load(); audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)}); _ensureLrc(); });
       } else {
         // 有 Meting URL 和 id → 直接请求完整 URL
         var _fullApi = API+'/widget/api/music/full-url?id='+encodeURIComponent(_idM[1])+'&server='+_sv+'&fallback='+encodeURIComponent(t.url);
         fetch(_fullApi).then(function(r){return r.json();}).then(function(d){
           if(d.ok && d.url) { t.url = d.url; saveTrks(); }
-          audio.src = t.url; audio.load();
+          audio.src = tok(t.url); audio.load();
           audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
           _ensureLrc();
         }).catch(function(){
-          audio.src = t.url; audio.load();
+          audio.src = tok(t.url); audio.load();
           audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
           _ensureLrc();
         });
       }
     } else {
       // 非 Meting URL 或无 cookie → 直接播放
-      audio.src = t.url; audio.load();
-      audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
+      console.log('[player] direct play:', t.url);
+      audio.src = tok(t.url); audio.load();
+      audio.play().catch(function(e){console.warn('[player] play error:', e.name, e.message, t.url);});
       _ensureLrc();
     }
   }
@@ -1676,14 +1677,14 @@ function load(i) {
           var fullApi=API+'/widget/api/music/full-url?id='+encodeURIComponent(songId)+'&server='+sv2+'&fallback='+encodeURIComponent(_metaUrl);
           fetch(fullApi).then(function(r){return r.json();}).then(function(d){
             t.url=(d.ok&&d.url)?d.url:_metaUrl;
-            audio.src=t.url;audio.load();saveTrks();
+            audio.src = tok(t.url);audio.load();saveTrks();
             audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
           }).catch(function(){
-            t.url=_metaUrl;audio.src=t.url;audio.load();
+            t.url=_metaUrl;audio.src = tok(t.url);audio.load();
             audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
           });
         } else {
-          t.url=_metaUrl;audio.src=t.url;audio.load();
+          t.url=_metaUrl;audio.src = tok(t.url);audio.load();
           audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
         }
       } else { showToast('未找到完整音频: '+t.name, 2000); }
