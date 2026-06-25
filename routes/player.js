@@ -1489,11 +1489,11 @@ function saveTrks() { try { localStorage.setItem('hanako_audio_playlist', JSON.s
 function loadTrks() { try { var s = JSON.parse(localStorage.getItem('hanako_audio_playlist')); if(s && s.length) { trks = s; idx = 0; trks.forEach(function(t){ if(t.url) t.url = t.url.split('?token=')[0].split('&token=')[0]; }); } } catch(e) {} }
 loadTrks();
 // 缓存版本——旧 Meting URL 自动刷新
-var CACHE_VERSION = 2;
+var CACHE_VERSION = 3;
 var _savedV = parseInt(localStorage.getItem('hanako_audio_cache_v')||'0');
 if (_savedV < CACHE_VERSION && trks.length) {
   trks.forEach(function(t){
-    if (t.url && (t.url.indexOf('api.i-meto.com')!==-1 || /[?&]type=url/.test(t.url))) {
+    if (t.url && (t.url.indexOf('api.i-meto.com')!==-1 || /[?&]type=url/.test(t.url) || t.url.indexOf('music.126.net')!==-1 || t.url.indexOf('music.127.net')!==-1)) {
       if (!t.searchKey) t.searchKey = t.name;
       if (!t.searchServer) t.searchServer = 'netease';
       t.url = '';
@@ -1582,20 +1582,59 @@ function load(i) {
     var _sv = _svM ? _svM[1] : 'netease';
     var _hasCookie = (_sv === 'netease' && HAS_NETEASE_COOKIE) || (_sv === 'tencent' && HAS_TENCENT_COOKIE);
 
-    if (_isMeting && _idM && _hasCookie) {
-      // Meting URL + cookie → 先拿完整音频再播放
+    // 检测是否需要升级：Meting URL、或过期的网易云直链、或有 searchKey 但 URL 可能失效
+    var _isExpired = t.url.indexOf('music.126.net') !== -1 || t.url.indexOf('music.127.net') !== -1;
+    var _needsUpgrade = (_isMeting && _idM && _hasCookie) || (_isExpired && t.searchKey);
+    
+    if (_needsUpgrade) {
+      // 需要获取完整音频 → 先拿再播
       showToast('获取完整音频…', 1500);
-      var _fullApi = API+'/widget/api/music/full-url?id='+encodeURIComponent(_idM[1])+'&server='+_sv+'&fallback='+encodeURIComponent(t.url);
-      fetch(_fullApi).then(function(r){return r.json();}).then(function(d){
-        if(d.ok && d.url) { t.url = d.url; saveTrks(); }
-        audio.src = t.url; audio.load();
-        audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
-        _ensureLrc();
-      }).catch(function(){
-        audio.src = t.url; audio.load();
-        audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
-        _ensureLrc();
-      });
+      // 如果有 searchKey，重新搜索获取最新 Meting URL（含最新 auth）
+      if (t.searchKey && (_isExpired || !_idM)) {
+        var _skSv = t.searchServer || 'netease';
+        fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(t.searchKey)+'&server='+_skSv).then(function(r){return r.json();}).then(function(res){
+          if(res.ok && res.results && res.results.length) {
+            var _newUrl = res.results[0].url;
+            t.lrcUrl = res.results[0].lrc || t.lrcUrl || '';
+            var _newId = _newUrl.match(/[?&]id=([^&]+)/);
+            var _newSv = _newUrl.match(/[?&]server=([^&]+)/);
+            var _newSvVal = _newSv ? _newSv[1] : _skSv;
+            var _newHasCookie = (_newSvVal === 'netease' && HAS_NETEASE_COOKIE) || (_newSvVal === 'tencent' && HAS_TENCENT_COOKIE);
+            if (_newHasCookie && _newId) {
+              var _fa = API+'/widget/api/music/full-url?id='+encodeURIComponent(_newId[1])+'&server='+_newSvVal+'&fallback='+encodeURIComponent(_newUrl);
+              fetch(_fa).then(function(r2){return r2.json();}).then(function(d2){
+                t.url = (d2.ok && d2.url) ? d2.url : _newUrl; saveTrks();
+                audio.src = t.url; audio.load();
+                audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
+                _ensureLrc();
+              }).catch(function(){ t.url = _newUrl; audio.src = t.url; audio.load(); audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)}); _ensureLrc(); });
+            } else {
+              t.url = _newUrl; saveTrks();
+              audio.src = t.url; audio.load();
+              audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
+              _ensureLrc();
+            }
+          } else {
+            // 搜索失败 → 用旧 URL 凑合
+            audio.src = t.url; audio.load();
+            audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
+            _ensureLrc();
+          }
+        }).catch(function(){ audio.src = t.url; audio.load(); audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)}); _ensureLrc(); });
+      } else {
+        // 有 Meting URL 和 id → 直接请求完整 URL
+        var _fullApi = API+'/widget/api/music/full-url?id='+encodeURIComponent(_idM[1])+'&server='+_sv+'&fallback='+encodeURIComponent(t.url);
+        fetch(_fullApi).then(function(r){return r.json();}).then(function(d){
+          if(d.ok && d.url) { t.url = d.url; saveTrks(); }
+          audio.src = t.url; audio.load();
+          audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
+          _ensureLrc();
+        }).catch(function(){
+          audio.src = t.url; audio.load();
+          audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
+          _ensureLrc();
+        });
+      }
     } else {
       // 非 Meting URL 或无 cookie → 直接播放
       audio.src = t.url; audio.load();
