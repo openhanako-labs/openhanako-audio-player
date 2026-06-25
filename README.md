@@ -78,6 +78,7 @@ cp -r hanako-audio-player ~/.hanako/plugins/hanako-audio-player
 | `METING_API_URL` | Meting 实例地址 | `https://api.i-meto.com/meting/api` |
 | `METING_TOKEN` | Meting HMAC 鉴权密钥 | `token` |
 | `NETEASE_COOKIE` | 网易云 cookie（获取完整音频，绕过试听限制） | 空（使用匿名试听） |
+| `TENCENT_COOKIE` | QQ音乐 cookie（格式：uin=xxx; qqmusic_key=xxx） | 空 |
 | `COSYVOICE_BASE` | CosyVoice 项目路径 | 自动搜索 |
 
 ## 文件结构
@@ -119,17 +120,26 @@ hanako-audio-player/
 
 ### 配置步骤
 
+#### 网易云
+
 1. 浏览器登录 [网易云网页版](https://music.163.com)
 2. 打开开发者工具（F12）→ Network → 随便点一个请求 → 复制 Cookie 头
 3. 提取 `MUSIC_U` 的值
 4. 设置环境变量：
 
 ```bash
-# Windows PowerShell
-$env:NETEASE_COOKIE = "MUSIC_U=你的值"
-
-# 或在 Hanako 启动脚本中设置
 set NETEASE_COOKIE=MUSIC_U=你的值
+```
+
+#### QQ音乐
+
+1. 浏览器登录 [QQ音乐网页版](https://y.qq.com)
+2. 打开开发者工具（F12）→ Network → 随便点一个请求 → 复制 Cookie 头
+3. 提取 `uin` 和 `qqmusic_key` 两个字段
+4. 设置环境变量：
+
+```bash
+set TENCENT_COOKIE=uin=你的uin; qqmusic_key=你的key
 ```
 
 5. 重启 Hanako

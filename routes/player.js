@@ -16,6 +16,8 @@ const MIME = { mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "aud
 
 // 环境变量：网易云 cookie（格式：MUSIC_U=xxxxxxxx），用于获取完整音频
 const NETEASE_COOKIE = process.env.NETEASE_COOKIE || "";
+// 环境变量：QQ音乐 cookie（格式：uin=xxx; qqmusic_key=xxx），用于获取完整音频
+const TENCENT_COOKIE = process.env.TENCENT_COOKIE || "";
 
 export default function (app, ctx) {
   const pluginId = ctx.pluginId;
@@ -286,12 +288,12 @@ setTimeout(n,100);
     const fallback = c.req.query("fallback") || ""; // Meting 原始 URL
     if (!id) return c.json({ ok:false, error:"id required" }, 400);
 
-    // 没配 cookie → 直接回退到 Meting URL
-    if (!NETEASE_COOKIE && fallback) return c.redirect(fallback);
-    if (!NETEASE_COOKIE) return c.json({ ok:false, error:"no cookie configured" }, 503);
+    // 没配任何 cookie → 直接回退到 Meting URL
+    if (!NETEASE_COOKIE && !TENCENT_COOKIE && fallback) return c.redirect(fallback);
+    if (!NETEASE_COOKIE && !TENCENT_COOKIE) return c.json({ ok:false, error:"no cookie configured" }, 503);
 
     try {
-      if (server === "netease") {
+      if (server === "netease" && NETEASE_COOKIE) {
         const apiUrl = `https://music.163.com/api/song/enhance/player/url?ids=[${id}]&br=320000`;
         const resp = await fetch(apiUrl, {
           headers: {
@@ -305,6 +307,31 @@ setTimeout(n,100);
         if (fullUrl) {
           const httpsUrl = fullUrl.replace("http://", "https://");
           return c.redirect(httpsUrl);
+        }
+      }
+      if (server === "tencent" && TENCENT_COOKIE) {
+        // QQ 音乐：cookie 格式 uin=xxx; qqmusic_key=xxx
+        const uinMatch = TENCENT_COOKIE.match(/uin=([^;]+)/);
+        const keyMatch = TENCENT_COOKIE.match(/qqmusic_key=([^;]+)/);
+        const uin = uinMatch ? uinMatch[1] : "";
+        const qqmusic_key = keyMatch ? keyMatch[1] : "";
+        const guid = (Math.random() * 10000000).toFixed(0);
+        const reqBody = {
+          req_0: {
+            module: "vkey.GetVkeyServer",
+            method: "CgiGetVkey",
+            param: { guid: guid, songmid: id, songtype: [0], uin: uin, loginflag: 1, platform: "20" },
+          },
+          comm: { uin: uin, format: "json", ct: 19, cv: 0, authst: qqmusic_key },
+        };
+        const apiUrl = "https://u.y.qq.com/cgi-bin/musicu.fcg?-=getplaysongvkey&g_tk=5381&loginUin="+uin+"&hostUin=0&format=json&inCharset=utf8&outCharset=utf-8&platform=yqq.json&needNewCode=0&data="+encodeURIComponent(JSON.stringify(reqBody));
+        const resp = await fetch(apiUrl);
+        const data = await resp.json();
+        const purl = data?.req_0?.data?.midurlinfo?.[0]?.purl;
+        if (purl) {
+          const sip = data.req_0.data.sip.find(s => !s.startsWith("http://ws")) || data.req_0.data.sip[0];
+          const fullUrl = (sip + purl).replace("http://", "https://");
+          return c.redirect(fullUrl);
         }
       }
       // cookie 无效或拿不到 → 回退
@@ -1419,6 +1446,7 @@ body {
 const API = ${JSON.stringify(apiBase)};
 const TOKEN = ${JSON.stringify(token)};
 const HAS_NETEASE_COOKIE = ${JSON.stringify(NETEASE_COOKIE ? true : false)};
+const HAS_TENCENT_COOKIE = ${JSON.stringify(TENCENT_COOKIE ? true : false)};
 if (TOKEN) {
   const _f = window.fetch.bind(window);
   window.fetch = function(u, o) {
@@ -1511,7 +1539,8 @@ function load(i) {
         // 尝试完整 URL，回退到 Meting URL
         var idMatch = _metaUrl.match(/[?&]id=([^&]+)/);
         var svMatch = _metaUrl.match(/[?&]server=([^&]+)/);
-        if (HAS_NETEASE_COOKIE && idMatch) {
+        var hasCookie = (sv === 'netease' && HAS_NETEASE_COOKIE) || (sv === 'tencent' && HAS_TENCENT_COOKIE);
+        if (hasCookie && idMatch) {
           var songId=idMatch[1], sv2=svMatch?svMatch[1]:'netease';
           var fullApi=API+'/widget/api/music/full-url?id='+encodeURIComponent(songId)+'&server='+sv2+'&fallback='+encodeURIComponent(_metaUrl);
           fetch(fullApi,{redirect:'manual'}).then(function(r){
@@ -2105,22 +2134,22 @@ document.getElementById('musicResults').addEventListener('click', function(e){
   var url = item.dataset.url; // 搜索结果：直链
   var server = item.dataset.server; // 歌单条目的源
   // 歌单条目没有 data-url → 需要先搜索拿 URL
-  // 尝试获取完整音频 URL（如果配了网易云 cookie）
+  // 尝试获取完整音频 URL（如果配了 cookie）
   function tryFullUrl(metingUrl, cb) {
-    if (!HAS_NETEASE_COOKIE) { cb(metingUrl); return; }
-    // 从 Meting URL 中提取歌曲 ID 和 server
     var idMatch = metingUrl.match(/[?&]id=([^&]+)/);
     var svMatch = metingUrl.match(/[?&]server=([^&]+)/);
     if (!idMatch) { cb(metingUrl); return; }
     var songId = idMatch[1];
     var sv = svMatch ? svMatch[1] : 'netease';
+    var hasCookie = (sv === 'netease' && HAS_NETEASE_COOKIE) || (sv === 'tencent' && HAS_TENCENT_COOKIE);
+    if (!hasCookie) { cb(metingUrl); return; }
     var fullUrlApi = API+'/widget/api/music/full-url?id='+encodeURIComponent(songId)+'&server='+sv+'&fallback='+encodeURIComponent(metingUrl);
     fetch(fullUrlApi, {method:'HEAD', redirect:'manual'}).then(function(r){
       if (r.status === 302 || r.status === 301) {
         var loc = r.headers.get('location');
         if (loc && !loc.includes('/404')) { cb(loc); return; }
       }
-      cb(metingUrl); // 回退
+      cb(metingUrl);
     }).catch(function(){ cb(metingUrl); });
   }
   function withUrl(cb) {
