@@ -2465,7 +2465,7 @@ function doPlaylistImport(){
     var t=trks[idx];
     if(!t||!t.url) return;
     var lrcUrl=t.lrcUrl||lrcMap[t.url]||'';
-    var lrcKey=t.url+'|'+lrcUrl;
+    var lrcKey=t.url+'|'+lrcUrl+'|'+(t.searchKey||'');
     if(lrcUrl && lrcKey!==_lastLrcKey){
       _lastLrcKey=lrcKey;
       var proxyUrl=API+'/widget/api/music/lrc-proxy?url='+encodeURIComponent(lrcUrl);
