@@ -21,15 +21,23 @@ const MIME = { mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "aud
 // 有效期通常数周到数月，过期后重新获取
 function _loadCookies() {
   var paths = [];
+  // CJS 环境
   try { paths.push(path.join(__dirname, '..', 'cookies.env')); } catch(e) {}
-  try { paths.push(path.join(new URL('..', import.meta.url).pathname.replace(/^//, ''), 'cookies.env')); } catch(e) {}
+  // ESM 环境
+  try { 
+    var _url = new URL('..', import.meta.url);
+    var _p = _url.pathname;
+    if (_p.startsWith('/')) _p = _p.slice(1);
+    _p = _p.split('/').join(path.sep);
+    paths.push(_p + 'cookies.env');
+  } catch(e) {}
+  // 兜底：home 目录
   var home = process.env.USERPROFILE || process.env.HOME || '';
   if (home) paths.push(path.join(home, '.hanako', 'plugins', 'hanako-audio-player', 'cookies.env'));
   for (var i = 0; i < paths.length; i++) {
     try {
       if (fs.existsSync(paths[i])) {
-        var lines = fs.readFileSync(paths[i], 'utf-8').split('
-');
+        var lines = fs.readFileSync(paths[i], 'utf-8').split('\n');
         var map = {};
         for (var j = 0; j < lines.length; j++) {
           var m = lines[j].match(/^([A-Z_]+)=(.*)$/);
