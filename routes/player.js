@@ -1652,6 +1652,7 @@ function load(i) {
     } else {
       // 非 Meting URL 或无 cookie → 直接播放
       audio.src = tok(t.url); audio.load();
+      audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
       _ensureLrc();
     }
   }
