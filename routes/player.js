@@ -2855,6 +2855,22 @@ try {
   }
 } catch(e) {}
 
+// ── Cross-window sync: listen for localStorage changes from other windows ──
+window.addEventListener('storage', function(e) {
+  if (e.key === 'hanako_audio_playlist' && e.newValue) {
+    try {
+      var newTrks = JSON.parse(e.newValue);
+      var changed = newTrks.length !== trks.length ||
+        newTrks.some(function(t, i) { return t.url !== (trks[i] ? trks[i].url : undefined); });
+      if (changed) {
+        trks = newTrks;
+        idx = Math.min(idx, trks.length - 1);
+        renderPL();
+      }
+    } catch(err) {}
+  }
+});
+
 parent.postMessage({type:'ready'},'*');
 if (window.ResizeObserver) { new ResizeObserver(notifySize).observe(document.body); }
 setTimeout(notifySize, 300);
