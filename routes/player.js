@@ -1535,6 +1535,27 @@ const npCover = document.getElementById('npCover');
 let trks = [], idx = 0, playing = false, playMode = 0, prevVol = 0.8, _batchLoading = false, _firstRender = true;
 // playMode: 0=顺序, 1=单曲循环, 2=随机, 3=列表循环
 
+// ── Cross-window sync via BroadcastChannel (init early so saveTrks can use it) ──
+var _syncChannel = null;
+try { _syncChannel = new BroadcastChannel('hanako_audio_sync'); } catch(e) {}
+if (_syncChannel) {
+  _syncChannel.onmessage = function(ev) {
+    var msg = ev.data;
+    if (msg && msg.type === 'playlist_update') {
+      try {
+        var newTrks = msg.trks;
+        var changed = newTrks.length !== trks.length ||
+          newTrks.some(function(t, i) { return t.url !== (trks[i] ? trks[i].url : undefined); });
+        if (changed) {
+          trks = newTrks;
+          idx = Math.min(idx, trks.length - 1);
+          renderPL();
+        }
+      } catch(err) {}
+    }
+  };
+}
+
 function saveTrks() {
   try { localStorage.setItem('hanako_audio_playlist', JSON.stringify(trks)); } catch(e) {}
   if (_syncChannel) {
@@ -2859,27 +2880,6 @@ try {
     document.head.appendChild(s);
   }
 } catch(e) {}
-
-// ── Cross-window sync via BroadcastChannel ──
-var _syncChannel = null;
-try { _syncChannel = new BroadcastChannel('hanako_audio_sync'); } catch(e) {}
-if (_syncChannel) {
-  _syncChannel.onmessage = function(ev) {
-    var msg = ev.data;
-    if (msg && msg.type === 'playlist_update') {
-      try {
-        var newTrks = msg.trks;
-        var changed = newTrks.length !== trks.length ||
-          newTrks.some(function(t, i) { return t.url !== (trks[i] ? trks[i].url : undefined); });
-        if (changed) {
-          trks = newTrks;
-          idx = Math.min(idx, trks.length - 1);
-          renderPL();
-        }
-      } catch(err) {}
-    }
-  };
-}
 
 parent.postMessage({type:'ready'},'*');
 if (window.ResizeObserver) { new ResizeObserver(notifySize).observe(document.body); }
