@@ -1535,7 +1535,12 @@ const npCover = document.getElementById('npCover');
 let trks = [], idx = 0, playing = false, playMode = 0, prevVol = 0.8, _batchLoading = false, _firstRender = true;
 // playMode: 0=顺序, 1=单曲循环, 2=随机, 3=列表循环
 
-function saveTrks() { try { localStorage.setItem('hanako_audio_playlist', JSON.stringify(trks)); } catch(e) {} }
+function saveTrks() {
+  try { localStorage.setItem('hanako_audio_playlist', JSON.stringify(trks)); } catch(e) {}
+  if (_syncChannel) {
+    try { _syncChannel.postMessage({ type: 'playlist_update', trks: trks }); } catch(e) {}
+  }
+}
 function loadTrks() { try { var s = JSON.parse(localStorage.getItem('hanako_audio_playlist')); if(s && s.length) { trks = s; idx = 0; trks.forEach(function(t){ if(t.url) t.url = t.url.split('?token=')[0].split('&token=')[0]; }); } } catch(e) {} }
 loadTrks();
 // 自动去重：按裸 url（去掉 token）+ name 去重，保留首次出现的
@@ -2855,21 +2860,26 @@ try {
   }
 } catch(e) {}
 
-// ── Cross-window sync: listen for localStorage changes from other windows ──
-window.addEventListener('storage', function(e) {
-  if (e.key === 'hanako_audio_playlist' && e.newValue) {
-    try {
-      var newTrks = JSON.parse(e.newValue);
-      var changed = newTrks.length !== trks.length ||
-        newTrks.some(function(t, i) { return t.url !== (trks[i] ? trks[i].url : undefined); });
-      if (changed) {
-        trks = newTrks;
-        idx = Math.min(idx, trks.length - 1);
-        renderPL();
-      }
-    } catch(err) {}
-  }
-});
+// ── Cross-window sync via BroadcastChannel ──
+var _syncChannel = null;
+try { _syncChannel = new BroadcastChannel('hanako_audio_sync'); } catch(e) {}
+if (_syncChannel) {
+  _syncChannel.onmessage = function(ev) {
+    var msg = ev.data;
+    if (msg && msg.type === 'playlist_update') {
+      try {
+        var newTrks = msg.trks;
+        var changed = newTrks.length !== trks.length ||
+          newTrks.some(function(t, i) { return t.url !== (trks[i] ? trks[i].url : undefined); });
+        if (changed) {
+          trks = newTrks;
+          idx = Math.min(idx, trks.length - 1);
+          renderPL();
+        }
+      } catch(err) {}
+    }
+  };
+}
 
 parent.postMessage({type:'ready'},'*');
 if (window.ResizeObserver) { new ResizeObserver(notifySize).observe(document.body); }
