@@ -1581,16 +1581,19 @@ let trks = [], idx = 0, playing = false, playMode = 0, prevVol = 0.8, _batchLoad
 // playMode: 0=顺序, 1=单曲循环, 2=随机, 3=列表循环
 
 // ── Server-side playlist sync ──
-var _syncChannel = null; // was BroadcastChannel, replaced by server API
+var _syncChannel = null;
+var _initialSyncDone = false; // 服务器同步完成前不写回服务器
 
 function saveTrks() {
   try { localStorage.setItem('hanako_audio_playlist', JSON.stringify(trks)); } catch(e) {}
-  // Sync to server as single source of truth
-  fetch(API+'/widget/api/playlist', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ tracks: trks })
-  }).catch(function(){});
+  // 只在初始同步完成后才写服务器，避免用旧数据覆盖
+  if (_initialSyncDone) {
+    fetch(API+'/widget/api/playlist', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ tracks: trks })
+    }).catch(function(){});
+  }
 }
 function loadTrks() { try { var s = JSON.parse(localStorage.getItem('hanako_audio_playlist')); if(s && s.length) { trks = s; idx = 0; trks.forEach(function(t){ if(t.url) t.url = t.url.split('?token=')[0].split('&token=')[0]; }); } } catch(e) {} }
 loadTrks();
@@ -2835,39 +2838,39 @@ loadScenes();
 
 // 初始化
 
-// 初始化：从服务器拉取完整播放列表
+// 初始化：从服务器拉取完整播放列表（同步完成前 saveTrks 不写服务器）
 fetch(API+'/widget/api/playlist').then(function(r){return r.json();}).then(function(data){
   if(data.ok && data.tracks && data.tracks.length) {
     var serverLen = data.tracks.length;
     if (serverLen > trks.length) {
-      // 服务器数据更新 → 使用服务器数据
       trks = data.tracks;
-      idx = Math.min(0, trks.length - 1);
+      idx = Math.max(0, trks.length - 1);
       trks.forEach(function(t){ if(t.url) t.url = t.url.split('?token=')[0].split('&token=')[0]; });
-      if(trks.length) { renderPL(); saveTrks(); }
-    } else if (trks.length > serverLen) {
-      // 本地有更多 → 推送到服务器
-      saveTrks();
+      renderPL();
     }
-  } else if (trks.length) {
-    // 服务器无数据，本地有 → 推送到服务器
-    saveTrks();
-  }
-  // 合并本地媒体文件（扫描目录）
-  if(data.tracks) {
     var merged = false;
     data.tracks.forEach(function(t){
       var bareUrl=t.url||'';
       var found=false;
       for(var i=0;i<trks.length;i++){if(trks[i].url===tok(bareUrl)||trks[i].url===bareUrl){found=true;break;}}
-      if(!found) {
-        trks.push({name:t.name||t.url.split('/').pop(), url:tok(bareUrl), mode:t.mode||'本地', dur:0, group:'本地音乐'});
+      if(!found && bareUrl) {
+        trks.push({name:t.name||t.url.split('/').pop(), url:tok(bareUrl), mode:t.mode||'本地', dur:0, group:t.group||'本地音乐'});
         merged = true;
       }
     });
-    if(merged) { renderPL(); saveTrks(); }
+    if(merged) { renderPL(); }
   }
-}).catch(function(){});
+  _initialSyncDone = true;
+  if (trks.length > 0) {
+    fetch(API+'/widget/api/playlist', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ tracks: trks })
+    }).catch(function(){});
+  }
+}).catch(function(){
+  _initialSyncDone = true;
+});
 
 // 定时轮询服务器同步（替代原来的 /widget/api/queue 轮询）
 setInterval(function(){
