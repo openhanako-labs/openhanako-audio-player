@@ -263,6 +263,51 @@ setTimeout(n,100);
     } catch(e) { return c.json({ ok:false, error:e.message }, 500); }
   });
 
+  // ── Playlist persistence (server-side single source of truth) ──
+  const playlistPath = path.join(dataDir, "playlist.json");
+
+  function loadPlaylistFromDisk() {
+    try {
+      if (fs.existsSync(playlistPath)) {
+        return JSON.parse(fs.readFileSync(playlistPath, "utf-8"));
+      }
+    } catch(e) { console.warn("[playlist] load failed:", e.message); }
+    return null;
+  }
+
+  function savePlaylistToDisk(tracks) {
+    try {
+      fs.writeFileSync(playlistPath, JSON.stringify(tracks, null, 2), "utf-8");
+    } catch(e) { console.warn("[playlist] save failed:", e.message); }
+  }
+
+  // GET /widget/api/playlist — 返回完整播放列表
+  app.get("/widget/api/playlist", (c) => {
+    const saved = loadPlaylistFromDisk();
+    if (saved && saved.length) {
+      return c.json({ ok: true, tracks: saved, count: saved.length });
+    }
+    // 首次加载：从本地媒体文件初始化
+    const files = collectMediaFiles();
+    const initial = files.map(function(f) { return { name: f.name, url: f.url, mode: "本地", dur: 0, group: "本地音乐" }; });
+    savePlaylistToDisk(initial);
+    return c.json({ ok: true, tracks: initial, count: initial.length });
+  });
+
+  // POST /widget/api/playlist — 保存完整播放列表
+  app.post("/widget/api/playlist", async (c) => {
+    try {
+      const body = await c.req.json();
+      if (body && body.tracks && Array.isArray(body.tracks)) {
+        savePlaylistToDisk(body.tracks);
+        return c.json({ ok: true, count: body.tracks.length });
+      }
+      return c.json({ ok: false, error: "invalid tracks" }, 400);
+    } catch(e) {
+      return c.json({ ok: false, error: e.message }, 500);
+    }
+  });
+
   app.post("/widget/api/queue", async (c) => {
     return c.json({ ok: true });
   });
@@ -1535,32 +1580,17 @@ const npCover = document.getElementById('npCover');
 let trks = [], idx = 0, playing = false, playMode = 0, prevVol = 0.8, _batchLoading = false, _firstRender = true;
 // playMode: 0=顺序, 1=单曲循环, 2=随机, 3=列表循环
 
-// ── Cross-window sync via BroadcastChannel (init early so saveTrks can use it) ──
-var _syncChannel = null;
-try { _syncChannel = new BroadcastChannel('hanako_audio_sync'); } catch(e) {}
-if (_syncChannel) {
-  _syncChannel.onmessage = function(ev) {
-    var msg = ev.data;
-    if (msg && msg.type === 'playlist_update') {
-      try {
-        var newTrks = msg.trks;
-        var changed = newTrks.length !== trks.length ||
-          newTrks.some(function(t, i) { return t.url !== (trks[i] ? trks[i].url : undefined); });
-        if (changed) {
-          trks = newTrks;
-          idx = Math.min(idx, trks.length - 1);
-          renderPL();
-        }
-      } catch(err) {}
-    }
-  };
-}
+// ── Server-side playlist sync ──
+var _syncChannel = null; // was BroadcastChannel, replaced by server API
 
 function saveTrks() {
   try { localStorage.setItem('hanako_audio_playlist', JSON.stringify(trks)); } catch(e) {}
-  if (_syncChannel) {
-    try { _syncChannel.postMessage({ type: 'playlist_update', trks: trks }); } catch(e) {}
-  }
+  // Sync to server as single source of truth
+  fetch(API+'/widget/api/playlist', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ tracks: trks })
+  }).catch(function(){});
 }
 function loadTrks() { try { var s = JSON.parse(localStorage.getItem('hanako_audio_playlist')); if(s && s.length) { trks = s; idx = 0; trks.forEach(function(t){ if(t.url) t.url = t.url.split('?token=')[0].split('&token=')[0]; }); } } catch(e) {} }
 loadTrks();
@@ -2805,37 +2835,60 @@ loadScenes();
 
 // 初始化
 
-// 加载队列
-fetch(API+'/widget/api/queue').then(function(r){return r.json();}).then(function(data){
-  if(data&&data.length){
-    var newTracks=[];
-    data.forEach(function(t){
+// 初始化：从服务器拉取完整播放列表
+fetch(API+'/widget/api/playlist').then(function(r){return r.json();}).then(function(data){
+  if(data.ok && data.tracks && data.tracks.length) {
+    var serverLen = data.tracks.length;
+    if (serverLen > trks.length) {
+      // 服务器数据更新 → 使用服务器数据
+      trks = data.tracks;
+      idx = Math.min(0, trks.length - 1);
+      trks.forEach(function(t){ if(t.url) t.url = t.url.split('?token=')[0].split('&token=')[0]; });
+      if(trks.length) { renderPL(); saveTrks(); }
+    } else if (trks.length > serverLen) {
+      // 本地有更多 → 推送到服务器
+      saveTrks();
+    }
+  } else if (trks.length) {
+    // 服务器无数据，本地有 → 推送到服务器
+    saveTrks();
+  }
+  // 合并本地媒体文件（扫描目录）
+  if(data.tracks) {
+    var merged = false;
+    data.tracks.forEach(function(t){
       var bareUrl=t.url||'';
       var found=false;
       for(var i=0;i<trks.length;i++){if(trks[i].url===tok(bareUrl)||trks[i].url===bareUrl){found=true;break;}}
-      if(!found) newTracks.push(t);
+      if(!found) {
+        trks.push({name:t.name||t.url.split('/').pop(), url:tok(bareUrl), mode:t.mode||'本地', dur:0, group:'本地音乐'});
+        merged = true;
+      }
     });
-    if(newTracks.length){
-      showGroupPicker(function(groupName){
-        if(!groupName) groupName='本地音乐';
-        newTracks.forEach(function(t){
-          addTrack(t.name,tok(t.url||''),t.mode,groupName);
-        });
-      });
-    }
+    if(merged) { renderPL(); saveTrks(); }
   }
 }).catch(function(){});
 
-// 定时检查新队列 + 验证已有曲目文件是否仍存在
+// 定时轮询服务器同步（替代原来的 /widget/api/queue 轮询）
 setInterval(function(){
-  // 检查新队列
-  fetch(API+'/widget/api/queue').then(function(r){return r.json();}).then(function(data){
-    if(data&&data.length){data.forEach(function(t){
+  fetch(API+'/widget/api/playlist').then(function(r){return r.json();}).then(function(data){
+    if(!data.ok || !data.tracks) return;
+    var needSave = false;
+    // 服务器有而本地没有 → 添加
+    data.tracks.forEach(function(t){
       var bareUrl=t.url||'';
       var found=false;
       for(var i=0;i<trks.length;i++){if(trks[i].url===tok(bareUrl)||trks[i].url===bareUrl){found=true;break;}}
-      if(!found) addTrack(t.name,tok(bareUrl),t.mode);
-    });}
+      if(!found) {
+        trks.push({name:t.name||t.url.split('/').pop(), url:tok(bareUrl), mode:t.mode||'本地', dur:0, group:'本地音乐'});
+        needSave = true;
+      }
+    });
+    // 本地有而服务器没有 → 推送到服务器
+    if(trks.length > data.tracks.length) {
+      saveTrks();
+    }
+    if(needSave) { renderPL(); saveTrks(); }
   }).catch(function(){});
   // 验证本地文件是否仍存在（仅检查 /widget/media/ 开头的 URL）
   var toRemove=[];
