@@ -377,7 +377,7 @@ setTimeout(n,100);
       const cached = metingCache.get(cacheKey);
       if (cached && Date.now() - cached.ts < metingCacheTTL) return c.json({ ok:true, results:cached.data });
       const metingUrl = `${METING_BASE}?server=${encodeURIComponent(server)}&type=search&id=${encodeURIComponent(keyword)}`;
-      const resp = await fetch(metingUrl);
+      const resp = await fetch(metingUrl, { signal: AbortSignal.timeout(8000) });
       const raw = await resp.json();
       const data = raw.map(x => ({
         title: x.title || "", author: x.author || "",
@@ -469,7 +469,7 @@ setTimeout(n,100);
     if (!id) return c.json({ok:false, error:"id required"}, 400);
     try {
       const metingUrl = `${METING_BASE}?server=${encodeURIComponent(server)}&type=lrc&id=${encodeURIComponent(id)}`;
-      const resp = await fetch(metingUrl);
+      const resp = await fetch(metingUrl, { signal: AbortSignal.timeout(8000) });
       const data = await resp.json();
       if (Array.isArray(data) && data.length && data[0].lrc) {
         return c.text(data[0].lrc, 200, { "Content-Type":"text/plain; charset=utf-8" });
@@ -490,12 +490,65 @@ setTimeout(n,100);
     } catch(e) { return c.text("lyric fetch failed", 502); }
   });
 
+  // ── 音频流代理（绕过 CDN 反盗链）──
+  app.get("/widget/api/music/stream", async (c) => {
+    const url = c.req.query("url") || "";
+    if (!url) return c.text("url required", 400);
+    if (!url.startsWith("http://") && !url.startsWith("https://")) return c.text("invalid url", 400);
+
+    const range = c.req.header("Range") || "";
+    const ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
+    // 判断域名，设置对应的 Referer/Origin
+    let referer = "https://music.163.com/";
+    let origin = "https://music.163.com";
+    if (url.includes("qq.com") || url.includes("gtimg.cn")) {
+      referer = "https://y.qq.com/";
+      origin = "https://y.qq.com";
+    }
+
+    const fwdHeaders = {
+      "Referer": referer,
+      "Origin": origin,
+      "User-Agent": ua,
+      "Accept": "*/*",
+      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+      "Accept-Encoding": "identity;q=1, *;q=0",
+    };
+    if (range) fwdHeaders["Range"] = range;
+
+    try {
+      const resp = await fetch(url, { headers: fwdHeaders, redirect: "follow" });
+
+      if (!resp.ok) {
+        console.warn(`[music-stream] upstream ${resp.status} for ${url.slice(0, 80)}`);
+        return c.text(`upstream ${resp.status}`, resp.status);
+      }
+
+      const respHeaders = {
+        "Content-Type": resp.headers.get("content-type") || "audio/mpeg",
+        "Accept-Ranges": "bytes",
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "public, max-age=3600",
+      };
+      const cl = resp.headers.get("content-length");
+      const cr = resp.headers.get("content-range");
+      if (cl) respHeaders["Content-Length"] = cl;
+      if (cr) respHeaders["Content-Range"] = cr;
+
+      return new Response(resp.body, { status: resp.status, headers: respHeaders });
+    } catch (e) {
+      console.warn(`[music-stream] fetch error:`, e.message);
+      return c.text(`stream error: ${e.message}`, 502);
+    }
+  });
+
   app.get("/widget/api/music/playlist", async (c) => {
     const id = c.req.query("id"); const server = c.req.query("server") || "netease";
     if (!id) return c.json({ ok:false, error:"id required" }, 400);
     try {
       const metingUrl = `${METING_BASE}?server=${encodeURIComponent(server)}&type=playlist&id=${encodeURIComponent(id)}`;
-      const resp = await fetch(metingUrl);
+      const resp = await fetch(metingUrl, { signal: AbortSignal.timeout(10000) });
       const raw = await resp.json();
       const data = raw.map(x => ({
         title: x.title || "", author: x.author || "",
@@ -1532,7 +1585,7 @@ body {
   </div>
 </div>
 
-<audio id="audio" preload="auto"></audio>
+<audio id="audio" preload="auto" referrerpolicy="no-referrer"></audio>
 
 <script>
 (function(){
@@ -1659,30 +1712,39 @@ function load(i) {
     // 无 URL 但有搜索关键词 → 自动搜索完整音频
     showToast('搜索 '+t.name+'…', 1500);
     var sv = t.searchServer || 'netease';
-    fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(t.searchKey)+'&server='+sv).then(function(r){return r.json();}).then(function(res){
-      if(res.ok && res.results && res.results.length) {
-        var _metaUrl = res.results[0].url;
-        t.name = res.results[0].title;
-        t.lrcUrl = res.results[0].lrc || '';
-        document.getElementById('trackName').textContent=t.name;
-        saveTrks();
-        // 尝试完整 URL，回退到 Meting URL
-        var idMatch = _metaUrl.match(/[?&]id=([^&]+)/);
-        var svMatch = _metaUrl.match(/[?&]server=([^&]+)/);
-        var hasCookie = (sv === 'netease' && HAS_NETEASE_COOKIE) || (sv === 'tencent' && HAS_TENCENT_COOKIE);
-        if (hasCookie && idMatch) {
-          var songId=idMatch[1], sv2=svMatch?svMatch[1]:'netease';
-          var fullApi=API+'/widget/api/music/full-url?id='+encodeURIComponent(songId)+'&server='+sv2+'&fallback='+encodeURIComponent(_metaUrl);
-          fetch(fullApi).then(function(r){return r.json();}).then(function(d){
-            if(d.ok&&d.url){t.url=d.url;audio.src=tok(t.url);audio.load();audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});}
-            else{t.url=_metaUrl;audio.src=tok(t.url);audio.load();audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});}
-          }).catch(function(){t.url=_metaUrl;audio.src=tok(t.url);audio.load();audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});});
-        } else {
-          t.url=_metaUrl;audio.src=t.url;audio.load();audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)});
-        }
-        // 不调 toggle()——audio 'play' 事件监听器已处理 UI 状态
-      } else { showToast('未找到完整音频: '+t.name, 2000); }
-    }).catch(function(){ showToast('搜索失败: '+t.name, 2000); });
+    var _fallbackServers = ['netease','tencent','kugou','kuwo','baidu'].filter(function(s){return s!==sv;});
+    function _trySearch(server) {
+      return fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(t.searchKey)+'&server='+server, {signal:AbortSignal.timeout(8000)})
+        .then(function(r){return r.json();})
+        .then(function(res){
+          if(res.ok && res.results && res.results.length) {
+            // 找第一个有 url 的结果
+            for(var j=0;j<res.results.length;j++){
+              if(res.results[j].url) return res.results[j];
+            }
+          }
+          return null;
+        });
+    }
+    _trySearch(sv).then(function(hit){
+      if(hit) return hit;
+      // 主源没找到，逐个尝试备用源
+      var chain = Promise.resolve(null);
+      _fallbackServers.forEach(function(fs){
+        chain = chain.then(function(r){ if(r) return r; return _trySearch(fs).catch(function(){return null;}); });
+      });
+      return chain;
+    }).then(function(hit){
+      if(!hit || !hit.url) { showToast('所有源均未找到: '+t.name, 2500); return; }
+      t.name = hit.title || t.name;
+      t.lrcUrl = hit.lrc || '';
+      t.url = hit.url;
+      document.getElementById('trackName').textContent=t.name;
+      saveTrks();
+      audio.src = t.url;
+      audio.load();
+      audio.play().catch(function(e){ if(e.name!=='AbortError') console.warn(e); });
+    }).catch(function(e){ showToast(e.name==='TimeoutError'?'搜索超时: '+t.name:'搜索失败: '+t.name, 2500); });
   }
   npCover.classList.add('spinning');
   tryReadMetadata(audio, t);
@@ -2120,16 +2182,39 @@ audio.addEventListener('loadedmetadata',function(){
   renderPL();
 });
 audio.addEventListener('ended',next);
+audio.addEventListener('error',function(){
+  if(trks[idx] && trks[idx].url){
+    var t=trks[idx];
+    // Meting URL 失败 → 尝试用 searchKey 重新搜索
+    if(t.searchKey){
+      showToast('播放失败，重新搜索…',1500);
+      t.url=''; // 清空旧 URL，触发 searchKey 路径
+      load(idx);
+    } else {
+      showToast('播放失败: '+t.name,2000);
+    }
+  }
+});
 audio.addEventListener('play',function(){playing=true;npCover.classList.add('spinning');document.getElementById('playIcon').style.display='none';document.getElementById('pauseIcon').style.display='block';});
 audio.addEventListener('pause',function(){playing=false;npCover.classList.remove('spinning');document.getElementById('playIcon').style.display='block';document.getElementById('pauseIcon').style.display='none';});
 
 function addTrack(name,url,mode,group,lrcUrl) {
-  // 去重：url 非空时按裸 url（去掉 token）匹配，url 为空时按 name 匹配
+  // 去重：url 非空时按裸 url（去掉 query）匹配，url 为空时按 name 匹配
   var bareUrl = url ? url.split('?')[0] : '';
   for(let i=0;i<trks.length;i++){
     if(url){
       var existBare=trks[i].url?trks[i].url.split('?')[0]:'';
-      if(existBare===bareUrl){load(i);if(audio.paused){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});}return;}
+      if(existBare===bareUrl){
+        // 命中已有条目 → 用新 URL 替换旧的（auth 参数可能已过期）
+        trks[i].url = url;
+        if(name) trks[i].name = name;
+        if(lrcUrl) trks[i].lrcUrl = lrcUrl;
+        load(i);
+        if(audio.paused){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});}
+        saveTrks();
+        renderPL();
+        return;
+      }
     }
     if(!url && trks[i].name===name && !trks[i].url){return;}
   }
@@ -2148,7 +2233,6 @@ function addTrack(name,url,mode,group,lrcUrl) {
 
 function tok(url) {
   if (!TOKEN) return url;
-  // 只对本地 /api/ 或 /widget/ 路径添加 token，外部 URL 不加（避免 CORS）
   if (url.startsWith('/api/') || url.startsWith('/widget/')) {
     return url + (url.indexOf('?') > -1 ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN);
   }
@@ -2259,7 +2343,7 @@ function doMusicSearch(){
   var sv=document.getElementById('musicServer').value;
   var el=document.getElementById('musicResults');
   el.innerHTML='<div class="music-loading">搜索中…</div>';
-  fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(kw)+'&server='+sv).then(function(r){return r.json();}).then(function(res){
+  fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(kw)+'&server='+sv, {signal:AbortSignal.timeout(10000)}).then(function(r){return r.json();}).then(function(res){
     if(!res.ok||!res.results||!res.results.length){ el.innerHTML='<div class="music-empty">没有结果</div>'; return; }
     el.innerHTML=res.results.map(function(t){
       return '<div class="music-item" data-title="'+esc(t.title)+'" data-url="'+esc(t.url)+'" data-lrc="'+esc(t.lrc||'')+'">'
@@ -2270,7 +2354,7 @@ function doMusicSearch(){
         +'<button class="music-scene" title="加入场景">☾</button>'
         +'</div>';
     }).join('');
-  }).catch(function(){ el.innerHTML='<div class="music-empty">搜索失败，Meting 服务不可用</div>'; });
+  }).catch(function(e){ el.innerHTML='<div class="music-empty">'+(e.name==='TimeoutError'?'搜索超时，换源试试':'搜索失败，Meting 服务不可用')+'</div>'; });
 }
 
 document.getElementById('musicResults').addEventListener('click', function(e){
@@ -2282,32 +2366,33 @@ document.getElementById('musicResults').addEventListener('click', function(e){
   var server = item.dataset.server; // 歌单条目的源
   // 歌单条目没有 data-url → 需要先搜索拿 URL
   // 尝试获取完整音频 URL（如果配了 cookie）
-  function tryFullUrl(metingUrl, cb) {
-    var idMatch = metingUrl.match(/[?&]id=([^&]+)/);
-    var svMatch = metingUrl.match(/[?&]server=([^&]+)/);
-    if (!idMatch) { cb(metingUrl); return; }
-    var songId = idMatch[1];
-    var sv = svMatch ? svMatch[1] : 'netease';
-    var hasCookie = (sv === 'netease' && HAS_NETEASE_COOKIE) || (sv === 'tencent' && HAS_TENCENT_COOKIE);
-    if (!hasCookie) { cb(metingUrl); return; }
-    var fullUrlApi = API+'/widget/api/music/full-url?id='+encodeURIComponent(songId)+'&server='+sv+'&fallback='+encodeURIComponent(metingUrl);
-    fetch(fullUrlApi).then(function(r){return r.json();}).then(function(d){
-      if (d.ok && d.url && !d.url.includes('/404')) { cb(d.url); return; }
-      cb(metingUrl);
-    }).catch(function(){ cb(metingUrl); });
-  }
   function withUrl(cb) {
-    if (url) { tryFullUrl(url, cb); return; }
+    if (url) { cb(url, title); return; }
     if (!searchKey) { showToast('无法获取音频', 2000); return; }
     showToast('搜索完整音频…', 2000);
     var sv = server || document.getElementById('musicServer').value;
-    fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(searchKey)+'&server='+sv).then(function(r){return r.json();}).then(function(res){
-      if(res.ok && res.results && res.results.length) {
-        tryFullUrl(res.results[0].url, function(u){ cb(u, res.results[0].title); });
-      } else {
-        showToast('未找到完整音频', 2000);
-      }
-    }).catch(function(){ showToast('搜索失败', 2000); });
+    var _fallbackServers = ['netease','tencent','kugou','kuwo','baidu'].filter(function(s){return s!==sv;});
+    function _try(server) {
+      return fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(searchKey)+'&server='+server, {signal:AbortSignal.timeout(8000)})
+        .then(function(r){return r.json();})
+        .then(function(res){
+          if(res.ok && res.results && res.results.length) {
+            for(var j=0;j<res.results.length;j++){ if(res.results[j].url) return res.results[j]; }
+          }
+          return null;
+        });
+    }
+    _try(sv).then(function(hit){
+      if(hit) return hit;
+      var chain = Promise.resolve(null);
+      _fallbackServers.forEach(function(fs){
+        chain = chain.then(function(r){ if(r) return r; return _try(fs).catch(function(){return null;}); });
+      });
+      return chain;
+    }).then(function(hit){
+      if(!hit || !hit.url) { showToast('所有源均未找到', 2500); return; }
+      cb(hit.url, hit.title);
+    }).catch(function(e){ showToast(e.name==='TimeoutError'?'搜索超时':'搜索失败', 2500); });
   }
   if(e.target.closest('.music-play')){
     withUrl(function(u, t){ addTrack(t, u, '在线', null, item.dataset.lrc); });
