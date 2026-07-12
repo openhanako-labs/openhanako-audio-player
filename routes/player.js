@@ -2234,9 +2234,15 @@ function addTrack(name,url,mode,group,lrcUrl) {
 function tok(url) {
   if (!TOKEN) return url;
   if (url.startsWith('/api/') || url.startsWith('/widget/')) {
+    // Strip existing token params to prevent accumulation
+    url = url.replace(/([?&])token=[^&]*/g, '');
+    url = url.replace(/[?&]$/, '');
     return url + (url.indexOf('?') > -1 ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN);
   }
   return url;
+}
+function stripTok(url) {
+  return (url || '').replace(/([?&])token=[^&]*/g, '').replace(/[?&]$/, '');
 }
 
 // ── 主题切换 ──
@@ -2935,9 +2941,9 @@ fetch(API+'/widget/api/playlist').then(function(r){return r.json();}).then(funct
     }
     var merged = false;
     data.tracks.forEach(function(t){
-      var bareUrl=t.url||'';
+      var bareUrl=stripTok(t.url||'');
       var found=false;
-      for(var i=0;i<trks.length;i++){if(trks[i].url===tok(bareUrl)||trks[i].url===bareUrl){found=true;break;}}
+      for(var i=0;i<trks.length;i++){if(stripTok(trks[i].url)===bareUrl){found=true;break;}}
       if(!found && bareUrl) {
         trks.push({name:t.name||t.url.split('/').pop(), url:tok(bareUrl), mode:t.mode||'本地', dur:0, group:t.group||'本地音乐'});
         merged = true;
@@ -2964,9 +2970,9 @@ setInterval(function(){
     var needSave = false;
     // 服务器有而本地没有 → 添加
     data.tracks.forEach(function(t){
-      var bareUrl=t.url||'';
+      var bareUrl=stripTok(t.url||'');
       var found=false;
-      for(var i=0;i<trks.length;i++){if(trks[i].url===tok(bareUrl)||trks[i].url===bareUrl){found=true;break;}}
+      for(var i=0;i<trks.length;i++){if(stripTok(trks[i].url)===stripTok(bareUrl)){found=true;break;}}
       if(!found) {
         trks.push({name:t.name||t.url.split('/').pop(), url:tok(bareUrl), mode:t.mode||'本地', dur:0, group:'本地音乐'});
         needSave = true;
@@ -2998,9 +3004,14 @@ setInterval(function(){
   });
   // 移除缺失的曲目
   if(toRemove.length){
-    toRemove.reverse().forEach(function(i){ trks.splice(i,1); });
+    var currentRemoved = toRemove.indexOf(idx) !== -1;
+    var beforeCount = toRemove.filter(function(i){ return i < idx; }).length;
+    toRemove.sort(function(a,b){ return b-a; }).forEach(function(i){ trks.splice(i,1); });
+    idx = Math.max(0, idx - beforeCount);
     if(idx>=trks.length) idx=Math.max(0,trks.length-1);
-    if(trks.length) load(idx); else load(-1);
+    if(currentRemoved) {
+      if(trks.length) load(idx); else load(-1);
+    }
     renderPL();
     saveTrks();
   }
