@@ -423,6 +423,11 @@ setTimeout(n,100);
           const httpsUrl = fullUrl.replace("http://", "https://");
           return c.json({ ok:true, url:httpsUrl });
         }
+        // 网易云返回了空 URL → session 失效（cookie 文件未过期但服务端不认）
+        const code = data?.code;
+        if (code === 301 || (!fullUrl && data?.message === "need login")) {
+          return c.json({ ok:false, error:"session_expired", cookieExpired:true, message:"网易云登录态已失效" });
+        }
       }
       if (server === "tencent" && TENCENT_COOKIE) {
         // QQ 音乐：cookie 格式 uin=xxx; qqmusic_key=xxx
@@ -450,8 +455,14 @@ setTimeout(n,100);
         }
       }
       // cookie 无效或拿不到 → 回退
-      if (fallback) return c.json({ ok:true, url:fallback });
-      return c.json({ ok:false, error:"failed to get full url" }, 503);
+      if (fallback) {
+        // 如果网易云返回了空 URL 且有 fallback，区分一下是 cookie 问题还是接口问题
+        if (server === "netease") {
+          return c.json({ ok:true, url:fallback, cookieExpired:true, message:"网易云 cookie 失效，使用试听版" });
+        }
+        return c.json({ ok:true, url:fallback });
+      }
+      return c.json({ ok:false, error:"failed to get full url", cookieExpired: server==="netease" }, 503);
     } catch (e) {
       if (fallback) return c.json({ ok:true, url:fallback });
       return c.json({ ok:false, error:e.message }, 500);
@@ -1691,6 +1702,21 @@ if(!trks.length) {
   ];
   saveTrks();
 }
+
+// ── Cookie 健康检测（初始化后延迟执行）──
+(function initCookieCheck(){
+  // 只检测网易云，用一首常见歌做探针
+  var probeId = '418608185'; // 周杰伦-晴天（网易云常见可用ID）
+  setTimeout(function(){
+    fetch(API+'/widget/api/music/full-url?id='+probeId+'&server=netease&fallback=')
+      .then(function(r){ return r.json(); })
+      .then(function(res){
+        if(res.cookieExpired) {
+          showToast('⚠️ 网易云登录态已失效，点击播放时会使用试听版。如需完整音频请重新导出 cookie 到 cookies.env', 6000);
+        }
+      }).catch(function(){});
+  }, 3000);
+})();
 
 function fmt(s) {
   if (!s||!isFinite(s)) return '0:00';
