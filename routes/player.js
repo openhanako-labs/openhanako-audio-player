@@ -228,6 +228,32 @@ setTimeout(n,100);
     } catch (e) { return c.json([]); }
   });
 
+  // ── 单文件导入 API ──
+  app.get("/widget/api/import-file", (c) => {
+    const filePath = c.req.query("path") || "";
+    if (!filePath) return c.json({ ok:false, error:"path required" }, 400);
+    try {
+      const absPath = path.resolve(filePath);
+      if (!fs.existsSync(absPath) || !fs.statSync(absPath).isFile()) {
+        return c.json({ ok:false, error:"not a file" }, 400);
+      }
+      const exts = [".mp3", ".wav", ".ogg", ".flac", ".m4a"];
+      const name = path.basename(absPath);
+      const lower = name.toLowerCase();
+      if (!exts.some(e => lower.endsWith(e))) {
+        return c.json({ ok:false, error:"unsupported format" }, 400);
+      }
+      // 复制文件到 mediaDir
+      const destPath = path.join(mediaDir, name);
+      if (!fs.existsSync(destPath)) {
+        fs.copyFileSync(absPath, destPath);
+      }
+      const url = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(name)}`;
+      let displayName = name.replace(/\.\w+$/, "");
+      return c.json({ ok:true, name:displayName, url, mode:"本地" });
+    } catch(e) { return c.json({ ok:false, error:e.message }, 500); }
+  });
+
   // ── 文件夹扫描 API ──
   app.get("/widget/api/scan-folder", (c) => {
     const dir = c.req.query("path") || "";
@@ -251,8 +277,17 @@ setTimeout(n,100);
             if (!exts.some(e => lower.endsWith(e))) continue;
             if (seen.has(name)) continue;
             seen.add(name);
-            const relPath = path.relative(mediaDir, full);
-            const url = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(relPath.replace(/\\/g, "/"))}`;
+            // 复制文件到 mediaDir，确保可以通过 /widget/media/ 端点访问
+            const destPath = path.join(mediaDir, name);
+            if (!fs.existsSync(destPath)) {
+              try {
+                fs.copyFileSync(full, destPath);
+              } catch (copyErr) {
+                console.warn(`[scan-folder] copy failed: ${name}`, copyErr.message);
+                continue;
+              }
+            }
+            const url = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(name)}`;
             let displayName = name.replace(/\.\w+$/, "");
             results.push({ name: displayName, url, mode: "本地", size: stat.size });
           }
@@ -2194,18 +2229,36 @@ document.getElementById('addBtn').addEventListener('click',function(){
   if(!v)return;
   // 检测是否是本地文件夹路径（盘符开头，如 W:\...）
   if(v.length>=3 && v[1]===':' && (v.charCodeAt(2)===92 || v.charCodeAt(2)===47)){
-    showToast('扫描文件夹…',1500);
-    fetch(API+'/widget/api/scan-folder?path='+encodeURIComponent(v)).then(function(r){return r.json();}).then(function(d){
-      if(!d.ok||!d.files||!d.files.length){ showToast('未找到音频文件',2000); return; }
-      showGroupPicker(function(groupName){
-        if(!groupName) return;
-        _batchLoading=true;
-        d.files.forEach(function(f){ addTrack(f.name,f.url,f.mode,groupName); });
-        _batchLoading=false;
-        renderPL(); saveTrks();
-        showToast('已添加 '+d.count+' 首到分组「'+groupName+'」',2500);
-      });
-    }).catch(function(){ showToast('扫描失败',2000); });
+    // 判断是文件还是文件夹
+    const lastPart = v.split(/[\\/]/).pop();
+    const hasExt = lastPart && /\.[a-zA-Z0-9]{1,5}$/.test(lastPart);
+    if(hasExt){
+      // 单个文件路径
+      showToast('导入文件…',1500);
+      fetch(API+'/widget/api/import-file?path='+encodeURIComponent(v)).then(function(r){return r.json();}).then(function(d){
+        if(!d.ok){ showToast(d.error||'导入失败',2000); return; }
+        showGroupPicker(function(groupName){
+          if(!groupName) return;
+          addTrack(d.name,d.url,d.mode,groupName);
+          renderPL(); saveTrks();
+          showToast('已添加到分组「'+groupName+'」',2500);
+        });
+      }).catch(function(){ showToast('导入失败',2000); });
+    } else {
+      // 文件夹路径
+      showToast('扫描文件夹…',1500);
+      fetch(API+'/widget/api/scan-folder?path='+encodeURIComponent(v)).then(function(r){return r.json();}).then(function(d){
+        if(!d.ok||!d.files||!d.files.length){ showToast('未找到音频文件',2000); return; }
+        showGroupPicker(function(groupName){
+          if(!groupName) return;
+          _batchLoading=true;
+          d.files.forEach(function(f){ addTrack(f.name,f.url,f.mode,groupName); });
+          _batchLoading=false;
+          renderPL(); saveTrks();
+          showToast('已添加 '+d.count+' 首到分组「'+groupName+'」',2500);
+        });
+      }).catch(function(){ showToast('扫描失败',2000); });
+    }
     document.getElementById('urlInput').value='';
     return;
   }
