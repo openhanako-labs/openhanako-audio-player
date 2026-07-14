@@ -367,6 +367,31 @@ setTimeout(n,100);
   const metingCache = new Map();
   const metingCacheTTL = 5 * 60 * 1000;
 
+  // ── 多节点降级：主节点失败时自动尝试备用节点 ──
+  const METING_NODES = [
+    METING_BASE,
+    "https://meting.elysium-stack.cn/api",
+    "https://metingapi.mo-app.cn/",
+    "https://metingapi.nanorocky.top/",
+    "https://api.amarea.cn/meting/",
+    "https://api.qijieya.cn/meting/",
+    "https://met.liiiu.cn/meting/api"
+  ];
+
+  async function fetchMetingWithFallback(path, timeoutMs = 8000) {
+    const errors = [];
+    for (const node of METING_NODES) {
+      try {
+        const resp = await fetch(node + path, { signal: AbortSignal.timeout(timeoutMs) });
+        if (resp.ok) return { resp, node };
+        errors.push(`${node} → ${resp.status}`);
+      } catch (e) {
+        errors.push(`${node} → ${e.message}`);
+      }
+    }
+    throw new Error(`所有 Meting 节点均不可用: ${errors.join('; ')}`);
+  }
+
   app.get("/widget/api/music/search", async (c) => {
     const keyword = c.req.query("keyword") || "";
     const server = c.req.query("server") || "netease";
@@ -375,17 +400,21 @@ setTimeout(n,100);
     try {
       const cacheKey = `${server}/search/${keyword}`;
       const cached = metingCache.get(cacheKey);
-      if (cached && Date.now() - cached.ts < metingCacheTTL) return c.json({ ok:true, results:cached.data });
-      const metingUrl = `${METING_BASE}?server=${encodeURIComponent(server)}&type=search&id=${encodeURIComponent(keyword)}`;
-      const resp = await fetch(metingUrl, { signal: AbortSignal.timeout(8000) });
+      if (cached && Date.now() - cached.ts < metingCacheTTL) return c.json({ ok:true, results:cached.data, node:cached.node });
+      const path = `?server=${encodeURIComponent(server)}&type=search&id=${encodeURIComponent(keyword)}`;
+      const { resp, node } = await fetchMetingWithFallback(path);
       const raw = await resp.json();
       const data = raw.map(x => ({
         title: x.title || "", author: x.author || "",
         url: x.url || "", pic: x.pic || "", lrc: x.lrc || "",
       }));
-      metingCache.set(cacheKey, { ts: Date.now(), data });
-      return c.json({ ok:true, results:data });
-    } catch(e) { return c.json({ ok:false, error:e.message }, 500); }
+      metingCache.set(cacheKey, { ts: Date.now(), data, node });
+      console.log(`[meting] search ok via ${node}`);
+      return c.json({ ok:true, results:data, node });
+    } catch(e) {
+      console.warn(`[meting] search failed:`, e.message);
+      return c.json({ ok:false, error:e.message }, 500);
+    }
   });
 
   app.get("/widget/api/music/url", async (c) => {
@@ -479,8 +508,8 @@ setTimeout(n,100);
     const id = c.req.query("id"); const server = c.req.query("server") || "netease";
     if (!id) return c.json({ok:false, error:"id required"}, 400);
     try {
-      const metingUrl = `${METING_BASE}?server=${encodeURIComponent(server)}&type=lrc&id=${encodeURIComponent(id)}`;
-      const resp = await fetch(metingUrl, { signal: AbortSignal.timeout(8000) });
+      const path = `?server=${encodeURIComponent(server)}&type=lrc&id=${encodeURIComponent(id)}`;
+      const { resp } = await fetchMetingWithFallback(path);
       const data = await resp.json();
       if (Array.isArray(data) && data.length && data[0].lrc) {
         return c.text(data[0].lrc, 200, { "Content-Type":"text/plain; charset=utf-8" });
@@ -558,8 +587,8 @@ setTimeout(n,100);
     const id = c.req.query("id"); const server = c.req.query("server") || "netease";
     if (!id) return c.json({ ok:false, error:"id required" }, 400);
     try {
-      const metingUrl = `${METING_BASE}?server=${encodeURIComponent(server)}&type=playlist&id=${encodeURIComponent(id)}`;
-      const resp = await fetch(metingUrl, { signal: AbortSignal.timeout(10000) });
+      const path = `?server=${encodeURIComponent(server)}&type=playlist&id=${encodeURIComponent(id)}`;
+      const { resp } = await fetchMetingWithFallback(path, 10000);
       const raw = await resp.json();
       const data = raw.map(x => ({
         title: x.title || "", author: x.author || "",
@@ -686,12 +715,10 @@ setTimeout(n,100);
 
           // play / other 类型 — 如果无 URL 但有 searchKey，先搜索拿完整音频
           if (!item.url && item.searchKey) {
-            const METING_BASE = process.env.METING_API_URL || "https://api.i-meto.com/meting/api";
-            const METING_TOKEN = process.env.METING_TOKEN || "token";
             const sv = item.searchServer || "netease";
             try {
-              const searchUrl = `${METING_BASE}?server=${sv}&type=search&id=${encodeURIComponent(item.searchKey)}`;
-              const searchRes = await fetch(searchUrl, { headers: { "token": METING_TOKEN } });
+              const searchPath = `?server=${sv}&type=search&id=${encodeURIComponent(item.searchKey)}`;
+              const { resp: searchRes } = await fetchMetingWithFallback(searchPath);
               const searchJson = await searchRes.json();
               if (searchJson && searchJson.length > 0 && searchJson[0].url) {
                 item.url = searchJson[0].url;
@@ -2386,7 +2413,7 @@ function doMusicSearch(){
         +'<button class="music-scene" title="加入场景">☾</button>'
         +'</div>';
     }).join('');
-  }).catch(function(e){ el.innerHTML='<div class="music-empty">'+(e.name==='TimeoutError'?'搜索超时，换源试试':'搜索失败，Meting 服务不可用')+'</div>'; });
+  }).catch(function(e){ el.innerHTML='<div class="music-empty">'+(e.name==='TimeoutError'?'搜索超时，换源试试':'搜索失败，所有 Meting 节点均不可用')+'</div>'; });
 }
 
 document.getElementById('musicResults').addEventListener('click', function(e){
