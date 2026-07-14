@@ -860,6 +860,7 @@ setTimeout(n,100);
           "Content-Range": `bytes ${start}-${end}/${total}`,
           "Content-Length": String(end - start + 1),
           "Accept-Ranges": "bytes",
+          "Access-Control-Allow-Origin": "*",
           "Cache-Control": "public, max-age=86400",
         },
       });
@@ -873,6 +874,7 @@ setTimeout(n,100);
         "Content-Type": mime,
         "Content-Length": String(total),
         "Accept-Ranges": "bytes",
+        "Access-Control-Allow-Origin": "*",
         "Cache-Control": "public, max-age=86400",
       },
     });
