@@ -986,29 +986,18 @@ body {
   height: 100%;
   overflow: hidden;
 }
-.left-panel {
-  display: none;
-}
-.right-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
+.player-left, .player-right { display: contents; }
 
 /* 弹出窗口模式：左右布局 */
 .player-popup .player-container {
   flex-direction: row;
 }
-.player-popup .left-panel {
-  width: 280px;
-  display: flex;
-  flex-direction: column;
-  border-right: 1px solid var(--border);
-  overflow: hidden;
+.player-popup .player-left {
+  width: 300px; display: flex; flex-direction: column;
+  border-right: 1px solid var(--border); overflow: hidden; flex-shrink: 0;
 }
-.player-popup .right-panel {
-  flex: 1;
+.player-popup .player-right {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
 }
 .player-popup .now-playing-section {
   flex: 1;
@@ -1260,7 +1249,7 @@ body {
   padding:5px 10px; cursor:pointer; user-select:none;
   font-size:10.5px; color:var(--text-dim);
   border-top:1px solid var(--border);
-  background:var(--surface);
+  background:transparent;
 }
 .pl-group-header:hover { color:var(--accent); }
 .pl-group-header .pl-chevron { transition:transform 0.2s; }
@@ -1599,7 +1588,7 @@ body {
 }
 .local-input {
   flex:1; min-width:0;
-  background:var(--surface); border:1px solid var(--border); border-radius:7px;
+  background:var(--bg); border:1px solid var(--border-strong); border-radius:7px;
   color:var(--text); font-size:11px; padding:5px 10px;
   outline:none; font-family:inherit; transition:border-color .15s;
 }
@@ -1712,7 +1701,7 @@ body {
 .search-pane { padding:12px; }
 .search-box { display:flex; gap:6px; margin-bottom:10px; }
 .search-input {
-  flex:1; padding:9px 12px; background:var(--surface); border:1px solid var(--border);
+  flex:1; padding:9px 12px; background:var(--bg); border:1px solid var(--border-strong);
   border-radius:16px; color:var(--text); font-size:12px; transition:all 0.2s;
 }
 .search-input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-glow); }
@@ -1739,7 +1728,7 @@ body {
   background:var(--surface); border-radius:8px;
 }
 .import-input {
-  flex:1; padding:7px 10px; background:var(--bg); border:1px solid var(--border);
+  flex:1; padding:7px 10px; background:var(--bg); border:1px solid var(--border-strong);
   border-radius:6px; color:var(--text); font-size:11px;
 }
 .import-input::placeholder { color:var(--text-dim); }
@@ -1802,6 +1791,7 @@ body {
 <div id="toastContainer"></div>
 
 <div class="player-container">
+<div class="player-left">
 
 <!-- Header -->
 <div class="header">
@@ -1878,6 +1868,10 @@ body {
     </div>
   </div>
 </div>
+</div>
+
+<input type="file" id="localFilePicker" style="display:none" accept="audio/*" multiple>
+<div class="player-right">
 
 <!-- 标签页导航 -->
 <div class="nav-tabs">
@@ -1933,6 +1927,7 @@ body {
     </div>
     <div class="local-import-row">
       <input class="local-input" id="localPathInput" type="text" placeholder="粘贴文件或文件夹路径..." spellcheck="false">
+      <button class="local-btn" id="localBrowseBtn">浏览</button>
       <button class="local-btn" id="localImportBtn">导入</button>
     </div>
     <div class="local-import-hint">支持：D:\Music 或 D:\Music\song.mp3</div>
@@ -1964,6 +1959,7 @@ body {
       <div class="local-import-title">📁 本地音乐导入</div>
       <div class="local-import-row">
         <input type="text" class="local-input" id="localPathInput" placeholder="粘贴文件或文件夹路径...">
+        <button class="local-btn local-browse-btn">浏览</button>
         <button class="local-btn" id="localImportBtn">导入</button>
       </div>
       <div class="local-import-hint">支持：D:\Music 或 D:\Music\song.mp3</div>
@@ -2072,6 +2068,8 @@ if (TOKEN) {
 
 const audio = document.getElementById('audio');
 const npCover = document.getElementById('npCover');
+// 封面加载失败回退
+function _coverFallback(img) { img.parentElement.textContent='♫'; }
 let trks = [], idx = 0, playing = false, playMode = 0, prevVol = 0.8, _batchLoading = false, _firstRender = true;
 // playMode: 0=顺序, 1=单曲循环, 2=随机, 3=列表循环
 
@@ -2168,7 +2166,7 @@ function load(i) {
   document.getElementById('trackMode').textContent=t.mode||'';
   // 封面更新
   if (t.pic) {
-    npCover.innerHTML = '<img src="'+esc(t.pic)+'" style="width:100%;height:100%;border-radius:inherit;object-fit:cover;" onerror="this.parentElement.innerHTML=\\'♫\\'">';
+    npCover.innerHTML = '<img src="'+esc(t.pic)+'" style="width:100%;height:100%;border-radius:inherit;object-fit:cover;" onerror="_coverFallback(this)">';
   } else {
     npCover.innerHTML = '♫';
   }
@@ -2207,7 +2205,7 @@ function load(i) {
       t.url = hit.url;
       if(hit.pic) {
         t.pic = hit.pic;
-        npCover.innerHTML = '<img src="'+esc(t.pic)+'" style="width:100%;height:100%;border-radius:inherit;object-fit:cover;" onerror="this.parentElement.innerHTML=\\'♫\\'">';
+        npCover.innerHTML = '<img src="'+esc(t.pic)+'" style="width:100%;height:100%;border-radius:inherit;object-fit:cover;" onerror="_coverFallback(this)">';
       }
       document.getElementById('trackName').textContent=t.name;
       saveTrks();
@@ -2532,7 +2530,7 @@ function showGroupPicker(cb) {
   var existingGroups=[]; var seen={};
   trks.forEach(function(t){ var g=t.group||'默认'; if(!seen[g]){seen[g]=true; existingGroups.push(g);} });
   var wrap=document.createElement('div');
-  wrap.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;background:var(--bg-solid,#1e1e22);border:1px solid var(--accent,#d4a574);border-radius:10px;padding:20px;box-shadow:0 8px 32px rgba(0,0,0,0.5);min-width:320px';
+  wrap.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;background:var(--bg);border:1px solid var(--accent);border-radius:10px;padding:20px;box-shadow:0 8px 32px rgba(0,0,0,0.5);min-width:320px';
   var selectHtml = existingGroups.length
     ? '<select id="gpSelect" style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:var(--surface,rgba(255,255,255,0.05));color:var(--text,#eee);font-size:13px;outline:none;margin-bottom:10px"><option value="">— 选取已有分组 —</option>' + existingGroups.map(function(g){return '<option value="'+esc(g)+'">'+esc(g)+'</option>';}).join('') + '</select>'
     : '';
@@ -2801,6 +2799,56 @@ document.getElementById('localImportBtn').addEventListener('click', function() {
   }
   document.getElementById('localPathInput').value = '';
 });
+
+// ── 文件选择器（浏览按钮）──
+var _filePicker = document.getElementById('localFilePicker');
+function _browseLocal() { if (_filePicker) _filePicker.click(); }
+var _browseBtn1 = document.getElementById('localBrowseBtn');
+if (_browseBtn1) _browseBtn1.addEventListener('click', _browseLocal);
+document.querySelectorAll('.local-browse-btn').forEach(function(btn) {
+  btn.addEventListener('click', _browseLocal);
+});
+if (_filePicker) {
+  _filePicker.addEventListener('change', function(e) {
+    var files = e.target.files;
+    if (!files || !files.length) return;
+    // Electron 环境下 file.path 包含完整路径
+    var firstPath = files[0].path || '';
+    if (!firstPath) {
+      // 非 Electron 环境无法获取路径，提示手动输入
+      showToast('无法获取文件路径，请手动粘贴', 3000);
+      e.target.value = '';
+      return;
+    }
+    if (files.length === 1) {
+      var activePane = document.querySelector('.tab-pane.active');
+      var pathInput = activePane ? activePane.querySelector('.local-input') : document.getElementById('localPathInput');
+      if (pathInput) {
+        pathInput.value = firstPath;
+        var importBtn = activePane ? activePane.querySelector('.local-btn:not(.local-browse-btn)') : document.getElementById('localImportBtn');
+        if (importBtn) importBtn.click();
+      }
+    } else {
+      showToast('导入 ' + files.length + ' 个文件…', 2000);
+      _batchLoading = true;
+      var promises = [];
+      for (var fi = 0; fi < files.length; fi++) {
+        promises.push(
+          fetch(API + '/widget/api/import-file?path=' + encodeURIComponent(files[fi].path))
+            .then(function(r) { return r.json(); })
+            .then(function(d) { if (d.ok) addTrack(d.name, d.url, d.mode); })
+            .catch(function() {})
+        );
+      }
+      Promise.all(promises).then(function() {
+        _batchLoading = false;
+        renderPL(); saveTrks();
+        showToast('导入完成', 1500);
+      });
+    }
+    e.target.value = '';
+  });
+}
 
 // ── 分组选择器 ──
 var currentGroup = 'all';
@@ -3495,6 +3543,30 @@ var SCENES = {
       { type: "segue", duration: 3000, effect: "silence" },
       { type: "play", url: "https://streams.ilovemusic.de/iloveradio13.mp3", name: "Chillout", mode: "在线" }
     ]
+  },
+  exercise: {
+    label: "🏃 运动",
+    playlist: [
+      { type: "play", url: "https://streams.ilovemusic.de/iloveradio11.mp3", name: "Dance Hits", mode: "在线" },
+      { type: "play", url: "https://streams.ilovemusic.de/iloveradio12.mp3", name: "Charts", mode: "在线" },
+      { type: "play", url: "https://streams.ilovemusic.de/iloveradio16.mp3", name: "Deep Focus", mode: "在线" }
+    ]
+  },
+  study: {
+    label: "📚 学习",
+    playlist: [
+      { type: "play", url: "https://streams.ilovemusic.de/iloveradio17.mp3", name: "Lo-fi Beats", mode: "在线" },
+      { type: "play", url: "https://streams.ilovemusic.de/iloveradio16.mp3", name: "Deep Focus", mode: "在线" },
+      { type: "play", url: "https://streams.ilovemusic.de/iloveradio15.mp3", name: "Piano", mode: "在线" }
+    ]
+  },
+  game: {
+    label: "🎮 游戏",
+    playlist: [
+      { type: "play", url: "https://streams.ilovemusic.de/iloveradio11.mp3", name: "Dance Hits", mode: "在线" },
+      { type: "play", url: "https://streams.ilovemusic.de/iloveradio19.mp3", name: "Ambient", mode: "在线" },
+      { type: "play", url: "https://streams.ilovemusic.de/iloveradio17.mp3", name: "Lo-fi Beats", mode: "在线" }
+    ]
   }
 };
 
@@ -3512,7 +3584,7 @@ function applyScene(key){
   var scene=SCENES[key];
   if(!scene) return;
   // UI 高亮
-  document.querySelectorAll('.scene-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.scene===key); });
+  document.querySelectorAll('.scene-card').forEach(function(b){ b.classList.toggle('active', b.dataset.scene===key); });
   // 场景切换 = 替换 Bus 队列（先 clear 再 load）
   fetch(API+'/widget/api/bus/control',{
     method:'POST',
@@ -3532,7 +3604,7 @@ function applyScene(key){
 
 // 场景按钮点击
 document.getElementById('sceneList').addEventListener('click', function(e){
-  var btn=e.target.closest('.scene-btn');
+  var btn=e.target.closest('.scene-card');
   if(!btn) return;
   applyScene(btn.dataset.scene);
 });
@@ -3543,7 +3615,7 @@ document.getElementById('sceneList').addEventListener('click', function(e){
   var badge=document.getElementById('sceneBadge');
   badge.textContent='推荐: '+SCENES[rec].label;
   // 高亮但不自动加载
-  document.querySelectorAll('.scene-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.scene===rec); });
+  document.querySelectorAll('.scene-card').forEach(function(b){ b.classList.toggle('active', b.dataset.scene===rec); });
 })();
 
 // 每分钟检查时间，更新推荐
