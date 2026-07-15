@@ -490,10 +490,16 @@ setTimeout(n,100);
           const httpsUrl = fullUrl.replace("http://", "https://");
           return c.json({ ok:true, url:httpsUrl });
         }
-        // 网易云返回了空 URL → session 失效（cookie 文件未过期但服务端不认）
-        const code = data?.code;
-        if (code === 301 || (!fullUrl && data?.message === "need login")) {
+        // 网易云返回了空 URL → 检查是 cookie 失效还是歌曲不可用
+        const songCode = data?.data?.[0]?.code;
+        const outerCode = data?.code;
+        if (outerCode === 301 || (!fullUrl && data?.message === "need login")) {
           return c.json({ ok:false, error:"session_expired", cookieExpired:true, message:"网易云登录态已失效" });
+        }
+        // 歌曲不可用(404/403)≠cookie失效，不算错误
+        if (songCode === 404 || songCode === 403) {
+          // 歌曲下架或地区限制，回退
+          if (fallback) return c.json({ ok:true, url:fallback });
         }
       }
       if (server === "tencent" && TENCENT_COOKIE) {
@@ -1213,7 +1219,7 @@ body {
   max-height:0; overflow:hidden;
   transition:max-height 0.3s cubic-bezier(0.4,0,0.2,1);
 }
-.pl-body.open { max-height:180px; overflow-y:auto; }
+.pl-body.open { flex:1; min-height:0; max-height:none; overflow-y:auto; }
 .pl-body::-webkit-scrollbar { width:6px; }
 .pl-body::-webkit-scrollbar-track { background:transparent; }
 .pl-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
@@ -1289,6 +1295,12 @@ body {
   flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   font-size:12px; color:var(--text-dim);
 }
+.pl-retry {
+  background:none; border:none; color:var(--accent); cursor:pointer;
+  font-size:10px; padding:2px 6px; border-radius:4px; font-family:inherit;
+  opacity:0.7; transition:opacity 0.15s;
+}
+.pl-retry:hover { opacity:1; }
 .pl-item.active .pl-name { color:var(--accent); font-weight:500; }
 .pl-item .pl-dur {
   font-size:10px; color:var(--text-faint);
@@ -2123,7 +2135,7 @@ function _dialogBackdrop() {
   document.body.appendChild(bd);
   return bd;
 }
-let trks = [], idx = 0, playing = false, playMode = 0, prevVol = 0.8, _batchLoading = false, _firstRender = true;
+var trks = [], idx = 0, playing = false, playMode = 0, prevVol = 0.8, _batchLoading = false, _firstRender = true;
 // playMode: 0=顺序, 1=单曲循环, 2=随机, 3=列表循环
 
 // ── Server-side playlist sync ──
@@ -2225,6 +2237,19 @@ function load(i) {
   }
   updateFavBtn();
   if(t.url) { audio.src=tok(t.url); audio.load(); audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)}); }
+  // 歌词自动搜索：有 URL 但没有 LRC URL 时自动搜索歌词
+  if(t.url && !t.lrcUrl && t.name) {
+    var sv = t.searchServer || 'netease';
+    fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(t.name)+'&server='+sv, {signal:AbortSignal.timeout(8000)})
+      .then(function(r){return r.json();})
+      .then(function(res){
+        if(res.ok && res.results && res.results.length) {
+          for(var j=0;j<res.results.length;j++){
+            if(res.results[j].lrc) { t.lrcUrl=res.results[j].lrc; saveTrks(); break; }
+          }
+        }
+      }).catch(function(){});
+  }
   else if(t.searchKey) {
     // 无 URL 但有搜索关键词 → 自动搜索完整音频
     showToast('搜索 '+t.name+'…', 1500);
@@ -2360,7 +2385,8 @@ function renderPL() {
       html+='<div class="pl-item'+(a?' active':'')+'" data-i="'+i+'" draggable="true">'
         +'<span class="pl-handle" title="拖动排序">⋮⋮</span>'
         +'<span class="pl-status">'+(a?'♫':(n+1))+'</span>'
-        +'<span class="pl-name">'+esc(t.name)+'</span>'
+        +'<span class="pl-name">'+esc(t.name)+(t.url?'':' <span style="color:var(--text-faint);font-size:9px">(未找到)</span>')+'</span>'
+        +(t.searchKey&&!t.url?'<button class="pl-retry" data-retry="'+i+'" title="重新搜索">⟳</button>':'')
         +'<button class="pl-star'+(star?' starred':'')+'" data-star="'+i+'" title="收藏">'+(star?'★':'☆')+'</button>'
         +'<span class="pl-dur">'+fmt(t.dur||0)+'</span>'
         +'<button class="pl-rm" data-rm="'+i+'" title="移除">✕</button></div>';
@@ -2502,7 +2528,7 @@ function renderPL() {
   });
   document.getElementById('plBody').querySelectorAll('.pl-item').forEach(function(el){
     el.addEventListener('click',function(e){
-      if(e.target.closest('.pl-rm')||e.target.closest('.pl-star')||e.target.closest('.pl-handle'))return;
+      if(e.target.closest('.pl-rm')||e.target.closest('.pl-star')||e.target.closest('.pl-handle')||e.target.closest('.pl-retry'))return;
       const i=parseInt(this.dataset.i);
       if(i===idx){toggle();return;}
       load(i);
@@ -2527,6 +2553,14 @@ function renderPL() {
       const i=parseInt(this.dataset.star);
       toggleFav(trks[i].url);
       renderPL();
+    });
+  });
+  // ── 重试搜索 ──
+  document.getElementById('plBody').querySelectorAll('.pl-retry').forEach(function(el){
+    el.addEventListener('click',function(e){
+      e.stopPropagation();
+      const i=parseInt(this.dataset.retry);
+      if(trks[i]) load(i);
     });
   });
   // ── 拖拽排序 ──
