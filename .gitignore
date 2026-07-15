@@ -5,3 +5,7 @@ cookies.env
 bus-queue.json
 bus-state.json
 plugin-data/
+layout-*.html
+layout-demo-d.html
+layout-demo.html
+routes/player.js.backup
