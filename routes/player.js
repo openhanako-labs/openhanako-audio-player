@@ -940,6 +940,7 @@ ${hanaCss ? `<link rel="stylesheet" href="${esc(hanaCss)}">` : ""}
   --accent-glow: rgba(212,154,106,0.4);
   --accent-soft: rgba(212,154,106,0.12);
   --radius: 10px;
+  --card-bg: #1e1e22;
 }
 [data-theme="light"] {
   --bg: #FFF8E7;
@@ -954,6 +955,7 @@ ${hanaCss ? `<link rel="stylesheet" href="${esc(hanaCss)}">` : ""}
   --accent: #c48454;
   --accent-glow: rgba(196,132,84,0.3);
   --accent-soft: rgba(196,132,84,0.1);
+  --card-bg: #ffffff;
 }
 
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -2070,6 +2072,13 @@ const audio = document.getElementById('audio');
 const npCover = document.getElementById('npCover');
 // 封面加载失败回退
 function _coverFallback(img) { img.parentElement.textContent='♫'; }
+// 弹窗遮罩层
+function _dialogBackdrop() {
+  var bd=document.createElement('div');
+  bd.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9998';
+  document.body.appendChild(bd);
+  return bd;
+}
 let trks = [], idx = 0, playing = false, playMode = 0, prevVol = 0.8, _batchLoading = false, _firstRender = true;
 // playMode: 0=顺序, 1=单曲循环, 2=随机, 3=列表循环
 
@@ -2364,17 +2373,18 @@ function renderPL() {
       var oldName=el.dataset.group;
       // 创建内联输入框
       var inputWrap=document.createElement('div');
-      inputWrap.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;background:var(--bg-solid,#1e1e22);border:1px solid var(--accent,#d4a574);border-radius:10px;padding:20px;box-shadow:0 8px 32px rgba(0,0,0,0.5);min-width:300px';
-      inputWrap.innerHTML='<div style="color:var(--text,#eee);font-size:13px;margin-bottom:10px">重命名分组：</div>'
-        +'<input type="text" value="'+esc(oldName)+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:var(--surface,rgba(255,255,255,0.05));color:var(--text,#eee);font-size:14px;outline:none" />'
+      var _rnBd=_dialogBackdrop();
+      inputWrap.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;background:var(--card-bg);border:1px solid var(--accent);border-radius:10px;padding:20px;box-shadow:0 8px 32px rgba(0,0,0,0.5);min-width:300px';
+      inputWrap.innerHTML='<div style="color:var(--text);font-size:13px;margin-bottom:10px">重命名分组：</div>'
+        +'<input type="text" value="'+esc(oldName)+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;outline:none" />'
         +'<div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">'
-        +'<button class="rn-cancel" style="padding:6px 16px;border-radius:6px;border:none;background:rgba(255,255,255,0.08);color:var(--text,#eee);cursor:pointer;font-size:13px">取消</button>'
-        +'<button class="rn-ok" style="padding:6px 16px;border-radius:6px;border:none;background:var(--accent,#d4a574);color:#1a1a1e;cursor:pointer;font-size:13px;font-weight:600">确定</button>'
+        +'<button class="rn-cancel" style="padding:6px 16px;border-radius:6px;border:none;background:var(--surface-hover);color:var(--text);cursor:pointer;font-size:13px">取消</button>'
+        +'<button class="rn-ok" style="padding:6px 16px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-size:13px;font-weight:600">确定</button>'
         +'</div>';
       document.body.appendChild(inputWrap);
       var inp=inputWrap.querySelector('input');
       inp.focus(); inp.select();
-      function close(){ inputWrap.remove(); }
+      function close(){ _rnBd.remove(); inputWrap.remove(); }
       function commit(){
         var newName=inp.value.trim();
         if(!newName||newName===oldName){ close(); return; }
@@ -2415,17 +2425,18 @@ function renderPL() {
           menu.remove();
           // 内联输入框替代 prompt
           var inputWrap=document.createElement('div');
-          inputWrap.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;background:var(--bg-solid,#1e1e22);border:1px solid var(--accent,#d4a574);border-radius:10px;padding:20px;box-shadow:0 8px 32px rgba(0,0,0,0.5);min-width:300px';
-          inputWrap.innerHTML='<div style="color:var(--text,#eee);font-size:13px;margin-bottom:10px">新分组名：</div>'
-            +'<input type="text" placeholder="输入分组名称" style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:var(--surface,rgba(255,255,255,0.05));color:var(--text,#eee);font-size:14px;outline:none" />'
+          var _ngBd=_dialogBackdrop();
+          inputWrap.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;background:var(--card-bg);border:1px solid var(--accent);border-radius:10px;padding:20px;box-shadow:0 8px 32px rgba(0,0,0,0.5);min-width:300px';
+          inputWrap.innerHTML='<div style="color:var(--text);font-size:13px;margin-bottom:10px">新分组名：</div>'
+            +'<input type="text" placeholder="输入分组名称" style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;outline:none" />'
             +'<div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">'
-            +'<button class="ng-cancel" style="padding:6px 16px;border-radius:6px;border:none;background:rgba(255,255,255,0.08);color:var(--text,#eee);cursor:pointer;font-size:13px">取消</button>'
-            +'<button class="ng-ok" style="padding:6px 16px;border-radius:6px;border:none;background:var(--accent,#d4a574);color:#1a1a1e;cursor:pointer;font-size:13px;font-weight:600">确定</button>'
+            +'<button class="ng-cancel" style="padding:6px 16px;border-radius:6px;border:none;background:var(--surface-hover);color:var(--text);cursor:pointer;font-size:13px">取消</button>'
+            +'<button class="ng-ok" style="padding:6px 16px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-size:13px;font-weight:600">确定</button>'
             +'</div>';
           document.body.appendChild(inputWrap);
           var inp=inputWrap.querySelector('input');
           inp.focus();
-          function close2(){ inputWrap.remove(); }
+          function close2(){ _ngBd.remove(); inputWrap.remove(); }
           function commit2(){
             var newG=inp.value.trim();
             if(!newG){ close2(); return; }
@@ -2530,22 +2541,23 @@ function showGroupPicker(cb) {
   var existingGroups=[]; var seen={};
   trks.forEach(function(t){ var g=t.group||'默认'; if(!seen[g]){seen[g]=true; existingGroups.push(g);} });
   var wrap=document.createElement('div');
-  wrap.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;background:var(--bg);border:1px solid var(--accent);border-radius:10px;padding:20px;box-shadow:0 8px 32px rgba(0,0,0,0.5);min-width:320px';
+  var _gpBd=_dialogBackdrop();
+  wrap.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;background:var(--card-bg);border:1px solid var(--accent);border-radius:10px;padding:20px;box-shadow:0 8px 32px rgba(0,0,0,0.5);min-width:320px';
   var selectHtml = existingGroups.length
-    ? '<select id="gpSelect" style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:var(--surface,rgba(255,255,255,0.05));color:var(--text,#eee);font-size:13px;outline:none;margin-bottom:10px"><option value="">— 选取已有分组 —</option>' + existingGroups.map(function(g){return '<option value="'+esc(g)+'">'+esc(g)+'</option>';}).join('') + '</select>'
+    ? '<select id="gpSelect" style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;outline:none;margin-bottom:10px"><option value="">— 选取已有分组 —</option>' + existingGroups.map(function(g){return '<option value="'+esc(g)+'">'+esc(g)+'</option>';}).join('') + '</select>'
     : '';
-  wrap.innerHTML='<div style="color:var(--text,#eee);font-size:13px;margin-bottom:10px">选择分组：</div>'
+  wrap.innerHTML='<div style="color:var(--text);font-size:13px;margin-bottom:10px">选择分组：</div>'
     + selectHtml
-    + '<input type="text" id="gpInput" placeholder="输入新分组名（或从上方选取）" style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:var(--surface,rgba(255,255,255,0.05));color:var(--text,#eee);font-size:13px;outline:none" />'
+    + '<input type="text" id="gpInput" placeholder="输入新分组名（或从上方选取）" style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;outline:none" />'
     + '<div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">'
-    + '<button class="gp-cancel" style="padding:6px 16px;border-radius:6px;border:none;background:rgba(255,255,255,0.08);color:var(--text,#eee);cursor:pointer;font-size:13px">取消</button>'
-    + '<button class="gp-ok" style="padding:6px 16px;border-radius:6px;border:none;background:var(--accent,#d4a574);color:#1a1a1e;cursor:pointer;font-size:13px;font-weight:600">确定</button>'
+    + '<button class="gp-cancel" style="padding:6px 16px;border-radius:6px;border:none;background:var(--surface-hover);color:var(--text);cursor:pointer;font-size:13px">取消</button>'
+    + '<button class="gp-ok" style="padding:6px 16px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-size:13px;font-weight:600">确定</button>'
     + '</div>';
   document.body.appendChild(wrap);
   var inp=wrap.querySelector('#gpInput');
   var sel=wrap.querySelector('#gpSelect');
   inp.focus();
-  function close(){ wrap.remove(); }
+  function close(){ _gpBd.remove(); wrap.remove(); }
   function commit(){
     var groupName = inp.value.trim();
     if(!groupName && sel && sel.value) groupName = sel.value;
@@ -2812,11 +2824,19 @@ if (_filePicker) {
   _filePicker.addEventListener('change', function(e) {
     var files = e.target.files;
     if (!files || !files.length) return;
-    // Electron 环境下 file.path 包含完整路径
+    // 尝试获取完整路径 (Electron 环境)
     var firstPath = files[0].path || '';
     if (!firstPath) {
-      // 非 Electron 环境无法获取路径，提示手动输入
-      showToast('无法获取文件路径，请手动粘贴', 3000);
+      // file.path 不可用 -> 用 blob URL 直接添加
+      _batchLoading = true;
+      for (var bi = 0; bi < files.length; bi++) {
+        var blobUrl = URL.createObjectURL(files[bi]);
+        var fname = files[bi].name.replace(/\.[^.]+$/, '');
+        addTrack(fname, blobUrl, '本地');
+      }
+      _batchLoading = false;
+      renderPL(); saveTrks();
+      showToast('已添加 ' + files.length + ' 首', 1500);
       e.target.value = '';
       return;
     }
