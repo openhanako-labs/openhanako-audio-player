@@ -1664,10 +1664,10 @@ body {
 }
 .lyrics-section {
   width:100%; max-height:80px; overflow-y:auto;
-  scrollbar-width:thin; scrollbar-color:var(--border) transparent;
+  scrollbar-width:none;
   margin-top:12px; padding:8px; background:var(--surface); border-radius:8px;
 }
-.lyrics-section::-webkit-scrollbar { width:4px; }
+.lyrics-section::-webkit-scrollbar { display:none; }
 .lyrics-section::-webkit-scrollbar-track { background:var(--surface); }
 .lyrics-section::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
 .lyric-body {
