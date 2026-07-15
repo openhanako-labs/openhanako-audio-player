@@ -1615,7 +1615,7 @@ body {
 /* ── 正在播放区 ── */
 .now-playing-section {
   display:flex; flex-direction:column; align-items:center;
-  padding:16px; background:var(--card-bg);
+  padding:16px; background:var(--bg);
   border-bottom:1px solid var(--border);
   flex-shrink:0;
 }
@@ -1769,6 +1769,41 @@ body {
 }
 .scene-card:hover { background:var(--surface-hover); border-color:var(--accent); transform:translateY(-2px); }
 .scene-card.active { background:var(--accent-soft); border-color:var(--accent); }
+.scene-edit-btn {
+  margin-left:auto; padding:3px 10px; background:var(--surface); border:1px solid var(--border);
+  border-radius:10px; color:var(--text-dim); font-size:10px; cursor:pointer;
+  font-family:inherit; transition:all .15s;
+}
+.scene-edit-btn:hover { border-color:var(--accent); color:var(--accent); }
+.scene-edit-btn.editing { background:var(--accent); color:#fff; border-color:var(--accent); }
+.scene-editor {
+  margin-top:10px; border:1px solid var(--border); border-radius:8px;
+  background:var(--surface); padding:10px; max-height:240px; overflow-y:auto;
+}
+.scene-editor-header { display:flex; align-items:center; gap:6px; margin-bottom:8px; font-size:12px; color:var(--text-dim); }
+.scene-editor-header .scene-editor-back { background:none; border:none; color:var(--accent); cursor:pointer; font-size:11px; font-family:inherit; }
+.scene-editor-header .scene-editor-title { flex:1; font-weight:600; }
+.scene-editor-header .scene-editor-del { background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:11px; font-family:inherit; }
+.scene-editor-header .scene-editor-del:hover { color:#e55; }
+.scene-editor-tracks { display:flex; flex-direction:column; gap:4px; }
+.scene-editor-track {
+  display:flex; align-items:center; gap:8px; padding:4px 8px;
+  border-radius:6px; font-size:11px; color:var(--text-dim);
+}
+.scene-editor-track:hover { background:var(--surface-hover); }
+.scene-editor-track .set-name { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.scene-editor-track .set-del {
+  background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:10px;
+  padding:2px 6px; border-radius:4px; font-family:inherit;
+}
+.scene-editor-track .set-del:hover { color:#e55; background:rgba(255,0,0,0.1); }
+.scene-editor-actions { margin-top:8px; display:flex; gap:6px; }
+.scene-editor-add, .scene-editor-new {
+  padding:4px 10px; background:var(--surface); border:1px dashed var(--border);
+  border-radius:6px; color:var(--text-dim); font-size:10px; cursor:pointer;
+  font-family:inherit; transition:all .15s;
+}
+.scene-editor-add:hover, .scene-editor-new:hover { border-color:var(--accent); color:var(--accent); }
 .scene-icon { font-size:24px; margin-bottom:6px; }
 .scene-name { font-size:11px; font-weight:600; }
 
@@ -1977,6 +2012,14 @@ body {
     <div class="scene-label">
       <span>场景调度</span>
       <span class="scene-auto-badge" id="sceneBadge">—</span>
+      <button class="scene-edit-btn" id="sceneEditBtn">编辑</button>
+    </div>
+    <div class="scene-editor" id="sceneEditor" style="display:none">
+      <div class="scene-editor-header" id="sceneEditorHeader"></div>
+      <div class="scene-editor-tracks" id="sceneEditorTracks"></div>
+      <div class="scene-editor-actions">
+        <button class="scene-editor-add" id="sceneEditorAdd">+ 从播放列表添加</button>
+      </div>
     </div>
     <div class="scene-list" id="sceneList">
       <div class="scene-grid">
@@ -3623,9 +3666,16 @@ function applyScene(key){
 }
 
 // 场景按钮点击
+var _sceneEditMode=false;
 document.getElementById('sceneList').addEventListener('click', function(e){
   var btn=e.target.closest('.scene-card');
   if(!btn) return;
+  if(_sceneEditMode) {
+    // 编辑模式：显示场景编辑器
+    e.stopPropagation();
+    _renderSceneEditor(btn.dataset.scene);
+    return;
+  }
   applyScene(btn.dataset.scene);
 });
 
@@ -3656,6 +3706,81 @@ function loadScenes(){
   } catch(e) {}
 }
 loadScenes();
+
+// ── 场景编辑器 ──
+var _SE_DEFAULT=['work','chill','late_night','exercise','study','game'];
+function _seIsCustom(k){ return _SE_DEFAULT.indexOf(k)===-1; }
+
+document.getElementById('sceneEditBtn').addEventListener('click',function(){
+  _sceneEditMode=!_sceneEditMode;
+  this.classList.toggle('editing',_sceneEditMode);
+  this.textContent=_sceneEditMode?'完成':'编辑';
+  if(!_sceneEditMode){
+    document.getElementById('sceneEditor').style.display='none';
+  }
+});
+
+function _renderSceneEditor(key){
+  var scene=SCENES[key]; if(!scene) return;
+  var editor=document.getElementById('sceneEditor');
+  editor.style.display='block';
+  var hdr=document.getElementById('sceneEditorHeader');
+  var playItems=scene.playlist.filter(function(p){return p.type==='play';});
+  var custom=_seIsCustom(key);
+  hdr.innerHTML='<button class="scene-editor-back" id="_seBack">← 返回</button>'
+    +'<span class="scene-editor-title">'+esc(scene.label)+' ('+playItems.length+'首)</span>'
+    +(custom?'<button class="scene-editor-del" id="_seDel">删除场景</button>':'');
+  var trkEl=document.getElementById('sceneEditorTracks');
+  if(!playItems.length){
+    trkEl.innerHTML='<div style="text-align:center;color:var(--text-faint);font-size:11px;padding:8px">暂无曲目，从播放列表添加</div>';
+  } else {
+    trkEl.innerHTML=playItems.map(function(item,i){
+      return '<div class="scene-editor-track"><span class="set-name">'+esc(item.name||'音频')+'</span><button class="set-del" data-si="'+i+'">✕</button></div>';
+    }).join('');
+  }
+  // 返回
+  var backBtn=document.getElementById('_seBack');
+  if(backBtn) backBtn.addEventListener('click',function(){
+    document.getElementById('sceneEditor').style.display='none';
+  });
+  // 删除场景
+  var delBtn=document.getElementById('_seDel');
+  if(delBtn) delBtn.addEventListener('click',function(){
+    if(!confirm('删除场景 "'+scene.label+'"？')) return;
+    delete SCENES[key]; saveScenes();
+    var card=document.querySelector('.scene-card[data-scene="'+key+'"]');
+    if(card) card.remove();
+    document.getElementById('sceneEditor').style.display='none';
+    showToast('已删除场景',1500);
+  });
+  // 删除曲目
+  trkEl.querySelectorAll('.set-del').forEach(function(btn){
+    btn.addEventListener('click',function(){
+      var si=parseInt(this.dataset.si);
+      var pi=0;
+      for(var i=0;i<scene.playlist.length;i++){
+        if(scene.playlist[i].type==='play'){
+          if(pi===si){ scene.playlist.splice(i,1); break; }
+          pi++;
+        }
+      }
+      saveScenes(); _renderSceneEditor(key);
+    });
+  });
+}
+
+// 从播放列表添加当前曲目到场景
+document.getElementById('sceneEditorAdd').addEventListener('click',function(){
+  var key=document.querySelector('.scene-card.active');
+  if(!key) { showToast('请先选择场景',1500); return; }
+  var sk=key.dataset.scene;
+  if(!SCENES[sk]) { showToast('场景不存在',1500); return; }
+  if(!trks.length||!trks[idx]) { showToast('没有在播放的曲目',1500); return; }
+  var t=trks[idx];
+  SCENES[sk].playlist.push({type:'play',url:t.url,name:t.name,mode:t.mode||'在线'});
+  saveScenes(); _renderSceneEditor(sk);
+  showToast('已添加: '+t.name,1500);
+});
 
 // 初始化
 
