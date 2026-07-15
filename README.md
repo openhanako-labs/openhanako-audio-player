@@ -193,4 +193,4 @@ TENCENT_COOKIE=uin=12345678; qqmusic_key=abcdef123456
 
 ## 许可
 
-MIT
+[GNU AGPL v3](https://www.gnu.org/licenses/agpl-3.0.html)
