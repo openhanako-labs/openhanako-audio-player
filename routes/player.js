@@ -111,7 +111,9 @@ export default function (app, ctx) {
   app.get("/widget", (c) => {
     const hanaCss = c.req.query("hana-css") || "";
     const token = c.req.query("token") || "";
-    const html = getWidgetHTML(pluginId, hanaCss, token);
+    const standalone = c.req.query("standalone") || "";
+    const html = getWidgetHTML(pluginId, hanaCss, token, standalone);
+    c.header("Cache-Control", "no-cache, no-store, must-revalidate");
     return c.html(html);
   });
 
@@ -469,7 +471,7 @@ setTimeout(n,100);
 
     // 没配任何 cookie → 直接回退到 Meting URL
     if (!NETEASE_COOKIE && !TENCENT_COOKIE && fallback) return c.redirect(fallback);
-    if (!NETEASE_COOKIE && !TENCENT_COOKIE) return c.json({ ok:false, error:"no cookie configured" }, 503);
+    if (!NETEASE_COOKIE && !TENCENT_COOKIE) return c.json({ ok:false, error:"no cookie configured" });
 
     try {
       if (server === "netease" && NETEASE_COOKIE) {
@@ -526,7 +528,7 @@ setTimeout(n,100);
         }
         return c.json({ ok:true, url:fallback });
       }
-      return c.json({ ok:false, error:"failed to get full url", cookieExpired: server==="netease" }, 503);
+      return c.json({ ok:false, error:"failed to get full url", cookieExpired: server==="netease" });
     } catch (e) {
       if (fallback) return c.json({ ok:true, url:fallback });
       return c.json({ ok:false, error:e.message }, 500);
@@ -913,8 +915,9 @@ function showToast(msg, dur) {
 // ═══════════════════════════════════════════════════════════════
 // Widget HTML — 深色玻璃质感 + 琥珀色点缀
 // ═══════════════════════════════════════════════════════════════
-function getWidgetHTML(pluginId, hanaCss, token) {
+function getWidgetHTML(pluginId, hanaCss, token, standalone) {
   const apiBase = `/api/plugins/${pluginId}`;
+  const bodyClass = standalone ? 'player-popup' : '';
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -964,6 +967,81 @@ body {
   display: flex; flex-direction: column;
   user-select: none;
   -webkit-font-smoothing: antialiased;
+  overflow-y: hidden;
+}
+
+/* ── 主容器 ── */
+.player-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ── 响应式布局 ── */
+/* 默认：垂直布局（侧边栏模式） */
+.player-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.left-panel {
+  display: none;
+}
+.right-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 弹出窗口模式：左右布局 */
+.player-popup .player-container {
+  flex-direction: row;
+}
+.player-popup .left-panel {
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+.player-popup .right-panel {
+  flex: 1;
+}
+.player-popup .now-playing-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.player-popup .now-playing {
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 16px;
+}
+.player-popup .np-cover {
+  width: 120px;
+  height: 120px;
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+.player-popup .np-info {
+  align-items: center;
+}
+.player-popup .lyrics-section {
+  flex: 1;
+  overflow: hidden;
+  min-height: 100px;
+}
+.player-popup .lyric-body {
+  max-height: none !important;
+  overflow-y: auto;
+}
+.player-popup .controls-section {
+  border-top: 1px solid var(--border);
 }
 
 /* ── Header ── */
@@ -1495,10 +1573,235 @@ body {
 .music-scene-menu div:hover { background:var(--accent-soft); color:var(--accent); }
 .music-empty { padding:12px 0; text-align:center; color:var(--text-faint); font-size:11px; }
 .music-loading { padding:12px 0; text-align:center; color:var(--text-faint); font-size:11px; }
+
+/* ── 分组选择器 ── */
+.group-selector {
+  display:flex; gap:4px; padding:8px 14px; overflow-x:auto;
+  border-bottom:1px solid var(--border);
+}
+.group-tab {
+  padding:4px 10px; background:var(--surface); border:1px solid var(--border);
+  border-radius:12px; color:var(--text-dim); font-size:10px; cursor:pointer;
+  transition:all 0.2s; white-space:nowrap; font-family:inherit;
+}
+.group-tab:hover { border-color:var(--accent); color:var(--accent); }
+.group-tab.active { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
+
+/* ── 本地音乐导入 ── */
+.local-import-section {
+  border-top:1px solid var(--border); padding:10px 14px;
+}
+.local-import-header {
+  font-size:11px; font-weight:600; color:var(--text-dim); margin-bottom:8px;
+}
+.local-import-row {
+  display:flex; gap:6px; margin-bottom:6px;
+}
+.local-input {
+  flex:1; min-width:0;
+  background:var(--surface); border:1px solid var(--border); border-radius:7px;
+  color:var(--text); font-size:11px; padding:5px 10px;
+  outline:none; font-family:inherit; transition:border-color .15s;
+}
+.local-input::placeholder { color:var(--text-faint); }
+.local-input:focus { border-color:var(--accent); }
+.local-btn {
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:7px;
+  color:var(--accent); font-size:11px; padding:5px 12px; cursor:pointer;
+  font-family:inherit; font-weight:500; white-space:nowrap; transition:all .15s;
+}
+.local-btn:hover { background:var(--accent); color:#fff; }
+.local-import-hint {
+  font-size:10px; color:var(--text-faint);
+}
+
+/* ── 控制区样式 ── */
+.controls-section {
+  border-top:1px solid var(--border); padding:8px 14px;
+  flex-shrink:0;
+}
+
+/* ── 正在播放区 ── */
+.now-playing-section {
+  display:flex; flex-direction:column; align-items:center;
+  padding:16px; background:var(--card-bg);
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.np-cover {
+  width:160px; height:160px; border-radius:12px;
+  background:var(--surface); display:flex; align-items:center; justify-content:center;
+  font-size:64px; color:var(--accent); margin-bottom:12px;
+  box-shadow:0 4px 16px var(--accent-glow);
+}
+.np-info {
+  display:flex; flex-direction:column; align-items:center; gap:4px; margin-bottom:8px;
+}
+.np-name {
+  font-size:16px; font-weight:600; color:var(--text);
+}
+.np-mode {
+  font-size:11px; color:var(--text-dim);
+}
+.np-actions {
+  display:flex; gap:12px; margin-top:8px;
+}
+.np-actions .icon-btn {
+  width:28px; height:28px; padding:4px;
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:50%; color:var(--text-dim); cursor:pointer;
+  transition:all 0.2s;
+}
+.np-actions .icon-btn:hover {
+  border-color:var(--accent); color:var(--accent);
+}
+.np-actions .icon-btn svg {
+  width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2;
+}
+.lyrics-section {
+  width:100%; max-height:80px; overflow-y:auto;
+  scrollbar-width:thin; scrollbar-color:var(--border) transparent;
+  margin-top:12px; padding:8px; background:var(--surface); border-radius:8px;
+}
+.lyrics-section::-webkit-scrollbar { width:4px; }
+.lyrics-section::-webkit-scrollbar-track { background:var(--surface); }
+.lyrics-section::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+.lyric-body {
+  text-align:center; font-size:11px; color:var(--text-dim); line-height:1.6;
+}
+.lyric-line { margin:2px 0; }
+.lyric-line.active { color:var(--accent); font-weight:600; }
+
+/* ── 标签页导航 ── */
+.nav-tabs {
+  display:flex; gap:4px; padding:10px 14px 0;
+  border-bottom:1px solid var(--border);
+  overflow-x:auto; flex-shrink:0;
+}
+.nav-tab {
+  padding:7px 14px; background:var(--surface); border:1px solid var(--border);
+  border-radius:16px; color:var(--text-dim); font-size:11px; font-weight:600;
+  cursor:pointer; transition:all 0.2s; white-space:nowrap; font-family:inherit;
+}
+.nav-tab:hover { background:var(--surface-hover); color:var(--text); }
+.nav-tab.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+
+/* ── 返回按钮 ── */
+.tab-back-bar { padding:6px 14px 0; flex-shrink:0; }
+.tab-back-btn {
+  background:none; border:none; color:var(--text-dim); cursor:pointer;
+  font-size:11px; padding:2px 0; font-family:inherit; transition:color 0.15s;
+}
+.tab-back-btn:hover { color:var(--accent); }
+
+/* ── 标签页内容 ── */
+.tab-content {
+  flex:1; overflow:hidden; min-height:0;
+}
+.tab-pane {
+  display:none; height:100%; overflow-y:auto;
+  scrollbar-width:thin; scrollbar-color:var(--border) transparent;
+}
+.tab-pane.active { display:block; }
+.tab-pane::-webkit-scrollbar { width:6px; }
+.tab-pane::-webkit-scrollbar-track { background:var(--surface); border-radius:3px; }
+.tab-pane::-webkit-scrollbar-thumb { background:var(--accent); border-radius:3px; }
+.tab-pane::-webkit-scrollbar-thumb:hover { background:var(--accent-hover); }
+
+/* ── 搜索面板 ── */
+.search-pane { padding:12px; }
+.search-box { display:flex; gap:6px; margin-bottom:10px; }
+.search-input {
+  flex:1; padding:9px 12px; background:var(--surface); border:1px solid var(--border);
+  border-radius:16px; color:var(--text); font-size:12px; transition:all 0.2s;
+}
+.search-input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-glow); }
+.search-input::placeholder { color:var(--text-dim); }
+.search-btn {
+  padding:9px 16px; background:var(--accent); border:none; border-radius:16px;
+  color:#fff; font-size:12px; font-weight:600; cursor:pointer;
+}
+.search-btn:hover { background:var(--accent-hover); }
+
+/* ── 平台选择 ── */
+.platform-select { display:flex; gap:4px; margin-bottom:10px; flex-wrap:wrap; }
+.platform-btn {
+  padding:3px 8px; background:var(--surface); border:1px solid var(--border);
+  border-radius:10px; color:var(--text-dim); font-size:10px; cursor:pointer;
+  transition:all 0.2s;
+}
+.platform-btn:hover { border-color:var(--accent); color:var(--accent); }
+.platform-btn.active { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
+
+/* ── 歌单导入 ── */
+.playlist-import {
+  display:flex; gap:6px; margin-bottom:12px; padding:10px;
+  background:var(--surface); border-radius:8px;
+}
+.import-input {
+  flex:1; padding:7px 10px; background:var(--bg); border:1px solid var(--border);
+  border-radius:6px; color:var(--text); font-size:11px;
+}
+.import-input::placeholder { color:var(--text-dim); }
+.import-btn {
+  padding:7px 12px; background:var(--surface-hover); border:1px solid var(--border);
+  border-radius:6px; color:var(--text-dim); font-size:11px; cursor:pointer;
+}
+.import-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+/* ── 本地导入 ── */
+.local-import {
+  padding:10px; background:var(--surface); border-radius:8px; margin-bottom:12px;
+}
+.local-import-title {
+  font-size:11px; font-weight:600; color:var(--text-dim); margin-bottom:8px;
+}
+.local-import-row { display:flex; gap:6px; margin-bottom:6px; }
+.local-input {
+  flex:1; padding:7px 10px; background:var(--bg); border:1px solid var(--border);
+  border-radius:6px; color:var(--text); font-size:11px;
+}
+.local-input::placeholder { color:var(--text-dim); }
+.local-btn {
+  padding:7px 12px; background:var(--accent-soft); border:1px solid var(--accent);
+  border-radius:6px; color:var(--accent); font-size:11px; font-weight:600; cursor:pointer;
+}
+.local-btn:hover { background:var(--accent); color:#fff; }
+.local-import-hint { font-size:10px; color:var(--text-dim); }
+
+/* ── 场景面板 ── */
+.scene-pane { padding:12px; }
+.scene-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.scene-card {
+  background:var(--card-bg); border:1px solid var(--border); border-radius:10px;
+  padding:14px; text-align:center; cursor:pointer; transition:all 0.2s;
+}
+.scene-card:hover { background:var(--surface-hover); border-color:var(--accent); transform:translateY(-2px); }
+.scene-card.active { background:var(--accent-soft); border-color:var(--accent); }
+.scene-icon { font-size:24px; margin-bottom:6px; }
+.scene-name { font-size:11px; font-weight:600; }
+
+/* ── 编排面板 ── */
+.bus-pane { padding:12px; }
+.bus-controls { display:flex; gap:6px; margin-bottom:10px; }
+.bus-ctrl-btn {
+  padding:7px 12px; background:var(--surface); border:1px solid var(--border);
+  border-radius:6px; color:var(--text-dim); font-size:11px; cursor:pointer; transition:all 0.2s;
+}
+.bus-ctrl-btn:hover { border-color:var(--accent); color:var(--accent); }
+.bus-ctrl-btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+.bus-ctrl-btn.primary:hover { background:var(--accent-hover); }
+.bus-status {
+  font-size:11px; color:var(--text-dim); padding:4px 10px;
+  background:var(--surface); border-radius:8px; display:inline-block; margin-bottom:10px;
+}
+.bus-queue-title { font-size:12px; font-weight:600; color:var(--text-dim); margin-bottom:6px; }
 </style>
 </head>
-<body>
+<body class="${bodyClass}">
 <div id="toastContainer"></div>
+
+<div class="player-container">
 
 <!-- Header -->
 <div class="header">
@@ -1516,53 +1819,80 @@ body {
   </div>
 </div>
 
-<!-- Now Playing -->
-<div class="now-playing">
+<!-- 正在播放区 -->
+<div class="now-playing-section">
   <div class="np-cover" id="npCover">♫</div>
   <div class="np-info">
     <div class="np-name" id="trackName">播放器</div>
     <div class="np-mode" id="trackMode">准备就绪</div>
+    <div class="np-actions">
+      <button class="icon-btn" id="favBtn" title="收藏">
+        <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+      </button>
+      <button class="icon-btn" id="addBtn2" title="添加到播放列表">
+        <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+      <button class="icon-btn" id="moreBtn" title="更多">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="lyrics-section">
+    <div class="lyric-body" id="lyricBody"></div>
   </div>
 </div>
 
-<!-- Progress -->
-<div class="progress-section">
-  <div class="time-row">
-    <span id="currentTime">0:00</span>
-    <span id="totalTime">0:00</span>
+<!-- Controls Section -->
+<div class="controls-section">
+  <div class="progress-section">
+    <div class="time-row">
+      <span id="currentTime">0:00</span>
+      <span id="totalTime">0:00</span>
+    </div>
+    <div class="progress-bar" id="progressBar">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+    <canvas class="visualizer" id="visualizer" width="300" height="32"></canvas>
   </div>
-  <div class="progress-bar" id="progressBar">
-    <div class="progress-fill" id="progressFill"></div>
-  </div>
-  <canvas class="visualizer" id="visualizer" width="300" height="32"></canvas>
-</div>
 
-<!-- Controls -->
-<div class="controls">
-  <button class="ctrl-btn" id="prevBtn" title="上一首" style="opacity:1;width:34px;height:34px;">
-    <svg viewBox="0 0 24 24" style="fill:currentColor;stroke:none;width:20px;height:20px;"><polygon points="19 20 9 12 19 4 19 20"/><rect x="4" y="4" width="3" height="16" rx="1"/></svg>
-  </button>
-  <button class="ctrl-play" id="playBtn" title="播放/暂停">
-    <svg id="playIcon" viewBox="0 0 24 24"><polygon points="8,5 19,12 8,19" fill="white" stroke="none"/></svg>
-    <svg id="pauseIcon" viewBox="0 0 24 24" style="display:none"><rect x="7" y="5" width="3.5" height="14" rx="1" fill="white" stroke="none"/><rect x="13.5" y="5" width="3.5" height="14" rx="1" fill="white" stroke="none"/></svg>
-  </button>
-  <button class="ctrl-btn" id="nextBtn" title="下一首">
-    <svg viewBox="0 0 24 24"><polygon points="5 4 15 12 5 21 5 4" fill="currentColor" stroke="none"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
-  </button>
-  <div class="volume-group">
-    <button class="ctrl-btn" id="volumeBtn" title="静音" style="width:26px;height:26px;">
-      <svg id="volIcon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+  <!-- Controls -->
+  <div class="controls">
+    <button class="ctrl-btn" id="modeBtn" title="播放模式" style="width:26px;height:26px;opacity:0.8">
+      <svg id="modeIcon" viewBox="0 0 24 24" width="16" height="16"><line x1="5" y1="5" x2="5" y2="19" stroke="currentColor" stroke-width="2"/><polygon points="8 12 18 5 18 19" fill="currentColor"/></svg>
     </button>
-    <input type="range" class="vol-slider" id="volumeSlider" min="0" max="100" value="80">
+    <button class="ctrl-btn" id="prevBtn" title="上一首" style="opacity:1;width:34px;height:34px;">
+      <svg viewBox="0 0 24 24" style="fill:currentColor;stroke:none;width:20px;height:20px;"><polygon points="19 20 9 12 19 4 19 20"/><rect x="4" y="4" width="3" height="16" rx="1"/></svg>
+    </button>
+    <button class="ctrl-play" id="playBtn" title="播放/暂停">
+      <svg id="playIcon" viewBox="0 0 24 24"><polygon points="8,5 19,12 8,19" fill="white" stroke="none"/></svg>
+      <svg id="pauseIcon" viewBox="0 0 24 24" style="display:none"><rect x="7" y="5" width="3.5" height="14" rx="1" fill="white" stroke="none"/><rect x="13.5" y="5" width="3.5" height="14" rx="1" fill="white" stroke="none"/></svg>
+    </button>
+    <button class="ctrl-btn" id="nextBtn" title="下一首">
+      <svg viewBox="0 0 24 24"><polygon points="5 4 15 12 5 21 5 4" fill="currentColor" stroke="none"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+    </button>
+    <div class="volume-group">
+      <button class="ctrl-btn" id="volumeBtn" title="静音" style="width:26px;height:26px;">
+        <svg id="volIcon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+      </button>
+      <input type="range" class="vol-slider" id="volumeSlider" min="0" max="100" value="80">
+    </div>
   </div>
-  <button class="ctrl-btn" id="modeBtn" title="播放模式" style="width:26px;height:26px;opacity:0.8">
-    <svg id="modeIcon" viewBox="0 0 24 24" width="16" height="16"><line x1="5" y1="5" x2="5" y2="19" stroke="currentColor" stroke-width="2"/><polygon points="8 12 18 5 18 19" fill="currentColor"/></svg>
-  </button>
 </div>
 
-<!-- Playlist -->
+<!-- 标签页导航 -->
+<div class="nav-tabs">
+  <button class="nav-tab active" data-tab="playlist">列表</button>
+  <button class="nav-tab" data-tab="search">搜索</button>
+  <button class="nav-tab" data-tab="scene">场景</button>
+  <button class="nav-tab" data-tab="bus">编排</button>
+</div>
+
+<!-- 标签页内容 -->
+<div class="tab-content">
+<!-- 列表标签页 -->
+<div class="tab-pane active" id="tab-playlist">
 <div class="playlist-section">
-  <div class="pl-toggle" id="plToggle">
+  <div class="pl-toggle open" id="plToggle">
     <div class="pl-toggle-left">
       <svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
       <span class="pl-toggle-text">播放列表</span>
@@ -1576,16 +1906,17 @@ body {
       <svg class="pl-chevron" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
   </div>
-  <div class="pl-body" id="plBody"></div>
-
-  <!-- Lyric Panel -->
-  <div class="lyric-section" id="lyricSection">
-    <div class="lyric-header" id="lyricToggle">
-      <span style="font-size:10px;opacity:0.85;">歌词</span>
-      <svg class="pl-chevron" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
-    </div>
-    <div class="lyric-body" id="lyricBody"></div>
+  <!-- 分组选择器 -->
+  <div class="group-selector">
+    <button class="group-tab active" data-group="all">全部</button>
+    <button class="group-tab" data-group="local">本地音乐</button>
+    <button class="group-tab" data-group="online">在线音乐</button>
+    <button class="group-tab" data-group="radio">电台流</button>
+    <button class="group-tab" data-group="favorites">我的喜欢</button>
   </div>
+  <div class="pl-body open" id="plBody"></div>
+</div>
+</div>
 
   <!-- Add track -->
   <div class="add-section">
@@ -1594,70 +1925,106 @@ body {
       <button class="add-btn" id="addBtn">添加</button>
     </div>
   </div>
-
-  <!-- Music Search -->
-  <div class="music-section">
-    <div class="music-toggle" id="musicToggle">
-      <div class="music-toggle-left"><svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg><span class="music-toggle-text">搜索音乐</span></div>
-      <svg class="music-chevron" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+  
+  <!-- 本地音乐导入 -->
+  <div class="local-import-section">
+    <div class="local-import-header">
+      <span>📁 本地音乐导入</span>
     </div>
-    <div class="music-body" id="musicBody">
-      <div class="music-search-row">
-        <input class="music-input" id="musicInput" type="text" placeholder="搜索歌曲、歌手…" spellcheck="false">
-        <select class="music-server" id="musicServer" title="平台">
-          <option value="netease">网易云</option>
-          <option value="tencent">QQ</option>
-          <option value="kugou">酷狗</option>
-          <option value="baidu">百度</option>
-          <option value="kuwo">酷我</option>
-        </select>
-        <button class="music-go" id="musicGo">搜索</button>
-      </div>
-      <div class="music-search-row" style="padding-top:0">
-        <input class="music-input" id="playlistInput" type="text" placeholder="粘贴歌单 ID 或链接…" spellcheck="false">
-        <button class="music-go" id="playlistGo" style="background:var(--surface);border:1px solid var(--border);color:var(--text-dim)">导入歌单</button>
-      </div>
-      <div class="music-results" id="musicResults"></div>
+    <div class="local-import-row">
+      <input class="local-input" id="localPathInput" type="text" placeholder="粘贴文件或文件夹路径..." spellcheck="false">
+      <button class="local-btn" id="localImportBtn">导入</button>
     </div>
+    <div class="local-import-hint">支持：D:\Music 或 D:\Music\song.mp3</div>
   </div>
 
-  <!-- Bus Panel -->
-  <!-- Scene presets -->
-  <div class="scene-section" id="sceneSection">
+</div>
+</div>
+
+<!-- 搜索标签页 -->
+<div class="tab-pane" id="tab-search">
+  <div class="tab-back-bar"><button class="tab-back-btn">← 返回列表</button></div>
+  <div class="search-pane">
+    <div class="search-box">
+      <input type="text" class="search-input" id="musicInput" placeholder="搜索歌曲、歌手…">
+      <button class="search-btn" id="musicGo">搜索</button>
+    </div>
+    <div class="platform-select">
+      <button class="platform-btn active" data-server="netease">网易云</button>
+      <button class="platform-btn" data-server="tencent">QQ音乐</button>
+      <button class="platform-btn" data-server="kugou">酷狗</button>
+      <button class="platform-btn" data-server="kuwo">酷我</button>
+      <button class="platform-btn" data-server="baidu">百度</button>
+    </div>
+    <div class="playlist-import">
+      <input type="text" class="import-input" id="playlistInput" placeholder="粘贴歌单 ID 或链接…">
+      <button class="import-btn" id="playlistGo">导入歌单</button>
+    </div>
+    <div class="local-import">
+      <div class="local-import-title">📁 本地音乐导入</div>
+      <div class="local-import-row">
+        <input type="text" class="local-input" id="localPathInput" placeholder="粘贴文件或文件夹路径...">
+        <button class="local-btn" id="localImportBtn">导入</button>
+      </div>
+      <div class="local-import-hint">支持：D:\Music 或 D:\Music\song.mp3</div>
+    </div>
+    <div class="music-results" id="musicResults"></div>
+  </div>
+</div>
+
+<!-- 场景标签页 -->
+<div class="tab-pane" id="tab-scene">
+  <div class="tab-back-bar"><button class="tab-back-btn">← 返回列表</button></div>
+  <div class="scene-pane">
     <div class="scene-label">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-      <span style="font-size:12px;color:var(--text-dim);">场景调度</span>
+      <span>场景调度</span>
       <span class="scene-auto-badge" id="sceneBadge">—</span>
     </div>
     <div class="scene-list" id="sceneList">
-      <button class="scene-btn" data-scene="work">💻 工作</button>
-      <button class="scene-btn" data-scene="chill">☕ 休息</button>
-      <button class="scene-btn" data-scene="late_night">🌙 深夜</button>
+      <div class="scene-grid">
+      <div class="scene-card" data-scene="work"><div class="scene-icon">💻</div><div class="scene-name">工作</div></div>
+      <div class="scene-card active" data-scene="chill"><div class="scene-icon">☕</div><div class="scene-name">休息</div></div>
+      <div class="scene-card" data-scene="late_night"><div class="scene-icon">🌙</div><div class="scene-name">深夜</div></div>
+      <div class="scene-card" data-scene="exercise"><div class="scene-icon">🏃</div><div class="scene-name">运动</div></div>
+      <div class="scene-card" data-scene="study"><div class="scene-icon">📚</div><div class="scene-name">学习</div></div>
+      <div class="scene-card" data-scene="game"><div class="scene-icon">🎮</div><div class="scene-name">游戏</div></div>
+    </div>
     </div>
   </div>
+</div>
 
-  <div class="bus-section">
+<!-- 编排标签页 -->
+<div class="tab-pane" id="tab-bus">
+  <div class="tab-back-bar"><button class="tab-back-btn">← 返回列表</button></div>
+  <div class="bus-pane">
     <div class="bus-toggle" id="busToggle">
       <div class="bus-toggle-left">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m11-7h-6m-6 0H1m16.5-5.5L14 7m-4 6l-3.5 3.5M18.5 18.5L15 15M9 9L5.5 5.5"/></svg>
-        <span style="font-size:12px;color:var(--text-dim);">节目编排</span>
-        <span class="bus-status" id="busStatusBadge">空闲</span>
+        <span>节目编排</span>
+        <span class="bus-status" id="busStatusBadge2">空闲</span>
       </div>
-      <svg class="pl-chevron" id="busChevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
-    <div class="bus-body" id="busBody">
-      <div class="bus-controls">
-        <button class="bus-btn" id="busPlayBtn" title="播放下一首">▶</button>
-        <button class="bus-btn" id="busNextBtn" title="跳过">⏭</button>
-        <button class="bus-btn" id="busClearBtn" title="清空">✕</button>
-      </div>
-      <div class="bus-play-row">
-        <input class="bus-play-input" id="busPlayInput" type="text" placeholder="输入音频 URL，回车添加到编排队列…" spellcheck="false">
-        <button class="bus-play-add-btn" id="busPlayAddBtn">Add</button>
-      </div>
-      <div class="bus-queue" id="busQueue"></div>
+    <div class="bus-controls">
+      <button class="bus-ctrl-btn primary" id="busPlayBtn">▶ 播放</button>
+      <button class="bus-ctrl-btn" id="busNextBtn">⏭ 跳过</button>
+      <button class="bus-ctrl-btn" id="busClearBtn">✕ 清空</button>
+    </div>
+    <div class="bus-status" id="busStatusBadge">状态：空闲</div>
+    <div class="bus-queue-title">编排队列</div>
+    <div class="bus-queue" id="busQueue"></div>
+    <div class="bus-play-row">
+      <input class="bus-play-input" id="busPlayInput" type="text" placeholder="输入音频 URL，回车添加到编排队列…">
+      <button class="bus-play-add-btn" id="busPlayAddBtn">Add</button>
     </div>
   </div>
+<!-- Hidden elements for legacy JS references -->
+<div style="display:none">
+  <select id="musicServer"><option value="netease">网易云</option><option value="tencent">QQ</option><option value="kugou">酷狗</option><option value="baidu">百度</option><option value="kuwo">酷我</option></select>
+  <div id="musicToggle"></div>
+  <div id="musicBody"></div>
+  <div id="busBody"></div>
+  <div id="musicSceneMenu"></div>
+</div>
+
 </div>
 
 <audio id="audio" preload="auto" referrerpolicy="no-referrer"></audio>
@@ -1791,12 +2158,21 @@ function load(i) {
   if (i<0||i>=trks.length) {
     document.getElementById('trackName').textContent='播放器';
     document.getElementById('trackMode').textContent='准备就绪';
+    npCover.innerHTML='♫';
     npCover.classList.remove('spinning');
+    updateFavBtn();
     return;
   }
   idx=i; const t=trks[i];
   document.getElementById('trackName').textContent=t.name;
   document.getElementById('trackMode').textContent=t.mode||'';
+  // 封面更新
+  if (t.pic) {
+    npCover.innerHTML = '<img src="'+esc(t.pic)+'" style="width:100%;height:100%;border-radius:inherit;object-fit:cover;" onerror="this.parentElement.innerHTML=\\'♫\\'">';
+  } else {
+    npCover.innerHTML = '♫';
+  }
+  updateFavBtn();
   if(t.url) { audio.src=tok(t.url); audio.load(); audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)}); }
   else if(t.searchKey) {
     // 无 URL 但有搜索关键词 → 自动搜索完整音频
@@ -1829,6 +2205,10 @@ function load(i) {
       t.name = hit.title || t.name;
       t.lrcUrl = hit.lrc || '';
       t.url = hit.url;
+      if(hit.pic) {
+        t.pic = hit.pic;
+        npCover.innerHTML = '<img src="'+esc(t.pic)+'" style="width:100%;height:100%;border-radius:inherit;object-fit:cover;" onerror="this.parentElement.innerHTML=\\'♫\\'">';
+      }
       document.getElementById('trackName').textContent=t.name;
       saveTrks();
       audio.src = t.url;
@@ -2226,6 +2606,36 @@ document.getElementById('plToggle').addEventListener('click',function(){
   this.classList.toggle('open');
   document.getElementById('plBody').classList.toggle('open');
 });
+// ── 封面下方三个按钮 ──
+function updateFavBtn() {
+  var btn = document.getElementById('favBtn');
+  if (!btn) return;
+  if (!trks.length || !trks[idx] || !trks[idx].url) { btn.style.color=''; btn.querySelector('svg').setAttribute('fill','none'); return; }
+  var fav = isFav(trks[idx].url);
+  btn.style.color = fav ? 'var(--accent)' : '';
+  btn.querySelector('svg').setAttribute('fill', fav ? 'currentColor' : 'none');
+}
+document.getElementById('favBtn').addEventListener('click', function() {
+  if (!trks.length || !trks[idx]) { showToast('没有在播放的曲目', 1500); return; }
+  var url = trks[idx].url;
+  if (!url) { showToast('当前曲目无 URL', 1500); return; }
+  toggleFav(url);
+  updateFavBtn();
+  showToast(isFav(url) ? '已收藏' : '已取消收藏', 1200);
+  renderPL();
+});
+document.getElementById('addBtn2').addEventListener('click', function() {
+  var searchTab = document.querySelector('.nav-tab[data-tab="search"]');
+  if (searchTab) searchTab.click();
+  setTimeout(function() { var input = document.getElementById('musicInput'); if (input) input.focus(); }, 100);
+});
+document.getElementById('moreBtn').addEventListener('click', function() {
+  if (!trks.length || !trks[idx]) { showToast('没有在播放的曲目', 1500); return; }
+  var t = trks[idx];
+  if (t.url && navigator.clipboard) {
+    navigator.clipboard.writeText(t.url).then(function() { showToast('已复制链接: ' + t.name, 1500); }).catch(function() { showToast(t.name, 2000); });
+  } else { showToast(t.name, 2000); }
+});
 document.getElementById('addBtn').addEventListener('click',function(){
   const v=document.getElementById('urlInput').value.trim();
   if(!v)return;
@@ -2273,7 +2683,7 @@ document.getElementById('urlInput').addEventListener('keydown',function(e){
 
 document.getElementById('popBtn').addEventListener('click',function(){
   var url = 'http://localhost:14500' + API + '/widget?standalone=1&token=' + encodeURIComponent(TOKEN);
-  window.open(url, 'hanako-player', 'width=480,height=400');
+  window.open(url, 'hanako-player', 'width=800,height=600');
 });
 
 audio.addEventListener('timeupdate',function(){
@@ -2306,7 +2716,7 @@ audio.addEventListener('error',function(){
 audio.addEventListener('play',function(){playing=true;npCover.classList.add('spinning');document.getElementById('playIcon').style.display='none';document.getElementById('pauseIcon').style.display='block';});
 audio.addEventListener('pause',function(){playing=false;npCover.classList.remove('spinning');document.getElementById('playIcon').style.display='block';document.getElementById('pauseIcon').style.display='none';});
 
-function addTrack(name,url,mode,group,lrcUrl) {
+function addTrack(name,url,mode,group,lrcUrl,pic) {
   // 去重：url 非空时按裸 url（去掉 query）匹配，url 为空时按 name 匹配
   var bareUrl = url ? url.split('?')[0] : '';
   for(let i=0;i<trks.length;i++){
@@ -2317,6 +2727,7 @@ function addTrack(name,url,mode,group,lrcUrl) {
         trks[i].url = url;
         if(name) trks[i].name = name;
         if(lrcUrl) trks[i].lrcUrl = lrcUrl;
+        if(pic) trks[i].pic = pic;
         load(i);
         if(audio.paused){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});}
         saveTrks();
@@ -2335,7 +2746,7 @@ function addTrack(name,url,mode,group,lrcUrl) {
   }
   // 存 lrc 映射
   if(lrcUrl && url) lrcMap[url]=lrcUrl;
-  trks.push({name:name||url.split('/').pop().split('\\\\').pop().split('?')[0]||'音频',url:url,mode:mode||(url.startsWith('http')?'在线':'本地'),dur:0,group:group,lrcUrl:lrcUrl||''});
+  trks.push({name:name||url.split('/').pop().split('\\\\').pop().split('?')[0]||'音频',url:url,mode:mode||(url.startsWith('http')?'在线':'本地'),dur:0,group:group,lrcUrl:lrcUrl||'',pic:pic||''});
   if(!_batchLoading){ load(trks.length-1); if(trks[trks.length-1] && trks[trks.length-1].url){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});} renderPL(); saveTrks(); }
 }
 
@@ -2352,6 +2763,124 @@ function tok(url) {
 function stripTok(url) {
   return (url || '').replace(/([?&])token=[^&]*/g, '').replace(/[?&]$/, '');
 }
+
+// ── 本地音乐导入 ──
+document.getElementById('localImportBtn').addEventListener('click', function() {
+  const path = document.getElementById('localPathInput').value.trim();
+  if (!path) return;
+  
+  // 判断是文件还是文件夹
+  const lastPart = path.split(/[\\/]/).pop();
+  const hasExt = lastPart && /\.[a-zA-Z0-9]{1,5}$/.test(lastPart);
+  
+  if (hasExt) {
+    // 单个文件路径
+    showToast('导入文件…', 1500);
+    fetch(API+'/widget/api/import-file?path='+encodeURIComponent(path))
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (!d.ok) { showToast(d.error || '导入失败', 2000); return; }
+        addTrack(d.name, d.url, d.mode);
+        showToast('已添加: '+d.name, 2000);
+      })
+      .catch(function() { showToast('导入失败', 2000); });
+  } else {
+    // 文件夹路径
+    showToast('扫描文件夹…', 1500);
+    fetch(API+'/widget/api/scan-folder?path='+encodeURIComponent(path))
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (!d.ok || !d.files || !d.files.length) { showToast('未找到音频文件', 2000); return; }
+        _batchLoading = true;
+        d.files.forEach(function(f) { addTrack(f.name, f.url, f.mode); });
+        _batchLoading = false;
+        renderPL(); saveTrks();
+        showToast('已添加 '+d.count+' 首', 2500);
+      })
+      .catch(function() { showToast('扫描失败', 2000); });
+  }
+  document.getElementById('localPathInput').value = '';
+});
+
+// ── 分组选择器 ──
+var currentGroup = 'all';
+document.querySelectorAll('.group-tab').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    this.parentElement.querySelectorAll('.group-tab').forEach(function(b) { b.classList.remove('active'); });
+    this.classList.add('active');
+    currentGroup = this.dataset.group;
+    renderPL();
+  });
+});
+
+// 修改 renderPL 函数以支持分组过滤
+var originalRenderPL = renderPL;
+renderPL = function() {
+  // 先调用原函数
+  originalRenderPL();
+  
+  // 然后根据当前选择的分组过滤显示
+  if (currentGroup !== 'all') {
+    var plBody = document.getElementById('plBody');
+    var groupHeaders = plBody.querySelectorAll('.pl-group-header');
+    var groupBodies = plBody.querySelectorAll('.pl-group-body');
+    
+    // 映射分组名称
+    var groupMap = {
+      'local': '本地音乐',
+      'online': '在线音乐',
+      'radio': '电台流',
+      'favorites': '我的喜欢'
+    };
+    
+    var targetGroup = groupMap[currentGroup];
+    if (targetGroup) {
+      groupHeaders.forEach(function(header) {
+        var groupName = header.querySelector('.pl-group-name').textContent;
+        if (groupName !== targetGroup) {
+          header.style.display = 'none';
+          var body = header.nextElementSibling;
+          if (body) body.style.display = 'none';
+        } else {
+          header.style.display = '';
+          var body = header.nextElementSibling;
+          if (body) body.style.display = '';
+        }
+      });
+    }
+  }
+};
+
+// ── 标签页切换 ──
+document.querySelectorAll('.nav-tab').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    // 切换标签按钮状态
+    this.parentElement.querySelectorAll('.nav-tab').forEach(function(b) { b.classList.remove('active'); });
+    this.classList.add('active');
+    // 切换标签页内容
+    var tabId = 'tab-' + this.dataset.tab;
+    document.querySelectorAll('.tab-pane').forEach(function(p) { p.classList.remove('active'); });
+    document.getElementById(tabId).classList.add('active');
+  });
+});
+// ── 返回列表按钮 ──
+document.querySelectorAll('.tab-back-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var listTab = document.querySelector('.nav-tab[data-tab="playlist"]');
+    if (listTab) listTab.click();
+  });
+});
+
+// ── 平台选择 ──
+document.querySelectorAll('.platform-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    this.parentElement.querySelectorAll('.platform-btn').forEach(function(b) { b.classList.remove('active'); });
+    this.classList.add('active');
+    // 更新隐藏的 select 值
+    var server = this.dataset.server;
+    document.getElementById('musicServer').value = server;
+  });
+});
 
 // ── 主题切换 ──
 function applyTheme(theme) {
@@ -2460,7 +2989,7 @@ function doMusicSearch(){
   fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(kw)+'&server='+sv, {signal:AbortSignal.timeout(10000)}).then(function(r){return r.json();}).then(function(res){
     if(!res.ok||!res.results||!res.results.length){ el.innerHTML='<div class="music-empty">没有结果</div>'; return; }
     el.innerHTML=res.results.map(function(t){
-      return '<div class="music-item" data-title="'+esc(t.title)+'" data-url="'+esc(t.url)+'" data-lrc="'+esc(t.lrc||'')+'">'
+      return '<div class="music-item" data-title="'+esc(t.title)+'" data-url="'+esc(t.url)+'" data-lrc="'+esc(t.lrc||'')+'" data-pic="'+esc(t.pic||'')+'">'
         +(t.pic ? '<img class="music-thumb" src="'+esc(t.pic)+'" loading="lazy">' : '<div class="music-thumb-placeholder">♫</div>')
         +'<div class="music-info"><div class="music-title">'+esc(t.title)+'</div><div class="music-author">'+esc(t.author)+'</div></div>'
         +'<button class="music-play" title="播放">▶</button>'
@@ -2509,7 +3038,7 @@ document.getElementById('musicResults').addEventListener('click', function(e){
     }).catch(function(e){ showToast(e.name==='TimeoutError'?'搜索超时':'搜索失败', 2500); });
   }
   if(e.target.closest('.music-play')){
-    withUrl(function(u, t){ addTrack(t, u, '在线', null, item.dataset.lrc); });
+    withUrl(function(u, t){ addTrack(t, u, '在线', null, item.dataset.lrc, item.dataset.pic); });
   } else if(e.target.closest('.music-add')){
     withUrl(function(u, t){ busControl('play', {url:u, name:t, mode:'在线'}); });
   } else if(e.target.closest('.music-scene')){
@@ -2592,7 +3121,7 @@ function doPlaylistImport(){
         _batchLoading = true;
         fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(firstKey)+'&server='+sv).then(function(r){return r.json();}).then(function(res){
           if(res.ok && res.results && res.results.length) {
-            addTrack(res.results[0].title, res.results[0].url, '在线', groupName, res.results[0].lrc);
+            addTrack(res.results[0].title, res.results[0].url, '在线', groupName, res.results[0].lrc, res.results[0].pic);
           }
         });
         // 其余用搜索关键词加入（type=search 标记自动搜索）
@@ -2738,12 +3267,13 @@ function doPlaylistImport(){
   var currentLrcId=null;
   var lyricBody=document.getElementById('lyricBody');
   var lyricToggle=document.getElementById('lyricToggle');
-
+  if(lyricToggle){
   lyricToggle.addEventListener('click',function(){
     lyricOpen=!lyricOpen;
     lyricBody.classList.toggle('open',lyricOpen);
     lyricToggle.classList.toggle('open',lyricOpen);
   });
+  }
   // 初始渲染占位
   lyricBody.innerHTML='<div class="lyric-line" style="color:var(--text-faint);padding:8px 0">暂无歌词</div>';
 
