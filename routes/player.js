@@ -498,8 +498,8 @@ setTimeout(n,100);
         }
         // 歌曲不可用(404/403)≠cookie失效，不算错误
         if (songCode === 404 || songCode === 403) {
-          // 歌曲下架或地区限制，回退
           if (fallback) return c.json({ ok:true, url:fallback });
+          return c.json({ ok:false, error:"song_unavailable", cookieExpired:false });
         }
       }
       if (server === "tencent" && TENCENT_COOKIE) {
@@ -1878,7 +1878,7 @@ body {
     </div>
   </div>
   <div class="lyrics-section">
-    <div class="lyric-body" id="lyricBody"></div>
+    <div class="lyric-body open" id="lyricBody"></div>
   </div>
 </div>
 
@@ -3408,7 +3408,7 @@ function doPlaylistImport(){
 
 // ── Lyric Panel ──
 (function(){
-  var lyricOpen=false;
+  var lyricOpen=true;
   var lrcData=[]; // [{time:ms, text:string}]
   var currentLrcId=null;
   var lyricBody=document.getElementById('lyricBody');
