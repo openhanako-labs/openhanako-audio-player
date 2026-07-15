@@ -1,5 +1,9 @@
 # 🎵 hanako-audio-player
 
+
+![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)
+
+
 Hanako 音频播放器插件。侧边栏常驻播放器，支持本地音乐、在线流、音乐搜索、场景调度、Bus 编排。
 
 ## 功能
