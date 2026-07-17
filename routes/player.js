@@ -1023,8 +1023,14 @@ body {
 .player-popup .np-cover {
   width: 120px;
   height: 120px;
+  border-radius: 50%;
   font-size: 48px;
   margin-bottom: 12px;
+}
+.player-popup .np-cover-ring {
+  inset: -6px;
+  width: calc(100% + 12px);
+  height: calc(100% + 12px);
 }
 .player-popup .np-info {
   align-items: center;
@@ -1076,19 +1082,37 @@ body {
   padding:6px 14px 8px;
 }
 .np-cover {
-  width:36px; height:36px; border-radius:8px;
+  width:36px; height:36px; border-radius:50%;
   background:linear-gradient(135deg, var(--accent), #c48454);
   display:flex; align-items:center; justify-content:center;
   font-size:16px; flex-shrink:0;
   box-shadow: 0 4px 14px var(--accent-glow);
   position:relative; overflow:hidden;
+  transition: opacity 0.2s, transform 0.2s;
 }
 .np-cover::after {
   content:''; position:absolute; inset:0;
   background:linear-gradient(135deg, rgba(255,255,255,0.15), transparent 50%);
+  pointer-events:none;
 }
-.np-cover.spinning { animation: spin 8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.np-cover.spinning { animation: spinCover 20s linear infinite; }
+.np-cover.frozen { animation-play-state: paused; }
+.np-cover.loading { animation: breatheRing 1.5s ease-in-out infinite; }
+.np-cover.error { animation: none; opacity: 0.5; }
+@keyframes spinCover { to { transform: rotate(360deg); } }
+@keyframes breatheRing {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow); }
+  50% { box-shadow: 0 0 0 6px transparent; }
+}
+/* Cover switch-track fade */
+.np-cover.switching {
+  animation: coverSwitch 200ms ease;
+}
+@keyframes coverSwitch {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.88); }
+  100% { opacity: 1; transform: scale(1); }
+}
 .np-info { min-width:0; flex:1; }
 .np-name {
   font-weight:500; font-size:13px;
@@ -1098,6 +1122,33 @@ body {
 .np-mode {
   font-size:11px; color:var(--text-dim);
   margin-top:1px;
+}
+
+/* ── Circular Cover Progress Ring ── */
+.np-cover-ring {
+  position: absolute;
+  inset: -4px;
+  width: calc(100% + 8px);
+  height: calc(100% + 8px);
+  pointer-events: none;
+  transform: rotate(-90deg);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.np-cover-ring.visible { opacity: 1; }
+.np-cover-ring circle {
+  fill: none;
+  stroke-width: 2;
+}
+.ring-bg {
+  stroke: var(--surface);
+  opacity: 0.5;
+}
+.ring-progress {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.15s linear;
+  filter: drop-shadow(0 0 3px var(--accent-glow));
 }
 
 /* ── Progress ── */
@@ -1633,7 +1684,7 @@ body {
   flex-shrink:0;
 }
 .np-cover {
-  width:160px; height:160px; border-radius:12px;
+  width:160px; height:160px; border-radius:50%;
   background:var(--surface); display:flex; align-items:center; justify-content:center;
   font-size:64px; color:var(--accent); margin-bottom:12px;
   box-shadow:0 4px 16px var(--accent-glow);
@@ -1861,7 +1912,17 @@ body {
 
 <!-- 正在播放区 -->
 <div class="now-playing-section">
-  <div class="np-cover" id="npCover">♫</div>
+  <div class="np-cover" id="npCover">
+  <svg class="np-cover-ring" viewBox="0 0 120 120" id="coverRing">
+    <circle class="ring-bg" cx="60" cy="60" r="56"/>
+    <circle class="ring-progress" cx="60" cy="60" r="56"
+      stroke-dasharray="351.86"
+      stroke-dashoffset="351.86"
+      id="ringProgress"/>
+  </svg>
+  <span class="error-dot"></span>
+  ♫
+</div>
   <div class="np-info">
     <div class="np-name" id="trackName">播放器</div>
     <div class="np-mode" id="trackMode">准备就绪</div>
@@ -2126,6 +2187,10 @@ if (TOKEN) {
 
 const audio = document.getElementById('audio');
 const npCover = document.getElementById('npCover');
+const coverRing = document.getElementById('coverRing');
+const ringProgress = document.getElementById('ringProgress');
+const RING_CIRCUMFERENCE = 2 * Math.PI * 56; // ~351.86
+let _coverSwitching = false;
 // 封面加载失败回退
 function _coverFallback(img) { img.parentElement.textContent='♫'; }
 // 弹窗遮罩层
@@ -2136,6 +2201,17 @@ function _dialogBackdrop() {
   return bd;
 }
 var trks = [], idx = 0, playing = false, playMode = 0, prevVol = 0.8, _batchLoading = false, _firstRender = true;
+// Low-load mode: disable continuous rotation & volume response
+var _lowLoadMode = localStorage.getItem('hanako_audio_lowload') === '1';
+// Reduced motion preference
+var _reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+// Apply low-load / reduced motion: disable spinning
+if (_lowLoadMode || _reducedMotion) {
+  // Override spinning CSS to not animate
+  var _noSpinStyle = document.createElement('style');
+  _noSpinStyle.textContent = '.np-cover.spinning { animation: none !important; }';
+  document.head.appendChild(_noSpinStyle);
+}
 // playMode: 0=顺序, 1=单曲循环, 2=随机, 3=列表循环
 
 // ── Server-side playlist sync ──
@@ -2222,11 +2298,18 @@ function load(i) {
     document.getElementById('trackName').textContent='播放器';
     document.getElementById('trackMode').textContent='准备就绪';
     npCover.innerHTML='♫';
-    npCover.classList.remove('spinning');
+    npCover.classList.remove('spinning','frozen','loading','error','has-error');
+    if(coverRing) coverRing.classList.remove('visible');
     updateFavBtn();
     return;
   }
   idx=i; const t=trks[i];
+  // Cover switch animation (only when both old and new have URL)
+  if (!_coverSwitching && idx > 0 && trks[idx-1] && trks[idx-1].url && t.url) {
+    _coverSwitching = true;
+    npCover.classList.add('switching');
+    setTimeout(function(){ npCover.classList.remove('switching'); _coverSwitching = false; }, 200);
+  }
   document.getElementById('trackName').textContent=t.name;
   document.getElementById('trackMode').textContent=t.mode||'';
   // 封面更新
@@ -2235,6 +2318,9 @@ function load(i) {
   } else {
     npCover.innerHTML = '♫';
   }
+  // Show progress ring
+  if(coverRing) coverRing.classList.add('visible');
+  if(ringProgress) { ringProgress.style.strokeDasharray = RING_CIRCUMFERENCE; ringProgress.style.strokeDashoffset = RING_CIRCUMFERENCE; }
   updateFavBtn();
   if(t.url) { audio.src=tok(t.url); audio.load(); audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)}); }
   // 歌词自动搜索：有 URL 但没有 LRC URL 时自动搜索歌词
@@ -2252,6 +2338,8 @@ function load(i) {
   }
   else if(t.searchKey) {
     // 无 URL 但有搜索关键词 → 自动搜索完整音频
+    npCover.classList.add('loading');
+    npCover.classList.remove('spinning','frozen');
     showToast('搜索 '+t.name+'…', 1500);
     var sv = t.searchServer || 'netease';
     var _fallbackServers = ['netease','tencent','kugou','kuwo','baidu'].filter(function(s){return s!==sv;});
@@ -2277,6 +2365,7 @@ function load(i) {
       });
       return chain;
     }).then(function(hit){
+      npCover.classList.remove('loading');
       if(!hit || !hit.url) { showToast('所有源均未找到: '+t.name, 2500); return; }
       t.name = hit.title || t.name;
       t.lrcUrl = hit.lrc || '';
@@ -2290,7 +2379,10 @@ function load(i) {
       audio.src = t.url;
       audio.load();
       audio.play().catch(function(e){ if(e.name!=='AbortError') console.warn(e); });
-    }).catch(function(e){ showToast(e.name==='TimeoutError'?'搜索超时: '+t.name:'搜索失败: '+t.name, 2500); });
+    }).catch(function(e){
+      npCover.classList.remove('loading');
+      showToast(e.name==='TimeoutError'?'搜索超时: '+t.name:'搜索失败: '+t.name, 2500);
+    });
   }
   npCover.classList.add('spinning');
   tryReadMetadata(audio, t);
@@ -2299,8 +2391,17 @@ function load(i) {
 
 function toggle() {
   if (!trks.length) return;
-  if (audio.paused) { audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)}); playing=true; npCover.classList.add('spinning'); }
-  else { audio.pause(); playing=false; npCover.classList.remove('spinning'); }
+  if (audio.paused) {
+    audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});
+    playing=true;
+    npCover.classList.remove('frozen');
+    npCover.classList.add('spinning');
+  } else {
+    audio.pause();
+    playing=false;
+    npCover.classList.remove('spinning');
+    npCover.classList.add('frozen');
+  }
   document.getElementById('playIcon').style.display=playing?'none':'block';
   document.getElementById('pauseIcon').style.display=playing?'block':'none';
 }
@@ -2779,6 +2880,11 @@ audio.addEventListener('timeupdate',function(){
   if(audio.duration){
     document.getElementById('totalTime').textContent=fmt(audio.duration);
     document.getElementById('progressFill').style.width=(audio.currentTime/audio.duration*100)+'%';
+    // Circular cover progress ring
+    if(ringProgress && audio.duration > 0) {
+      var offset = RING_CIRCUMFERENCE * (1 - audio.currentTime / audio.duration);
+      ringProgress.style.strokeDashoffset = offset;
+    }
     if(trks[idx])trks[idx].dur=audio.duration;
   }
 });
@@ -2791,18 +2897,41 @@ audio.addEventListener('ended',next);
 audio.addEventListener('error',function(){
   if(trks[idx] && trks[idx].url){
     var t=trks[idx];
-    // Meting URL 失败 → 尝试用 searchKey 重新搜索
     if(t.searchKey){
       showToast('播放失败，重新搜索…',1500);
-      t.url=''; // 清空旧 URL，触发 searchKey 路径
+      t.url='';
+      npCover.classList.remove('spinning','frozen');
       load(idx);
     } else {
       showToast('播放失败: '+t.name,2000);
+      npCover.classList.add('error','has-error');
+      npCover.classList.remove('spinning','frozen','loading');
+      if(coverRing) coverRing.classList.remove('visible');
     }
+  } else if(trks[idx] && trks[idx].searchKey){
+    // searchKey 类型搜索失败 → 重试
+    showToast('搜索失败，重试中…',1500);
+    npCover.classList.remove('spinning','frozen');
+    load(idx);
+  } else {
+    npCover.classList.add('error','has-error');
+    npCover.classList.remove('spinning','frozen');
   }
 });
-audio.addEventListener('play',function(){playing=true;npCover.classList.add('spinning');document.getElementById('playIcon').style.display='none';document.getElementById('pauseIcon').style.display='block';});
-audio.addEventListener('pause',function(){playing=false;npCover.classList.remove('spinning');document.getElementById('playIcon').style.display='block';document.getElementById('pauseIcon').style.display='none';});
+audio.addEventListener('play',function(){
+  playing=true;
+  npCover.classList.remove('frozen');
+  npCover.classList.add('spinning');
+  document.getElementById('playIcon').style.display='none';
+  document.getElementById('pauseIcon').style.display='block';
+});
+audio.addEventListener('pause',function(){
+  playing=false;
+  npCover.classList.remove('spinning');
+  npCover.classList.add('frozen');
+  document.getElementById('playIcon').style.display='block';
+  document.getElementById('pauseIcon').style.display='none';
+});
 
 function addTrack(name,url,mode,group,lrcUrl,pic) {
   // 去重：url 非空时按裸 url（去掉 query）匹配，url 为空时按 name 匹配

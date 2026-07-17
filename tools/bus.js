@@ -8,6 +8,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { TTSBus } from "./tts-bus.js";
+import {
+  createTrackRef,
+  migrateToTrackRef,
+  SOURCE,
+} from "./track-ref.js";
 
 function stripToken(url) {
   if (!url) return url;
@@ -94,6 +99,8 @@ export class AudioBus {
     } catch (e) {
       /* ignore */
     }
+    // 加载后检查是否需要迁移
+    this._migrateQueueIfNeeded();
   }
 
   // [Hijacked] 路由层已完全接管文件读写，旧单例不再写文件
@@ -109,6 +116,11 @@ export class AudioBus {
 
   // ── 协议解析 ──
 
+  /**
+   * 将任意格式的播放列表项标准化为 TrackRef 兼容对象。
+   * 输出同时保留旧字段（type/url/name/mode）以保证向后兼容，
+   * 并注入新字段（id/source/title/streamUrl/groupIds/meta）供 AUDIO-13 使用。
+   */
   load(playlist) {
     if (!Array.isArray(playlist)) {
       return { ok: false, code: "bad_format", message: "playlist 必须是数组" };
@@ -124,39 +136,161 @@ export class AudioBus {
 
   _normalize(item) {
     const t = item.type || "play";
-    const base = { type: t, id: item.id || `item_${Date.now()}_${Math.random().toString(36).slice(2, 7)}` };
+    const baseId = item.id || `item_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
     switch (t) {
-      case "say":
+      case "say": {
+        const text = item.text || "";
+        const shortTitle = text.length > 30 ? text.slice(0, 30) + "\u2026" : text;
+        // TTS 来源 → 产出 TrackRef
+        const ref = createTrackRef({
+          id: baseId,
+          source: SOURCE.TTS,
+          title: shortTitle,
+          artist: item.spk || "AI",
+          duration: 0,
+          groupIds: ["TTS/语音"],
+          meta: {
+            ttsLayer: item.ttsLayer || "pending",
+            spk: item.spk || "my_voice",
+            instruct: item.instruct || "",
+            translate: item.translate || "",
+            fullText: text,
+          },
+        });
+        // 返回兼容旧代码的对象：既有 type/text/spk 也有 TrackRef 字段
         return {
-          ...base,
-          text: item.text || "",
+          type: "say",
+          id: ref.id,
+          source: ref.source,
+          title: ref.title,
+          streamUrl: "",  // say 类型无流地址，合成后回填
+          groupIds: ref.groupIds,
+          meta: ref.meta,
+          text,
           spk: item.spk || "my_voice",
           instruct: item.instruct || "",
           translate: item.translate || "",
           refAudio: item.refAudio || "",
           refText: item.refText || "",
         };
-      case "play":
+      }
+      case "play": {
+        const url = item.url || "";
+        const name = item.name || path.basename(url || "音频");
+        const rawMode = item.mode || (url && url.startsWith("http") ? "在线" : "本地");
+
+        // 如果已有 source 字段说明是 TrackRef 格式，直接返回
+        if (item.source) {
+          return {
+            ...item,
+            type: "play",
+            name: item.title || name,
+            url: item.streamUrl || url,
+            mode: rawMode,
+          };
+        }
+
+        // 旧格式 → 迁移为 TrackRef
+        const ref = createTrackRef({
+          id: baseId,
+          source: url && url.startsWith("http") ? SOURCE.SEARCH : SOURCE.LOCAL,
+          title: name,
+          artist: item.artist || "",
+          album: item.album || "",
+          duration: Number(item.duration) || 0,
+          cover: item.pic || "",
+          lrcUrl: item.lrcUrl || "",
+          streamUrl: url,
+          groupIds: [item.group || (rawMode === "在线" ? "在线音乐" : "本地音乐")],
+          meta: {
+            rawMode,
+            searchServer: item.searchServer || "",
+            searchKey: item.searchKey || "",
+          },
+        });
+
+        // 返回兼容旧代码的对象
         return {
-          ...base,
-          url: item.url || "",
-          name: item.name || path.basename(item.url || "音频"),
-          mode: item.mode || (item.url && item.url.startsWith("http") ? "在线" : "本地"),
+          type: "play",
+          id: ref.id,
+          source: ref.source,
+          title: ref.title,
+          name: ref.title,
+          url: ref.streamUrl,
+          streamUrl: ref.streamUrl,
+          mode: rawMode,
+          dur: ref.duration,
+          duration: ref.duration,
+          pic: ref.cover,
+          cover: ref.cover,
+          lrcUrl: ref.lrcUrl,
+          group: ref.groupIds[0] || "",
+          groupIds: ref.groupIds,
+          searchKey: ref.meta.searchKey || "",
+          searchServer: ref.meta.searchServer || "",
+          meta: ref.meta,
         };
+      }
       case "segue":
         return {
-          ...base,
+          type: "segue",
+          id: baseId,
           duration: item.duration || 3000,
           effect: item.effect || "silence",
         };
       case "reason":
         return {
-          ...base,
+          type: "reason",
+          id: baseId,
           text: item.text || "",
         };
       default:
-        return { ...base, text: String(item) };
+        return { type: "play", id: baseId, text: String(item) };
+    }
+  }
+
+  /**
+   * 将旧队列（不含 TrackRef 字段）迁移为新格式。
+   * 在 load/getState 时自动调用，保证数据一致性。
+   */
+  _migrateQueueIfNeeded() {
+    if (!this.queue.length) return;
+    let migrated = false;
+    this.queue = this.queue.map((item) => {
+      // 已有 source 字段 → 已是 TrackRef 格式
+      if (item.source) return item;
+      // 没有 source → 尝试迁移
+      try {
+        const ref = migrateToTrackRef(item);
+        migrated = true;
+        // 合并回旧字段兼容格式
+        return {
+          type: item.type || "play",
+          id: ref.id,
+          source: ref.source,
+          title: ref.title,
+          name: ref.title,
+          url: ref.streamUrl,
+          streamUrl: ref.streamUrl,
+          mode: item.mode || (ref.streamUrl && ref.streamUrl.startsWith("http") ? "在线" : "本地"),
+          dur: ref.duration,
+          duration: ref.duration,
+          pic: ref.cover,
+          cover: ref.cover,
+          lrcUrl: ref.lrcUrl,
+          group: ref.groupIds[0] || "",
+          groupIds: ref.groupIds,
+          meta: ref.meta,
+        };
+      } catch (e) {
+        console.warn(`[bus] migration failed for item ${item.id || '?'}`, e.message);
+        return item;
+      }
+    });
+    if (migrated) {
+      console.log("[bus] Queue migrated to TrackRef format");
+      this._saveQueue();
     }
   }
 
@@ -290,6 +424,7 @@ export class AudioBus {
       currentIndex: this.currentIndex,
       queue: this.queue,
       history: this.history.slice(-20),
+      schema: "AUDIO-13",  // TrackRef 版本标记
     };
   }
 
