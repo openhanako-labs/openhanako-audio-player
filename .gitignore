@@ -9,3 +9,7 @@ layout-*.html
 layout-demo-d.html
 layout-demo.html
 routes/player.js.backup
+__pycache__/
+*.pyc
+*.new
+patch_*.js
