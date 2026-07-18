@@ -1,0 +1,165 @@
+/**
+ * base.css — AUDIO-09 独立歌词舞台基础样式
+ */
+
+:root, [data-theme="dark"] {
+  --ls-bg: transparent;
+  --ls-text: #e4e4e7;
+  --ls-text-dim: rgba(255,255,255,0.45);
+  --ls-text-faint: rgba(255,255,255,0.25);
+  --ls-accent: #d49a6a;
+  --ls-accent-glow: rgba(212,154,106,0.35);
+  --ls-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+[data-theme="light"] {
+  --ls-bg: transparent;
+  --ls-text: #3d3320;
+  --ls-text-dim: rgba(0,0,0,0.4);
+  --ls-text-faint: rgba(0,0,0,0.22);
+  --ls-accent: #c48454;
+  --ls-accent-glow: rgba(196,132,84,0.25);
+  --ls-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--ls-bg);
+  font-family: var(--ls-font);
+}
+
+.stage-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  padding: 8px 12px;
+}
+
+/* ── Header ── */
+.stage-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0 6px;
+  flex-shrink: 0;
+}
+
+.track-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ls-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.track-mode {
+  font-size: 9px;
+  color: var(--ls-text-faint);
+  background: var(--ls-text-faint);
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.translate-toggle {
+  background: none;
+  border: 1px solid var(--ls-text-faint);
+  border-radius: 4px;
+  color: var(--ls-text-faint);
+  font-size: 9px;
+  padding: 1px 5px;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  font-family: inherit;
+}
+
+.translate-toggle:hover {
+  border-color: var(--ls-accent);
+  color: var(--ls-accent);
+}
+
+.translate-toggle.active {
+  background: var(--ls-accent);
+  border-color: var(--ls-accent);
+  color: #fff;
+}
+
+/* ── Body (lyric scroll area) ── */
+.stage-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+.stage-body::-webkit-scrollbar { width: 4px; }
+.stage-body::-webkit-scrollbar-track { background: transparent; }
+.stage-body::-webkit-scrollbar-thumb { background: var(--ls-text-faint); border-radius: 2px; }
+
+/* ── Lyric lines ── */
+.lyric-line {
+  font-size: var(--ls-base-size, 13px);
+  color: var(--ls-text-dim);
+  line-height: 1.9;
+  text-align: center;
+  padding: 3px 0;
+  transition: color 0.3s ease, font-size 0.3s ease, opacity 0.3s ease;
+  opacity: 0.5;
+  word-break: break-word;
+}
+
+.lyric-line.active {
+  color: var(--ls-accent);
+  font-size: calc(var(--ls-base-size, 13px) * 1.15);
+  font-weight: 600;
+  opacity: 1;
+  text-shadow: 0 0 12px var(--ls-accent-glow);
+}
+
+.lyric-line:hover {
+  color: var(--ls-text);
+  opacity: 0.8;
+}
+
+.lyric-line--translate {
+  font-size: calc(var(--ls-base-size, 13px) * 0.82);
+  color: var(--ls-text-faint);
+  line-height: 1.6;
+  margin-top: -2px;
+  transition: opacity 0.25s ease, display 0.25s ease;
+}
+
+.lyric-line--translate.hidden {
+  display: none;
+}
+
+.lyric-placeholder {
+  text-align: center;
+  color: var(--ls-text-faint);
+  font-size: 11px;
+  padding: 40px 0;
+}
+
+/* ── Footer ── */
+.stage-footer {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 2px;
+  flex-shrink: 0;
+}
+
+.progress-text {
+  font-size: 9px;
+  color: var(--ls-text-faint);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+}

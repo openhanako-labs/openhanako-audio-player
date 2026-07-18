@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>事件总线测试</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: #d49a6a;
+      margin-bottom: 20px;
+    }
+    .section {
+      background: #2a2a2a;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .section h2 {
+      color: #d49a6a;
+      font-size: 16px;
+      margin-bottom: 12px;
+    }
+    .controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    button {
+      background: #3a3a3a;
+      color: #e0e0e0;
+      border: 1px solid #555;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    button:hover {
+      background: #d49a6a;
+      color: #1a1a1a;
+      border-color: #d49a6a;
+    }
+    #log {
+      background: #1a1a1a;
+      border: 1px solid #3a3a3a;
+      border-radius: 6px;
+      padding: 12px;
+      max-height: 400px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .log-entry {
+      padding: 2px 0;
+      border-bottom: 1px solid #2a2a2a;
+    }
+    .log-entry:last-child {
+      border-bottom: none;
+    }
+    .log-type {
+      color: #d49a6a;
+      font-weight: bold;
+    }
+    .log-payload {
+      color: #888;
+    }
+    .status {
+      padding: 8px 12px;
+      background: #2a2a2a;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      font-size: 13px;
+    }
+    .status .label {
+      color: #888;
+    }
+    .status .value {
+      color: #d49a6a;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎵 事件总线测试</h1>
+    
+    <div class="section">
+      <h2>控制面板</h2>
+      <div class="controls">
+        <button onclick="testPlay()">▶️ 播放</button>
+        <button onclick="testPause()">⏸️ 暂停</button>
+        <button onclick="testResume()">▶️ 恢复</button>
+        <button onclick="testEnded()">⏹️ 结束</button>
+        <button onclick="testError()">❌ 错误</button>
+        <button onclick="testTTS()">🗣️ TTS</button>
+        <button onclick="testFull()">🔄 完整流程</button>
+        <button onclick="clearLog()">🗑️ 清空日志</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>当前状态</h2>
+      <div class="status">
+        <span class="label">调试模式：</span>
+        <span class="value" id="debugStatus">关闭</span>
+        <button onclick="toggleDebug()" style="margin-left: 12px; padding: 4px 8px; font-size: 12px;">
+          切换
+        </button>
+      </div>
+      <div class="status">
+        <span class="label">当前曲目：</span>
+        <span class="value" id="currentTrack">无</span>
+      </div>
+      <div class="status">
+        <span class="label">音频类型：</span>
+        <span class="value" id="currentType">无</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>事件日志</h2>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <!-- 引入事件总线 -->
+  <script src="audio-event-bus.js"></script>
+  <script>
+    // 日志元素
+    const logElement = document.getElementById('log');
+    
+    // 订阅所有事件
+    window.audioEventBus.on(null, (event) => {
+      addLogEntry(event);
+    });
+
+    // 添加日志条目
+    function addLogEntry(event) {
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      
+      const time = new Date(event.timestamp).toLocaleTimeString();
+      const type = event.type;
+      const payload = JSON.stringify(event.payload);
+      
+      entry.innerHTML = `
+        <span class="log-type">[${time}] ${type}</span>
+        <span class="log-payload"> ${payload}</span>
+      `;
+      
+      logElement.appendChild(entry);
+      logElement.scrollTop = logElement.scrollHeight;
+    }
+
+    // 清空日志
+    function clearLog() {
+      logElement.innerHTML = '';
+    }
+
+    // 切换调试模式
+    function toggleDebug() {
+      if (window.audioEventBus.debug) {
+        window.audioEventBus.disableDebug();
+        document.getElementById('debugStatus').textContent = '关闭';
+      } else {
+        window.audioEventBus.enableDebug();
+        document.getElementById('debugStatus').textContent = '开启';
+      }
+    }
+
+    // 测试播放
+    function testPlay() {
+      window.audioEventBus.setTrack('test-001', '测试曲目');
+      window.audioEventBus.setAudioType('music');
+      window.audioEventBus.emit('audio:loaded', 'music', { duration: 180, src: 'test.mp3' });
+      window.audioEventBus.emit('audio:play', 'music', { currentTime: 0, duration: 180 });
+      
+      document.getElementById('currentTrack').textContent = '测试曲目';
+      document.getElementById('currentType').textContent = 'music';
+    }
+
+    // 测试暂停
+    function testPause() {
+      window.audioEventBus.emit('audio:pause', 'music', { currentTime: 45 });
+    }
+
+    // 测试恢复
+    function testResume() {
+      window.audioEventBus.emit('audio:resume', 'music', { currentTime: 45 });
+    }
+
+    // 测试结束
+    function testEnded() {
+      window.audioEventBus.emit('audio:ended', 'music', { reason: 'completed' });
+      document.getElementById('currentTrack').textContent = '无';
+      document.getElementById('currentType').textContent = '无';
+    }
+
+    // 测试错误
+    function testError() {
+      window.audioEventBus.emit('audio:error', 'music', {
+        code: 4,
+        message: '音频加载失败'
+      });
+    }
+
+    // 测试TTS
+    function testTTS() {
+      window.audioEventBus.setTrack('tts-001', 'TTS语音');
+      window.audioEventBus.setAudioType('tts');
+      window.audioEventBus.emit('audio:loaded', 'tts', { duration: 5, src: 'tts.wav' });
+      window.audioEventBus.emit('audio:play', 'tts', { currentTime: 0, duration: 5 });
+      window.audioEventBus.emit('audio:speaking', 'tts', { text: '你好，我是奥菲莉娅' });
+      
+      document.getElementById('currentTrack').textContent = 'TTS语音';
+      document.getElementById('currentType').textContent = 'tts';
+      
+      setTimeout(() => {
+        window.audioEventBus.emit('audio:silence', 'tts', {});
+      }, 3000);
+      
+      setTimeout(() => {
+        window.audioEventBus.emit('audio:ended', 'tts', { reason: 'completed' });
+        document.getElementById('currentTrack').textContent = '无';
+        document.getElementById('currentType').textContent = '无';
+      }, 5000);
+    }
+
+    // 完整流程
+    function testFull() {
+      testPlay();
+      
+      setTimeout(() => {
+        testPause();
+      }, 3000);
+      
+      setTimeout(() => {
+        testResume();
+      }, 5000);
+      
+      setTimeout(() => {
+        testEnded();
+      }, 8000);
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>歌词舞台</title>
+<style>
+  /* 基础 CSS 变量注入 */
+  :root { --ls-base-size: 13px; }
+  
+  /* 内联关键样式（首屏无闪烁） */
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;overflow:hidden;background:transparent;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+  .stage-container{display:flex;flex-direction:column;height:100%;overflow:hidden;padding:8px 12px;--ls-base-size:clamp(11px,2.2vw,15px)}
+  .stage-header{display:flex;align-items:center;gap:6px;padding:4px 0 6px;flex-shrink:0}
+  .track-name{font-size:12px;font-weight:600;color:var(--ls-text,#e4e4e7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+  .track-mode{font-size:9px;color:var(--ls-text-faint,rgba(255,255,255,0.25));padding:1px 5px;flex-shrink:0}
+  .translate-toggle{background:none;border:1px solid var(--ls-text-faint,rgba(255,255,255,0.25));border-radius:4px;color:var(--ls-text-faint,rgba(255,255,255,0.25));font-size:9px;padding:1px 5px;cursor:pointer;transition:all .2s;flex-shrink:0;font-family:inherit}
+  .translate-toggle:hover{border-color:#d49a6a;color:#d49a6a}
+  .translate-toggle.active{background:#d49a6a;border-color:#d49a6a;color:#fff}
+  .stage-body{flex:1;min-height:0;overflow-y:auto;scroll-behavior:smooth}
+  .stage-body::-webkit-scrollbar{width:4px}
+  .stage-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:2px}
+  [data-theme="light"] .stage-body::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15)}
+  .lyric-line{font-size:var(--ls-base-size,13px);color:var(--ls-text-dim,rgba(255,255,255,0.45));line-height:1.9;text-align:center;padding:3px 0;transition:color .3s,font-size .3s,opacity .3s;opacity:.5;word-break:break-all}
+  .lyric-line.active{color:#d49a6a;font-size:calc(var(--ls-base-size,13px)*1.15);font-weight:600;opacity:1}
+  [data-theme="light"] .lyric-line.active{color:#c48454}
+  .lyric-line:hover{color:var(--ls-text,#e4e4e7);opacity:.8}
+  .lyric-line--translate{font-size:calc(var(--ls-base-size,13px)*.82);color:var(--ls-text-faint,rgba(255,255,255,0.25));line-height:1.6;margin-top:-2px;transition:opacity .25s}
+  .lyric-line--translate.hidden{display:none}
+  .lyric-placeholder{text-align:center;color:var(--ls-text-faint,rgba(255,255,255,0.25));font-size:11px;padding:40px 0}
+  .lyric-error{text-align:center;color:#ef4444;font-size:11px;padding:20px 0}
+  .stage-footer{display:flex;justify-content:center;padding:4px 0 2px;flex-shrink:0}
+  .progress-text{font-size:9px;color:var(--ls-text-faint,rgba(255,255,255,0.25));font-variant-numeric:tabular-nums;letter-spacing:.5px}
+</style>
+</head>
+<body data-theme="dark">
+  <div class="stage-container">
+    <div class="stage-header">
+      <span class="track-name" id="trackName">等待曲目...</span>
+      <span class="track-mode" id="trackMode"></span>
+      <button class="translate-toggle active" id="translateToggle" title="切换翻译">译</button>
+    </div>
+    <div class="stage-body" id="lyricBody">
+      <div class="lyric-placeholder" id="placeholder">暂无歌词</div>
+    </div>
+    <div class="stage-footer">
+      <span class="progress-text" id="progressText">0:00 / 0:00</span>
+    </div>
+  </div>
+
+  <!-- 依赖模块 -->
+  <script src="/api/plugins/hanako-audio-player/assets/lyrics/js/lrc-parser.js"></script>
+  <script src="/api/plugins/hanako-audio-player/assets/lyrics/js/bus-client.js"></script>
+  <script src="/api/plugins/hanako-audio-player/assets/lyrics/js/renderer.js"></script>
+  <script src="/api/plugins/hanako-audio-player/assets/lyrics/js/scroll-manager.js"></script>
+  <script src="/api/plugins/hanako-audio-player/assets/lyrics/js/stage-app.js"></script>
+</body>
+</html>

@@ -3,7 +3,14 @@
  * 统一音频事件总线
  * 
  * 为音频播放器提供标准化事件发射和订阅机制
- * 支持桌宠、视觉层、状态栏等消费方
+ * 支持桌宠、视觉层、状态栏、歌词舞台等消费方
+ * 
+ * AUDIO-09 独立歌词舞台扩展：
+ * - track-change: 曲目切换时发射，携带完整歌词数据
+ * - progress: 播放进度更新（调用方节流）
+ * - play-state: 播放/暂停状态变化
+ * - theme: 主题变更
+ * - lyrics-toggle: 翻译显隐切换（舞台→播放器）
  */
 
 class AudioEventBus {
@@ -13,6 +20,9 @@ class AudioEventBus {
     this.currentTrackId = null;
     this.currentTrackName = null;
     this.currentAudioType = 'music';
+    // AUDIO-09: 缓存最近一次 track-change 数据，供舞台重连时恢复
+    this._lastTrackChange = null;
+    this._lastProgress = null;
   }
 
   /**
@@ -127,6 +137,78 @@ class AudioEventBus {
       trackName: this.currentTrackName,
       audioType: this.currentAudioType
     };
+  }
+
+  // ═══════════════════════════════════════════
+  // AUDIO-09 扩展方法
+  // ═══════════════════════════════════════════
+
+  /**
+   * 发射曲目切换事件
+   * @param {object} trackInfo - 曲目信息
+   * @param {Array} lrcData - 歌词数据 [{time, text, translate?}]
+   */
+  emitTrackChange(trackInfo, lrcData) {
+    const data = {
+      trackId: trackInfo.url || trackInfo.name || String(Date.now()),
+      trackName: trackInfo.name || '未知曲目',
+      mode: trackInfo.mode || '在线',
+      lrcData: lrcData || [],
+      hasLyrics: !!(lrcData && lrcData.length > 0)
+    };
+    
+    this._lastTrackChange = data;
+    this.setTrack(data.trackId, data.trackName);
+    this.emit('track-change', null, data);
+  }
+
+  /**
+   * 发射进度事件（调用方负责节流）
+   * @param {number} currentTime - 当前秒数
+   * @param {number} duration - 总时长秒数
+   * @param {boolean} isPlaying - 是否正在播放
+   */
+  emitProgress(currentTime, duration, isPlaying) {
+    const data = {
+      currentTime: Math.round(currentTime * 1000), // ms
+      duration: Math.round(duration * 1000),        // ms
+      isPlaying: !!isPlaying
+    };
+    
+    this._lastProgress = data;
+    this.emit('progress', null, data);
+  }
+
+  /**
+   * 发射播放状态事件
+   * @param {boolean} playing - 是否正在播放
+   */
+  emitPlayState(playing) {
+    this.emit('play-state', null, { playing: !!playing });
+  }
+
+  /**
+   * 发射主题事件
+   * @param {string} theme - 'dark' | 'light'
+   */
+  emitTheme(theme) {
+    this.emit('theme', null, { theme: theme || 'dark' });
+  }
+
+  /**
+   * 获取缓存的最近一次曲目切换数据（用于舞台重连恢复）
+   * @returns {object|null}
+   */
+  getLastTrackChange() {
+    return this._lastTrackChange;
+  }
+
+  /**
+   * 获取缓存的最近一次进度数据
+   * @returns {object|null}
+   */
+  getLastProgress() {
+    return this._lastProgress;
   }
 }
 

@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>集成测试</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: #d49a6a;
+      margin-bottom: 20px;
+    }
+    .section {
+      background: #2a2a2a;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .section h2 {
+      color: #d49a6a;
+      font-size: 16px;
+      margin-bottom: 12px;
+    }
+    .controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    button {
+      background: #3a3a3a;
+      color: #e0e0e0;
+      border: 1px solid #555;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    button:hover {
+      background: #d49a6a;
+      color: #1a1a1a;
+      border-color: #d49a6a;
+    }
+    #log {
+      background: #1a1a1a;
+      border: 1px solid #3a3a3a;
+      border-radius: 6px;
+      padding: 12px;
+      max-height: 400px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .log-entry {
+      padding: 2px 0;
+      border-bottom: 1px solid #2a2a2a;
+    }
+    .log-entry:last-child {
+      border-bottom: none;
+    }
+    .log-type {
+      color: #d49a6a;
+      font-weight: bold;
+    }
+    .log-payload {
+      color: #888;
+    }
+    .status {
+      padding: 8px 12px;
+      background: #2a2a2a;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      font-size: 13px;
+    }
+    .status .label {
+      color: #888;
+    }
+    .status .value {
+      color: #d49a6a;
+      font-weight: bold;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: #3a3a3a;
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .card h3 {
+      color: #d49a6a;
+      margin-bottom: 8px;
+    }
+    .card p {
+      color: #888;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎵 集成测试</h1>
+    
+    <div class="section">
+      <h2>模块状态</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>主题注册表</h3>
+          <p id="themeStatus">检查中...</p>
+        </div>
+        <div class="card">
+          <h3>AI主题生成器</h3>
+          <p id="aiThemeStatus">检查中...</p>
+        </div>
+        <div class="card">
+          <h3>Stage接口</h3>
+          <p id="stageStatus">检查中...</p>
+        </div>
+        <div class="card">
+          <h3>事件总线</h3>
+          <p id="eventBusStatus">检查中...</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>控制面板</h2>
+      <div class="controls">
+        <button onclick="checkModules()">检查模块</button>
+        <button onclick="testThemeRegistry()">测试主题注册表</button>
+        <button onclick="testAITheme()">测试AI主题</button>
+        <button onclick="testStage()">测试Stage</button>
+        <button onclick="testEventBus()">测试事件总线</button>
+        <button onclick="clearLog()">清空日志</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>测试日志</h2>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <!-- 引入所有模块 -->
+  <script src="/api/plugins/hanako-audio-player/widget/theme-registry.js"></script>
+  <script src="/api/plugins/hanako-audio-player/widget/settings-panel.js"></script>
+  <script src="/api/plugins/hanako-audio-player/widget/ai-theme-generator.js"></script>
+  <script src="/api/plugins/hanako-audio-player/widget/stage-contract.js"></script>
+  <script src="/api/plugins/hanako-audio-player/widget/integration.js"></script>
+  
+  <script>
+    // 日志元素
+    const logElement = document.getElementById('log');
+    
+    // 添加日志
+    function addLog(type, message) {
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      
+      const time = new Date().toLocaleTimeString();
+      entry.innerHTML = `
+        <span class="log-type">[${time}] ${type}</span>
+        <span class="log-payload"> ${message}</span>
+      `;
+      
+      logElement.appendChild(entry);
+      logElement.scrollTop = logElement.scrollHeight;
+    }
+    
+    // 清空日志
+    function clearLog() {
+      logElement.innerHTML = '';
+    }
+    
+    // 检查模块状态
+    function checkModules() {
+      addLog('INFO', '检查模块状态...');
+      
+      // 检查主题注册表
+      const themeStatus = document.getElementById('themeStatus');
+      if (window.themeRegistry) {
+        const themes = window.themeRegistry.listThemes();
+        themeStatus.textContent = `✅ 已加载，${themes.length} 个主题`;
+        addLog('SUCCESS', `主题注册表: ${themes.length} 个主题`);
+      } else {
+        themeStatus.textContent = '❌ 未加载';
+        addLog('ERROR', '主题注册表未加载');
+      }
+      
+      // 检查AI主题生成器
+      const aiThemeStatus = document.getElementById('aiThemeStatus');
+      if (window.aiThemeGenerator) {
+        aiThemeStatus.textContent = `✅ 已加载，${window.aiThemeGenerator.enabled ? '已启用' : '已禁用'}`;
+        addLog('SUCCESS', `AI主题生成器: ${window.aiThemeGenerator.enabled ? '已启用' : '已禁用'}`);
+      } else {
+        aiThemeStatus.textContent = '❌ 未加载';
+        addLog('ERROR', 'AI主题生成器未加载');
+      }
+      
+      // 检查Stage接口
+      const stageStatus = document.getElementById('stageStatus');
+      if (window.audioStage) {
+        stageStatus.textContent = '✅ 已加载';
+        addLog('SUCCESS', 'Stage接口已加载');
+      } else {
+        stageStatus.textContent = '❌ 未加载';
+        addLog('ERROR', 'Stage接口未加载');
+      }
+      
+      // 检查事件总线
+      const eventBusStatus = document.getElementById('eventBusStatus');
+      if (window.audioEventBus) {
+        eventBusStatus.textContent = '✅ 已加载';
+        addLog('SUCCESS', '事件总线已加载');
+      } else {
+        eventBusStatus.textContent = '❌ 未加载';
+        addLog('ERROR', '事件总线未加载');
+      }
+    }
+    
+    // 测试主题注册表
+    function testThemeRegistry() {
+      addLog('INFO', '测试主题注册表...');
+      
+      if (!window.themeRegistry) {
+        addLog('ERROR', '主题注册表未加载');
+        return;
+      }
+      
+      // 列出所有主题
+      const themes = window.themeRegistry.listThemes();
+      addLog('INFO', `已注册主题: ${themes.map(t => t.name).join(', ')}`);
+      
+      // 测试加载主题
+      themes.forEach(async (theme) => {
+        try {
+          const loaded = await window.themeRegistry.loadTheme(theme.id);
+          addLog('SUCCESS', `主题 "${theme.name}" 加载成功`);
+        } catch (e) {
+          addLog('ERROR', `主题 "${theme.name}" 加载失败: ${e.message}`);
+        }
+      });
+    }
+    
+    // 测试AI主题
+    async function testAITheme() {
+      addLog('INFO', '测试AI主题生成器...');
+      
+      if (!window.aiThemeGenerator) {
+        addLog('ERROR', 'AI主题生成器未加载');
+        return;
+      }
+      
+      // 创建模拟曲目
+      const mockTrack = {
+        id: 'test-001',
+        title: '测试曲目',
+        artist: '测试艺术家',
+        cover: 'https://example.com/cover.jpg',
+        source: 'music',
+      };
+      
+      try {
+        const theme = await window.aiThemeGenerator.generateForTrack(mockTrack);
+        addLog('SUCCESS', `AI主题生成成功: ${JSON.stringify(theme.colors)}`);
+      } catch (e) {
+        addLog('ERROR', `AI主题生成失败: ${e.message}`);
+      }
+    }
+    
+    // 测试Stage
+    async function testStage() {
+      addLog('INFO', '测试Stage接口...');
+      
+      if (!window.audioStage) {
+        addLog('ERROR', 'Stage接口未加载');
+        return;
+      }
+      
+      // 测试健康检查
+      try {
+        const health = await window.audioStage.health();
+        addLog('SUCCESS', `健康检查: ${JSON.stringify(health)}`);
+      } catch (e) {
+        addLog('ERROR', `健康检查失败: ${e.message}`);
+      }
+      
+      // 测试获取状态
+      try {
+        const state = window.audioStage.state();
+        addLog('SUCCESS', `状态获取: ${JSON.stringify(state)}`);
+      } catch (e) {
+        addLog('ERROR', `状态获取失败: ${e.message}`);
+      }
+    }
+    
+    // 测试事件总线
+    function testEventBus() {
+      addLog('INFO', '测试事件总线...');
+      
+      if (!window.audioEventBus) {
+        addLog('ERROR', '事件总线未加载');
+        return;
+      }
+      
+      // 订阅事件
+      const unsubscribe = window.audioEventBus.on(null, (event) => {
+        addLog('EVENT', `${event.type}: ${JSON.stringify(event.payload)}`);
+      });
+      
+      // 发射测试事件
+      window.audioEventBus.emit('test', 'music', { message: '测试事件' });
+      
+      // 取消订阅
+      setTimeout(() => {
+        unsubscribe();
+        addLog('INFO', '事件订阅已取消');
+      }, 1000);
+    }
+    
+    // 页面加载完成后检查模块
+    window.addEventListener('DOMContentLoaded', () => {
+      setTimeout(checkModules, 500);
+    });
+  </script>
+</body>
+</html>

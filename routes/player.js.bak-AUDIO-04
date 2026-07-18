@@ -117,75 +117,6 @@ export default function (app, ctx) {
     return c.html(html);
   });
 
-  // ── 新增模块路由 ──
-  app.get("/widget/theme-registry.js", (c) => {
-    const filePath = path.join(__dirname, "theme-registry.js");
-    if (!fs.existsSync(filePath)) return c.text("Not found", 404);
-    const content = fs.readFileSync(filePath, "utf-8");
-    c.header("Content-Type", "application/javascript");
-    return c.body(content);
-  });
-
-  app.get("/widget/settings-panel.js", (c) => {
-    const filePath = path.join(__dirname, "settings-panel.js");
-    if (!fs.existsSync(filePath)) return c.text("Not found", 404);
-    const content = fs.readFileSync(filePath, "utf-8");
-    c.header("Content-Type", "application/javascript");
-    return c.body(content);
-  });
-
-  app.get("/widget/ai-theme-generator.js", (c) => {
-    const filePath = path.join(__dirname, "ai-theme-generator.js");
-    if (!fs.existsSync(filePath)) return c.text("Not found", 404);
-    const content = fs.readFileSync(filePath, "utf-8");
-    c.header("Content-Type", "application/javascript");
-    return c.body(content);
-  });
-
-  app.get("/widget/stage-contract.js", (c) => {
-    const filePath = path.join(__dirname, "stage-contract.js");
-    if (!fs.existsSync(filePath)) return c.text("Not found", 404);
-    const content = fs.readFileSync(filePath, "utf-8");
-    c.header("Content-Type", "application/javascript");
-    return c.body(content);
-  });
-
-  app.get("/widget/integration.js", (c) => {
-    const filePath = path.join(__dirname, "integration.js");
-    if (!fs.existsSync(filePath)) return c.text("Not found", 404);
-    const content = fs.readFileSync(filePath, "utf-8");
-    c.header("Content-Type", "application/javascript");
-    return c.body(content);
-  });
-  // ═══════════════════════════════════════════════════════════
-  // AUDIO-09: 歌词舞台静态资源路由
-  // ═══════════════════════════════════════════════════════════
-  function serveStaticFile(filename, contentType) {
-    return (c) => {
-      const filePath = path.join(__dirname, filename);
-      if (!fs.existsSync(filePath)) return c.text("Not found", 404);
-      const content = fs.readFileSync(filePath, "utf-8");
-      c.header("Content-Type", contentType || "text/plain");
-      c.header("Cache-Control", "no-cache, no-store, must-revalidate");
-      return c.body(content);
-    };
-  }
-
-  app.get("/widget/lyrics-stage", (c) => {
-    const hanaCss = c.req.query("hana-css") || "";
-    const token = c.req.query("token") || "";
-    const standalone = c.req.query("standalone") || "";
-    const html = getLyricsStageHTML(pluginId, hanaCss, token, standalone);
-    c.header("Cache-Control", "no-cache, no-store, must-revalidate");
-    return c.html(html);
-  });
-
-  app.get("/widget/assets/lyrics/js/lrc-parser.js", serveStaticFile("assets/lyrics/js/lrc-parser.js", "application/javascript"));
-  app.get("/widget/assets/lyrics/js/bus-client.js", serveStaticFile("assets/lyrics/js/bus-client.js", "application/javascript"));
-  app.get("/widget/assets/lyrics/js/renderer.js", serveStaticFile("assets/lyrics/js/renderer.js", "application/javascript"));
-  app.get("/widget/assets/lyrics/js/scroll-manager.js", serveStaticFile("assets/lyrics/js/scroll-manager.js", "application/javascript"));
-  app.get("/widget/assets/lyrics/js/stage-app.js", serveStaticFile("assets/lyrics/js/stage-app.js", "application/javascript"));
-
   // ── 对话内嵌播放器 ──
   app.get("/play", (c) => {
     const filename = c.req.query("file");
@@ -1096,11 +1027,6 @@ body {
   font-size: 48px;
   margin-bottom: 12px;
 }
-.player-popup .np-cover-ring {
-  inset: -6px;
-  width: calc(100% + 12px);
-  height: calc(100% + 12px);
-}
 .player-popup .np-info {
   align-items: center;
 }
@@ -1151,37 +1077,19 @@ body {
   padding:6px 14px 8px;
 }
 .np-cover {
-  width:36px; height:36px; border-radius:50%;
+  width:36px; height:36px; border-radius:8px;
   background:linear-gradient(135deg, var(--accent), #c48454);
   display:flex; align-items:center; justify-content:center;
   font-size:16px; flex-shrink:0;
   box-shadow: 0 4px 14px var(--accent-glow);
   position:relative; overflow:hidden;
-  transition: opacity 0.2s, transform 0.2s;
 }
 .np-cover::after {
   content:''; position:absolute; inset:0;
   background:linear-gradient(135deg, rgba(255,255,255,0.15), transparent 50%);
-  pointer-events:none;
 }
-.np-cover.spinning { animation: spinCover 20s linear infinite; }
-.np-cover.frozen { animation-play-state: paused; }
-.np-cover.loading { animation: breatheRing 1.5s ease-in-out infinite; }
-.np-cover.error { animation: none; opacity: 0.5; }
-@keyframes spinCover { to { transform: rotate(360deg); } }
-@keyframes breatheRing {
-  0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow); }
-  50% { box-shadow: 0 0 0 6px transparent; }
-}
-/* Cover switch-track fade */
-.np-cover.switching {
-  animation: coverSwitch 200ms ease;
-}
-@keyframes coverSwitch {
-  0% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.3; transform: scale(0.88); }
-  100% { opacity: 1; transform: scale(1); }
-}
+.np-cover.spinning { animation: spin 8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .np-info { min-width:0; flex:1; }
 .np-name {
   font-weight:500; font-size:13px;
@@ -1191,33 +1099,6 @@ body {
 .np-mode {
   font-size:11px; color:var(--text-dim);
   margin-top:1px;
-}
-
-/* ── Circular Cover Progress Ring ── */
-.np-cover-ring {
-  position: absolute;
-  inset: -4px;
-  width: calc(100% + 8px);
-  height: calc(100% + 8px);
-  pointer-events: none;
-  transform: rotate(-90deg);
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-.np-cover-ring.visible { opacity: 1; }
-.np-cover-ring circle {
-  fill: none;
-  stroke-width: 2;
-}
-.ring-bg {
-  stroke: var(--surface);
-  opacity: 0.5;
-}
-.ring-progress {
-  stroke: var(--accent);
-  stroke-linecap: round;
-  transition: stroke-dashoffset 0.15s linear;
-  filter: drop-shadow(0 0 3px var(--accent-glow));
 }
 
 /* ── Progress ── */
@@ -1981,17 +1862,7 @@ body {
 
 <!-- 正在播放区 -->
 <div class="now-playing-section">
-  <div class="np-cover" id="npCover">
-  <svg class="np-cover-ring" viewBox="0 0 120 120" id="coverRing">
-    <circle class="ring-bg" cx="60" cy="60" r="56"/>
-    <circle class="ring-progress" cx="60" cy="60" r="56"
-      stroke-dasharray="351.86"
-      stroke-dashoffset="351.86"
-      id="ringProgress"/>
-  </svg>
-  <span class="error-dot"></span>
-  ♫
-</div>
+  <div class="np-cover" id="npCover">♫</div>
   <div class="np-info">
     <div class="np-name" id="trackName">播放器</div>
     <div class="np-mode" id="trackMode">准备就绪</div>
@@ -2213,13 +2084,6 @@ body {
 
 <audio id="audio" preload="auto" referrerpolicy="no-referrer"></audio>
 
-<!-- 新增模块 -->
-<script src="${apiBase}/widget/theme-registry.js"></script>
-<script src="${apiBase}/widget/settings-panel.js"></script>
-<script src="${apiBase}/widget/ai-theme-generator.js"></script>
-<script src="${apiBase}/widget/stage-contract.js"></script>
-<script src="${apiBase}/widget/integration.js"></script>
-
 <script>
 (function(){
 "use strict";
@@ -2263,10 +2127,6 @@ if (TOKEN) {
 
 const audio = document.getElementById('audio');
 const npCover = document.getElementById('npCover');
-const coverRing = document.getElementById('coverRing');
-const ringProgress = document.getElementById('ringProgress');
-const RING_CIRCUMFERENCE = 2 * Math.PI * 56; // ~351.86
-let _coverSwitching = false;
 // 封面加载失败回退
 function _coverFallback(img) { img.parentElement.textContent='♫'; }
 // 弹窗遮罩层
@@ -2277,17 +2137,6 @@ function _dialogBackdrop() {
   return bd;
 }
 var trks = [], idx = 0, playing = false, playMode = 0, prevVol = 0.8, _batchLoading = false, _firstRender = true;
-// Low-load mode: disable continuous rotation & volume response
-var _lowLoadMode = localStorage.getItem('hanako_audio_lowload') === '1';
-// Reduced motion preference
-var _reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-// Apply low-load / reduced motion: disable spinning
-if (_lowLoadMode || _reducedMotion) {
-  // Override spinning CSS to not animate
-  var _noSpinStyle = document.createElement('style');
-  _noSpinStyle.textContent = '.np-cover.spinning { animation: none !important; }';
-  document.head.appendChild(_noSpinStyle);
-}
 // playMode: 0=顺序, 1=单曲循环, 2=随机, 3=列表循环
 
 // ── Server-side playlist sync ──
@@ -2374,18 +2223,11 @@ function load(i) {
     document.getElementById('trackName').textContent='播放器';
     document.getElementById('trackMode').textContent='准备就绪';
     npCover.innerHTML='♫';
-    npCover.classList.remove('spinning','frozen','loading','error','has-error');
-    if(coverRing) coverRing.classList.remove('visible');
+    npCover.classList.remove('spinning');
     updateFavBtn();
     return;
   }
   idx=i; const t=trks[i];
-  // Cover switch animation (only when both old and new have URL)
-  if (!_coverSwitching && idx > 0 && trks[idx-1] && trks[idx-1].url && t.url) {
-    _coverSwitching = true;
-    npCover.classList.add('switching');
-    setTimeout(function(){ npCover.classList.remove('switching'); _coverSwitching = false; }, 200);
-  }
   document.getElementById('trackName').textContent=t.name;
   document.getElementById('trackMode').textContent=t.mode||'';
   // 封面更新
@@ -2394,9 +2236,6 @@ function load(i) {
   } else {
     npCover.innerHTML = '♫';
   }
-  // Show progress ring
-  if(coverRing) coverRing.classList.add('visible');
-  if(ringProgress) { ringProgress.style.strokeDasharray = RING_CIRCUMFERENCE; ringProgress.style.strokeDashoffset = RING_CIRCUMFERENCE; }
   updateFavBtn();
   if(t.url) { audio.src=tok(t.url); audio.load(); audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)}); }
   // 歌词自动搜索：有 URL 但没有 LRC URL 时自动搜索歌词
@@ -2414,8 +2253,6 @@ function load(i) {
   }
   else if(t.searchKey) {
     // 无 URL 但有搜索关键词 → 自动搜索完整音频
-    npCover.classList.add('loading');
-    npCover.classList.remove('spinning','frozen');
     showToast('搜索 '+t.name+'…', 1500);
     var sv = t.searchServer || 'netease';
     var _fallbackServers = ['netease','tencent','kugou','kuwo','baidu'].filter(function(s){return s!==sv;});
@@ -2441,7 +2278,6 @@ function load(i) {
       });
       return chain;
     }).then(function(hit){
-      npCover.classList.remove('loading');
       if(!hit || !hit.url) { showToast('所有源均未找到: '+t.name, 2500); return; }
       t.name = hit.title || t.name;
       t.lrcUrl = hit.lrc || '';
@@ -2455,10 +2291,7 @@ function load(i) {
       audio.src = t.url;
       audio.load();
       audio.play().catch(function(e){ if(e.name!=='AbortError') console.warn(e); });
-    }).catch(function(e){
-      npCover.classList.remove('loading');
-      showToast(e.name==='TimeoutError'?'搜索超时: '+t.name:'搜索失败: '+t.name, 2500);
-    });
+    }).catch(function(e){ showToast(e.name==='TimeoutError'?'搜索超时: '+t.name:'搜索失败: '+t.name, 2500); });
   }
   npCover.classList.add('spinning');
   tryReadMetadata(audio, t);
@@ -2467,17 +2300,8 @@ function load(i) {
 
 function toggle() {
   if (!trks.length) return;
-  if (audio.paused) {
-    audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});
-    playing=true;
-    npCover.classList.remove('frozen');
-    npCover.classList.add('spinning');
-  } else {
-    audio.pause();
-    playing=false;
-    npCover.classList.remove('spinning');
-    npCover.classList.add('frozen');
-  }
+  if (audio.paused) { audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)}); playing=true; npCover.classList.add('spinning'); }
+  else { audio.pause(); playing=false; npCover.classList.remove('spinning'); }
   document.getElementById('playIcon').style.display=playing?'none':'block';
   document.getElementById('pauseIcon').style.display=playing?'block':'none';
 }
@@ -2956,11 +2780,6 @@ audio.addEventListener('timeupdate',function(){
   if(audio.duration){
     document.getElementById('totalTime').textContent=fmt(audio.duration);
     document.getElementById('progressFill').style.width=(audio.currentTime/audio.duration*100)+'%';
-    // Circular cover progress ring
-    if(ringProgress && audio.duration > 0) {
-      var offset = RING_CIRCUMFERENCE * (1 - audio.currentTime / audio.duration);
-      ringProgress.style.strokeDashoffset = offset;
-    }
     if(trks[idx])trks[idx].dur=audio.duration;
   }
 });
@@ -2973,41 +2792,18 @@ audio.addEventListener('ended',next);
 audio.addEventListener('error',function(){
   if(trks[idx] && trks[idx].url){
     var t=trks[idx];
+    // Meting URL 失败 → 尝试用 searchKey 重新搜索
     if(t.searchKey){
       showToast('播放失败，重新搜索…',1500);
-      t.url='';
-      npCover.classList.remove('spinning','frozen');
+      t.url=''; // 清空旧 URL，触发 searchKey 路径
       load(idx);
     } else {
       showToast('播放失败: '+t.name,2000);
-      npCover.classList.add('error','has-error');
-      npCover.classList.remove('spinning','frozen','loading');
-      if(coverRing) coverRing.classList.remove('visible');
     }
-  } else if(trks[idx] && trks[idx].searchKey){
-    // searchKey 类型搜索失败 → 重试
-    showToast('搜索失败，重试中…',1500);
-    npCover.classList.remove('spinning','frozen');
-    load(idx);
-  } else {
-    npCover.classList.add('error','has-error');
-    npCover.classList.remove('spinning','frozen');
   }
 });
-audio.addEventListener('play',function(){
-  playing=true;
-  npCover.classList.remove('frozen');
-  npCover.classList.add('spinning');
-  document.getElementById('playIcon').style.display='none';
-  document.getElementById('pauseIcon').style.display='block';
-});
-audio.addEventListener('pause',function(){
-  playing=false;
-  npCover.classList.remove('spinning');
-  npCover.classList.add('frozen');
-  document.getElementById('playIcon').style.display='block';
-  document.getElementById('pauseIcon').style.display='none';
-});
+audio.addEventListener('play',function(){playing=true;npCover.classList.add('spinning');document.getElementById('playIcon').style.display='none';document.getElementById('pauseIcon').style.display='block';});
+audio.addEventListener('pause',function(){playing=false;npCover.classList.remove('spinning');document.getElementById('playIcon').style.display='block';document.getElementById('pauseIcon').style.display='none';});
 
 function addTrack(name,url,mode,group,lrcUrl,pic) {
   // 去重：url 非空时按裸 url（去掉 query）匹配，url 为空时按 name 匹配
@@ -4128,130 +3924,11 @@ try {
   }
 } catch(e) {}
 
-
-// ═══════════════════════════════════════════════════════════
-// AUDIO-09: 事件注入 — 播放器核心 → 事件总线 → 歌词舞台
-// ═══════════════════════════════════════════════════════════
-
-(function injectAudioEvents() {
-  if (!window.audioEventBus) return;
-
-  // 注入点 1: 进度更新（节流 250ms）
-  var _lastProgressEmit = 0;
-  audio.addEventListener('timeupdate', function() {
-    var now = Date.now();
-    if (now - _lastProgressEmit < 250) return;
-    _lastProgressEmit = now;
-    window.audioEventBus.emitProgress(audio.currentTime, audio.duration || 0, !audio.paused);
-  });
-
-  // 注入点 2: 播放/暂停切换
-  var origToggle = toggle;
-  toggle = function() {
-    origToggle();
-    window.audioEventBus.emitPlayState(!audio.paused);
-  };
-
-  // 注入点 3: 主题同步
-  (function syncTheme() {
-    try {
-      var pDoc = window.parent.document;
-      var root = pDoc.documentElement;
-      var theme = root.getAttribute('data-theme') || 'dark';
-      window.audioEventBus.emitTheme(theme);
-      var observer = new MutationObserver(function() {
-        var t = root.getAttribute('data-theme') || 'dark';
-        window.audioEventBus.emitTheme(t);
-      });
-      observer.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
-    } catch(e) {}
-  })();
-
-})();parent.postMessage({type:'ready'},'*');
+parent.postMessage({type:'ready'},'*');
 if (window.ResizeObserver) { new ResizeObserver(notifySize).observe(document.body); }
 setTimeout(notifySize, 300);
 })();
 </script>
 </body>
 </html>`;
-
-// ═══════════════════════════════════════════════════════════
-// AUDIO-09: 歌词舞台 HTML 生成器
-// ═══════════════════════════════════════════════════════════
-function getLyricsStageHTML(pluginId, hanaCss, token, standalone) {
-  const apiBase = `/api/plugins/${pluginId}`;
-  return `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>歌词舞台</title>
-${hanaCss ? \`<link rel="stylesheet" href="\${esc(hanaCss)}">\` : ""}
-<style>
-:root, [data-theme="dark"] {
-  --ls-bg: transparent;
-  --ls-text: #e4e4e7;
-  --ls-text-dim: rgba(255,255,255,0.45);
-  --ls-text-faint: rgba(255,255,255,0.25);
-  --ls-accent: #d49a6a;
-  --ls-accent-glow: rgba(212,154,106,0.35);
-}
-[data-theme="light"] {
-  --ls-bg: transparent;
-  --ls-text: #3d3320;
-  --ls-text-dim: rgba(0,0,0,0.4);
-  --ls-text-faint: rgba(0,0,0,0.22);
-  --ls-accent: #c48454;
-  --ls-accent-glow: rgba(196,132,84,0.25);
-}
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{height:100%;overflow:hidden;background:transparent;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
-.stage-container{display:flex;flex-direction:column;height:100%;overflow:hidden;padding:8px 12px;--ls-base-size:clamp(11px,2.2vw,15px)}
-.stage-header{display:flex;align-items:center;gap:6px;padding:4px 0 6px;flex-shrink:0}
-.track-name{font-size:12px;font-weight:600;color:var(--ls-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
-.track-mode{font-size:9px;color:var(--ls-text-faint);padding:1px 5px;flex-shrink:0}
-.translate-toggle{background:none;border:1px solid var(--ls-text-faint);border-radius:4px;color:var(--ls-text-faint);font-size:9px;padding:1px 5px;cursor:pointer;transition:all .2s;flex-shrink:0;font-family:inherit}
-.translate-toggle:hover{border-color:var(--ls-accent);color:var(--ls-accent)}
-.translate-toggle.active{background:var(--ls-accent);border-color:var(--ls-accent);color:#fff}
-.stage-body{flex:1;min-height:0;overflow-y:auto;scroll-behavior:smooth}
-.stage-body::-webkit-scrollbar{width:4px}
-.stage-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:2px}
-[data-theme="light"] .stage-body::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15)}
-.lyric-line{font-size:var(--ls-base-size,13px);color:var(--ls-text-dim);line-height:1.9;text-align:center;padding:3px 0;transition:color .3s,font-size .3s,opacity .3s;opacity:.5;word-break:break-all}
-.lyric-line.active{color:var(--ls-accent);font-size:calc(var(--ls-base-size,13px)*1.15);font-weight:600;opacity:1;text-shadow:0 0 12px var(--ls-accent-glow)}
-.lyric-line:hover{color:var(--ls-text);opacity:.8}
-.lyric-line--translate{font-size:calc(var(--ls-base-size,13px)*.82);color:var(--ls-text-faint);line-height:1.6;margin-top:-2px;transition:opacity .25s}
-.lyric-line--translate.hidden{display:none}
-.lyric-placeholder{text-align:center;color:var(--ls-text-faint);font-size:11px;padding:40px 0}
-.lyric-error{text-align:center;color:#ef4444;font-size:11px;padding:20px 0}
-.stage-footer{display:flex;justify-content:center;padding:4px 0 2px;flex-shrink:0}
-.progress-text{font-size:9px;color:var(--ls-text-faint);font-variant-numeric:tabular-nums;letter-spacing:.5px}
-@media(max-width:180px){.stage-container{--ls-base-size:10px}.lyric-line.active{font-size:calc(var(--ls-base-size,10px)*1.1)}.translate-toggle{display:none}}
-@media(min-width:501px){.stage-container{--ls-base-size:15px}}
-@media(min-width:801px){.stage-container{--ls-base-size:17px}}
-@media(prefers-reduced-motion:reduce){.lyric-line{transition:color .1s}.stage-body{scroll-behavior:auto}}
-</style>
-</head>
-<body data-theme="dark">
-<div class="stage-container">
-  <div class="stage-header">
-    <span class="track-name" id="trackName">等待曲目...</span>
-    <span class="track-mode" id="trackMode"></span>
-    <button class="translate-toggle active" id="translateToggle" title="切换翻译">译</button>
-  </div>
-  <div class="stage-body" id="lyricBody">
-    <div class="lyric-placeholder" id="placeholder">暂无歌词</div>
-  </div>
-  <div class="stage-footer">
-    <span class="progress-text" id="progressText">0:00 / 0:00</span>
-  </div>
-</div>
-<script src="\${apiBase}/widget/assets/lyrics/js/lrc-parser.js"></script>
-<script src="\${apiBase}/widget/assets/lyrics/js/bus-client.js"></script>
-<script src="\${apiBase}/widget/assets/lyrics/js/renderer.js"></script>
-<script src="\${apiBase}/widget/assets/lyrics/js/scroll-manager.js"></script>
-<script src="\${apiBase}/widget/assets/lyrics/js/stage-app.js"></script>
-</body>
-</html>`;
-}
 }
