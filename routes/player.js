@@ -3357,17 +3357,23 @@ class ThemeParameterGenerator {
         break;
     }
     
-    // 根据亮度调整背景色
+    // 根据亮度和主题选背景色
     const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+    const primaryL = this.hexToHsl(adjustedPrimary)?.l ?? 0.5;
     let background, text;
     if (currentTheme === 'light') {
-      // 亮色主题：背景应是高亮度、低饱和的封面色调
-      background = this.lighten(adjustedPrimary, 0.92);
-      text = '#3d3320';
+      // 亮色主题：背景提亮到高亮度、低饱和的封面色调
+      background = this.lighten(adjustedPrimary, 0.94);
+      // 根据背景亮度选文字色：背景亮→深色文字
+      text = primaryL > 0.5 ? '#1a1a1a' : '#3d3320';
     } else {
-      // 暗色主题：背景应是低亮度、高饱和的封面色调
-      background = brightness > 0.5 ? '#1a1a1a' : '#0a0a0a';
-      text = '#e0e0e0';
+      // 暗色主题：背景压暗到低亮度
+      background = this.lighten(adjustedPrimary, primaryL > 0.5 ? 0.12 : 0.06);
+      // 背景暗→浅色文字
+      text = primaryL > 0.4 ? '#1a1a1a' : '#f0f0f0';
+      // 对比度保护：确保对比度>=4.5
+      const cr = this.contrastRatio(background, text);
+      if (cr < 4.5) text = cr > 3 ? (text === '#f0f0f0' ? '#cccccc' : '#222222') : '#ffffff';
     }
     
     return {
@@ -3508,16 +3514,79 @@ class ThemeParameterGenerator {
   }
 
   /**
-   * 将颜色提亮到指定亮度 (0~1)
+   * 将颜色提亮到指定亮度 (0~1)，保留色相和饱和度
    */
   lighten(hex, targetLightness) {
+    const hsl = this.hexToHsl(hex);
+    if (!hsl) return hex;
+    hsl.l = targetLightness;
+    return this.hslToHex(hsl.h, hsl.s, hsl.l);
+  }
+
+  /**
+   * hex → HSL
+   */
+  hexToHsl(hex) {
     const rgb = this.hexToRgb(hex);
-    if (!rgb) return hex;
-    const factor = targetLightness / Math.max(rgb.l, 0.01);
-    const r = Math.min(255, Math.round(rgb.r * factor + (1 - factor) * 255));
-    const g = Math.min(255, Math.round(rgb.g * factor + (1 - factor) * 255));
-    const b = Math.min(255, Math.round(rgb.b * factor + (1 - factor) * 255));
-    return this.rgbToHex(r, g, b);
+    if (!rgb) return null;
+    const r = rgb.r / 255, g = rgb.g / 255, b = rgb.b / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0, s = 0;
+    const l = (max + min) / 2;
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      switch (max) {
+        case r: h = ((g - b) / d + (g < b ? 6 : 0)); break;
+        case g: h = ((b - r) / d + 2); break;
+        case b: h = ((r - g) / d + 4); break;
+      }
+      h /= 6;
+    }
+    return { h, s, l };
+  }
+
+  /**
+   * HSL → hex
+   */
+  hslToHex(h, s, l) {
+    let r, g, b;
+    if (s === 0) {
+      r = g = b = l;
+    } else {
+      const hue2rgb = (p, q, t) => {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+      };
+      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      const p = 2 * l - q;
+      r = hue2rgb(p, q, h + 1/3);
+      g = hue2rgb(p, q, h);
+      b = hue2rgb(p, q, h - 1/3);
+    }
+    return this.rgbToHex(Math.round(r * 255), Math.round(g * 255), Math.round(b * 255));
+  }
+
+  /**
+   * WCAG 对比度计算
+   */
+  contrastRatio(hex1, hex2) {
+    const lum = (hex) => {
+      const rgb = this.hexToRgb(hex);
+      if (!rgb) return 0;
+      const c = [rgb.r, rgb.g, rgb.b].map(v => {
+        v /= 255;
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+      });
+      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    };
+    const l1 = lum(hex1), l2 = lum(hex2);
+    const lighter = Math.max(l1, l2), darker = Math.min(l1, l2);
+    return (lighter + 0.05) / (darker + 0.05);
   }
 
   hexToRgb(hex) {
@@ -6547,19 +6616,39 @@ function doPlaylistImport(){
     return result;
   }
 
-  // 副歌检测
+  // 副歌检测：连续 2-4 行作为块重复出现
   function detectChorus(data) {
-    var countMap = {}, chorusSet = new Set();
-    data.forEach(function(l) { var k = l.text.trim().toLowerCase(); if (!k) return; countMap[k] = (countMap[k]||0)+1; });
-    Object.keys(countMap).forEach(function(k) { if (countMap[k] >= 2) chorusSet.add(k); });
+    var chorusSet = new Set();
+    if (data.length < 4) return chorusSet;
+    function lineKey(line) { return line.text.trim().toLowerCase(); }
+    for (var blockSize = 2; blockSize <= 4; blockSize++) {
+      var seen = {};
+      for (var i = 0; i <= data.length - blockSize; i++) {
+        var block = [];
+        for (var j = 0; j < blockSize; j++) block.push(lineKey(data[i + j]));
+        if (block.every(function(k) { return !k; })) continue;
+        var key = block.join('||');
+        seen[key] = seen[key] || [];
+        seen[key].push(i);
+      }
+      Object.keys(seen).forEach(function(k) {
+        if (seen[k].length >= 2) {
+          seen[k].forEach(function(startIdx) {
+            for (var j = 0; j < blockSize; j++) {
+              var idx = startIdx + j;
+              if (idx < data.length && lineKey(data[idx])) chorusSet.add(idx);
+            }
+          });
+        }
+      });
+    }
     return chorusSet;
   }
   function renderLrc(){
     if(!lrcData.length){ lyricBody.innerHTML='<div class="lyric-line" style="color:var(--text-faint);padding:8px 0">暂无歌词</div>'; return; }
     var chorusSet = detectChorus(lrcData);
     lyricBody.innerHTML=lrcData.map(function(l,i){
-      var isChorus = chorusSet.has(l.text.trim().toLowerCase());
-      var cls = isChorus ? 'lyric-line chorus' : 'lyric-line';
+      var cls = chorusSet.has(i) ? 'lyric-line chorus' : 'lyric-line';
       return '<div class="'+cls+'" data-lrc-idx="'+i+'">'+esc(l.text)+'</div>';
     }).join('');
   }
