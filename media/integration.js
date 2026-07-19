@@ -46,7 +46,7 @@ function initAIThemeGenerator() {
   console.log('[AI Theme] Initialized, enabled:', window.aiThemeGenerator.enabled);
 }
 
-// 为当前曲目生成主题
+// 为当前曲目生成主题并应用
 async function generateThemeForCurrentTrack() {
   if (!window.aiThemeGenerator || !window.audioStage) return;
   
@@ -56,11 +56,40 @@ async function generateThemeForCurrentTrack() {
   try {
     const theme = await window.aiThemeGenerator.generateForTrack(currentTrack);
     console.log('[AI Theme] Generated for track:', currentTrack.title);
+    
+    // 应用主题到CSS变量
+    if (theme && theme.colors) {
+      applyThemeToCSS(theme);
+    }
+    
     return theme;
   } catch (e) {
     console.warn('[AI Theme] Failed to generate:', e);
     return null;
   }
+}
+
+// 应用主题颜色到CSS变量
+function applyThemeToCSS(theme) {
+  if (!theme || !theme.colors) return;
+  
+  const root = document.documentElement;
+  const { colors, layout, animation } = theme;
+  
+  // 应用颜色
+  if (colors.primary) root.style.setProperty('--accent', colors.primary);
+  if (colors.secondary) root.style.setProperty('--accent-hover', colors.secondary);
+  if (colors.accent) root.style.setProperty('--accent-glow', colors.accent + '40');
+  if (colors.background) root.style.setProperty('--bg', colors.background);
+  if (colors.text) root.style.setProperty('--text', colors.text);
+  if (colors.highlight) root.style.setProperty('--accent-soft', colors.highlight + '12');
+  
+  // 应用布局参数
+  if (layout && layout.fontSize) {
+    root.style.setProperty('--font-base', layout.fontSize + 'px');
+  }
+  
+  console.log('[AI Theme] Applied to CSS:', colors.primary);
 }
 
 // ═══════════════════════════════════════════════════════════
