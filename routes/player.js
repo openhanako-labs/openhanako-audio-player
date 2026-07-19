@@ -4891,6 +4891,10 @@ async function generateThemeForCurrentTrack() {
   if (!currentTrack) return;
   
   try {
+    // 禁用缓存：每次切歌都重新生成，避免同封面歌曲拿到同一主题
+    if (window.aiThemeGenerator.cache) window.aiThemeGenerator.cache.clear();
+    if (window.aiThemeGenerator.themePersistence) window.aiThemeGenerator.themePersistence.clear();
+    
     const theme = await window.aiThemeGenerator.generateForTrack(currentTrack);
     console.log('[AI Theme] Generated for track:', currentTrack.title);
     
@@ -4906,48 +4910,95 @@ async function generateThemeForCurrentTrack() {
   }
 }
 
-// 应用主题颜色到CSS变量
+// 应用主题颜色到全部UI变量
 function applyThemeToCSS(theme) {
   if (!theme || !theme.colors) return;
-  
+
   const root = document.documentElement;
   const { colors, layout, animation } = theme;
-  
-  // 应用颜色
-  if (colors.primary) root.style.setProperty('--accent', colors.primary);
-  if (colors.secondary) root.style.setProperty('--accent-hover', colors.secondary);
-  if (colors.accent) root.style.setProperty('--accent-glow', colors.accent + '40');
-  if (colors.background) root.style.setProperty('--bg', colors.background);
-  if (colors.text) root.style.setProperty('--text', colors.text);
-  if (colors.highlight) root.style.setProperty('--accent-soft', colors.highlight + '12');
-  
-  // 应用歌词颜色（跟封面联动）
+  const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+
+  // 计算主色亮度（用于调透明度）
+  const primaryHex = colors.primary || '#d49a6a';
+  const primaryL = (() => {
+    const m = primaryHex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+    if (!m) return 0.5;
+    const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  })();
+
+  // 颜色混合助手
+  const mixColors = (h1, h2, ratio) => {
+    const m1 = h1.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+    const m2 = h2.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+    if (!m1 || !m2) return h1;
+    const r = Math.round(parseInt(m1[1],16)*(1-ratio) + parseInt(m2[1],16)*ratio);
+    const g = Math.round(parseInt(m1[2],16)*(1-ratio) + parseInt(m2[2],16)*ratio);
+    const b = Math.round(parseInt(m1[3],16)*(1-ratio) + parseInt(m2[3],16)*ratio);
+    return '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('');
+  };
+
+  // 1. Accent 主题色族
   if (colors.primary) {
-    root.style.setProperty('--lyric-color', colors.primary + '80');  // 普通行：主色半透明
-    root.style.setProperty('--lyric-active-color', colors.primary);  // 当前行：主色
-    if (colors.accent) {
-      root.style.setProperty('--lyric-chorus-color', colors.accent);  // 副歌行：强调色
-    }
+    root.style.setProperty('--accent', colors.primary);
+    root.style.setProperty('--accent-hover', colors.secondary || colors.primary);
+    root.style.setProperty('--accent-glow', colors.primary + '60');
+    root.style.setProperty('--accent-soft', colors.primary + '20');
   }
-  
-  // 应用布局参数
-  if (layout && layout.fontSize) {
-    root.style.setProperty('--font-base', layout.fontSize + 'px');
+
+  // 2. 背景与表层色（保留 data-theme 的明暗方向，只混入少量封面色调）
+  if (currentTheme === 'dark') {
+    // 暗色主题：背景在 #161618 和 #1f1f24 之间，主色亮则背景偏色一点
+    root.style.setProperty('--bg', mixColors('#161618', colors.primary || '#161618', 0.06 + primaryL * 0.04));
+    root.style.setProperty('--card-bg', mixColors('#1e1e22', colors.primary || '#1e1e22', 0.08 + primaryL * 0.05));
+    // surface/border：基于主色亮度调透明度，让边界在深背景下始终可见
+    const dim = 0.9 - primaryL * 0.3; // 主色越亮，不透明度越低
+    root.style.setProperty('--surface', `rgba(255,255,255,${(0.03 + dim*0.04).toFixed(3)})`);
+    root.style.setProperty('--surface-hover', `rgba(255,255,255,${(0.06 + dim*0.06).toFixed(3)})`);
+    root.style.setProperty('--surface-active', `rgba(255,255,255,${(0.08 + dim*0.08).toFixed(3)})`);
+    root.style.setProperty('--border', `rgba(255,255,255,${(0.08 + dim*0.06).toFixed(3)})`);
+    root.style.setProperty('--border-strong', `rgba(255,255,255,${(0.14 + dim*0.10).toFixed(3)})`);
+    // 文字：浅色
+    root.style.setProperty('--text', '#e4e4e7');
+    root.style.setProperty('--text-dim', `rgba(255,255,255,${(0.40 + dim*0.15).toFixed(2)})`);
+    root.style.setProperty('--text-faint', `rgba(255,255,255,${(0.25 + dim*0.10).toFixed(2)})`);
+  } else {
+    // 亮色主题：背景在 #faf5eb 和 #fff 之间
+    root.style.setProperty('--bg', mixColors('#faf5eb', colors.primary || '#faf5eb', 0.04 + primaryL * 0.06));
+    root.style.setProperty('--card-bg', '#ffffff');
+    const dim = 0.7 + primaryL * 0.3;
+    root.style.setProperty('--surface', `rgba(0,0,0,${(0.03 + dim*0.04).toFixed(3)})`);
+    root.style.setProperty('--surface-hover', `rgba(0,0,0,${(0.05 + dim*0.06).toFixed(3)})`);
+    root.style.setProperty('--surface-active', `rgba(0,0,0,${(0.08 + dim*0.08).toFixed(3)})`);
+    root.style.setProperty('--border', `rgba(0,0,0,${(0.08 + dim*0.06).toFixed(3)})`);
+    root.style.setProperty('--border-strong', `rgba(0,0,0,${(0.14 + dim*0.10).toFixed(3)})`);
+    root.style.setProperty('--text', '#3d3320');
+    root.style.setProperty('--text-dim', `rgba(0,0,0,${(0.40 + dim*0.15).toFixed(2)})`);
+    root.style.setProperty('--text-faint', `rgba(0,0,0,${(0.25 + dim*0.10).toFixed(2)})`);
   }
-  
-  // 应用动效参数
+
+  // 3. 歌词颜色
+  if (colors.primary) {
+    root.style.setProperty('--lyric-color', colors.primary + '80');
+    root.style.setProperty('--lyric-active-color', colors.primary);
+    if (colors.accent) root.style.setProperty('--lyric-chorus-color', colors.accent);
+  }
+
+  // 4. 布局参数
+  if (layout && layout.fontSize) root.style.setProperty('--font-base', layout.fontSize + 'px');
+
+  // 5. 动效参数
   if (animation) {
     if (animation.speed) root.style.setProperty('--anim-speed', animation.speed);
     if (animation.glowIntensity !== undefined) root.style.setProperty('--anim-glow-intensity', animation.glowIntensity);
     if (animation.pulse !== undefined) root.style.setProperty('--anim-pulse', animation.pulse);
-    // 根据能量级别添加呼吸动画到封面
     const cover = document.getElementById('npCover');
     if (cover && animation.energy > 0.6) {
       cover.style.animation = 'breath ' + (2 / (animation.tempo || 1)) + 's ease-in-out infinite';
     }
   }
-  
-  console.log('[AI Theme] Applied to CSS:', colors.primary);
+
+  console.log('[AI Theme] Applied full palette, primary:', primaryHex, 'brightness:', primaryL.toFixed(2));
 }
 
 // ═══════════════════════════════════════════════════════════
