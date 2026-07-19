@@ -951,6 +951,12 @@ ${hanaCss ? `<link rel="stylesheet" href="${esc(hanaCss)}">` : ""}
   --font-base: 13px;
   --font-scale: 1;
   --fs-base: calc(var(--font-base) * var(--font-scale));
+  --lyric-color: var(--text-dim);
+  --lyric-active-color: var(--accent);
+  --lyric-chorus-color: var(--accent-glow);
+  --anim-speed: 1;
+  --anim-glow-intensity: 0;
+  --anim-pulse: 0;
 }
 [data-theme="light"] {
   --bg: #FFF8E7;
@@ -1093,6 +1099,8 @@ body {
 }
 .np-cover.spinning { animation: spin 8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes breath { 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.03); } }
+@keyframes pulse-glow { 0%,100%{ filter:brightness(1); } 50%{ filter:brightness(1.15); } }
 .np-info { min-width:0; flex:1; }
 .np-name {
   font-weight:500; font-size:13px;
@@ -1247,10 +1255,11 @@ body {
 }
 .lyric-body.open { max-height:220px; overflow-y:auto; }
 .lyric-line {
-  font-size:11.5px; color:var(--text-dim); line-height:1.8; text-align:center;
+  font-size:11.5px; color:var(--lyric-color, var(--text-dim)); line-height:1.8; text-align:center;
   transition:color 0.2s, font-size 0.2s;
 }
-.lyric-line.current { color:var(--accent); font-size:13px; font-weight:600; }
+.lyric-line.current { color:var(--lyric-active-color, var(--accent)); font-size:13px; font-weight:600; }
+.lyric-line.chorus { color:var(--lyric-chorus-color, var(--accent-glow)); font-weight:600; }
 .lyric-line:hover { color:var(--text); }
 .lyric-body::-webkit-scrollbar { width:6px; }
 .lyric-body::-webkit-scrollbar-track { background:transparent; }
@@ -3349,8 +3358,17 @@ class ThemeParameterGenerator {
     }
     
     // 根据亮度调整背景色
-    const background = brightness > 0.5 ? '#1a1a1a' : '#0a0a0a';
-    const text = brightness > 0.5 ? '#e0e0e0' : '#f0f0f0';
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+    let background, text;
+    if (currentTheme === 'light') {
+      // 亮色主题：背景应是高亮度、低饱和的封面色调
+      background = this.lighten(adjustedPrimary, 0.92);
+      text = '#3d3320';
+    } else {
+      // 暗色主题：背景应是低亮度、高饱和的封面色调
+      background = brightness > 0.5 ? '#1a1a1a' : '#0a0a0a';
+      text = '#e0e0e0';
+    }
     
     return {
       primary: adjustedPrimary,
@@ -3487,6 +3505,31 @@ class ThemeParameterGenerator {
   adjustSaturation(hex, amount) {
     // 简化实现，实际需要HSL转换
     return hex;
+  }
+
+  /**
+   * 将颜色提亮到指定亮度 (0~1)
+   */
+  lighten(hex, targetLightness) {
+    const rgb = this.hexToRgb(hex);
+    if (!rgb) return hex;
+    const factor = targetLightness / Math.max(rgb.l, 0.01);
+    const r = Math.min(255, Math.round(rgb.r * factor + (1 - factor) * 255));
+    const g = Math.min(255, Math.round(rgb.g * factor + (1 - factor) * 255));
+    const b = Math.min(255, Math.round(rgb.b * factor + (1 - factor) * 255));
+    return this.rgbToHex(r, g, b);
+  }
+
+  hexToRgb(hex) {
+    const m = hex.match(/^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i);
+    if (!m) return null;
+    const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
+    const l = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return { r, g, b, l };
+  }
+
+  rgbToHex(r, g, b) {
+    return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
   }
 }
 
@@ -4878,9 +4921,30 @@ function applyThemeToCSS(theme) {
   if (colors.text) root.style.setProperty('--text', colors.text);
   if (colors.highlight) root.style.setProperty('--accent-soft', colors.highlight + '12');
   
+  // 应用歌词颜色（跟封面联动）
+  if (colors.primary) {
+    root.style.setProperty('--lyric-color', colors.primary + '80');  // 普通行：主色半透明
+    root.style.setProperty('--lyric-active-color', colors.primary);  // 当前行：主色
+    if (colors.accent) {
+      root.style.setProperty('--lyric-chorus-color', colors.accent);  // 副歌行：强调色
+    }
+  }
+  
   // 应用布局参数
   if (layout && layout.fontSize) {
     root.style.setProperty('--font-base', layout.fontSize + 'px');
+  }
+  
+  // 应用动效参数
+  if (animation) {
+    if (animation.speed) root.style.setProperty('--anim-speed', animation.speed);
+    if (animation.glowIntensity !== undefined) root.style.setProperty('--anim-glow-intensity', animation.glowIntensity);
+    if (animation.pulse !== undefined) root.style.setProperty('--anim-pulse', animation.pulse);
+    // 根据能量级别添加呼吸动画到封面
+    const cover = document.getElementById('npCover');
+    if (cover && animation.energy > 0.6) {
+      cover.style.animation = 'breath ' + (2 / (animation.tempo || 1)) + 's ease-in-out infinite';
+    }
   }
   
   console.log('[AI Theme] Applied to CSS:', colors.primary);
@@ -5211,7 +5275,6 @@ function load(i) {
   idx=i; const t=trks[i];
   document.getElementById('trackName').textContent=t.name;
   document.getElementById('trackMode').textContent=t.mode||'';
-  // 暴露当前曲目信息供AI主题使用
   window._currentTrack = { title: t.name, artist: t.mode, cover: t.pic, lrcUrl: t.lrcUrl, source: 'music' };
   if (window.audioEventBus) {
     window.audioEventBus.setTrack(t.name, t.name);
@@ -6484,10 +6547,20 @@ function doPlaylistImport(){
     return result;
   }
 
+  // 副歌检测
+  function detectChorus(data) {
+    var countMap = {}, chorusSet = new Set();
+    data.forEach(function(l) { var k = l.text.trim().toLowerCase(); if (!k) return; countMap[k] = (countMap[k]||0)+1; });
+    Object.keys(countMap).forEach(function(k) { if (countMap[k] >= 2) chorusSet.add(k); });
+    return chorusSet;
+  }
   function renderLrc(){
     if(!lrcData.length){ lyricBody.innerHTML='<div class="lyric-line" style="color:var(--text-faint);padding:8px 0">暂无歌词</div>'; return; }
+    var chorusSet = detectChorus(lrcData);
     lyricBody.innerHTML=lrcData.map(function(l,i){
-      return '<div class="lyric-line" data-lrc-idx="'+i+'">'+esc(l.text)+'</div>';
+      var isChorus = chorusSet.has(l.text.trim().toLowerCase());
+      var cls = isChorus ? 'lyric-line chorus' : 'lyric-line';
+      return '<div class="'+cls+'" data-lrc-idx="'+i+'">'+esc(l.text)+'</div>';
     }).join('');
   }
 
@@ -6496,7 +6569,14 @@ function doPlaylistImport(){
     var idx=0;
     for(var i=0;i<lrcData.length;i++){ if(lrcData[i].time<=timeMs) idx=i; }
     var lines=lyricBody.querySelectorAll('.lyric-line');
-    lines.forEach(function(el,i){ el.classList.toggle('current',i===idx); });
+    lines.forEach(function(el,i){
+      el.classList.toggle('current',i===idx);
+      if (i === idx && el.classList.contains('chorus')) {
+        el.style.animation = 'pulse-glow 1.5s ease-in-out infinite';
+      } else {
+        el.style.animation = '';
+      }
+    });
     if(lines[idx]) lines[idx].scrollIntoView({block:'center',behavior:'smooth'});
   }
 

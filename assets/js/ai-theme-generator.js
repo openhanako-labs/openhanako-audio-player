@@ -447,8 +447,17 @@ class ThemeParameterGenerator {
     }
     
     // 根据亮度调整背景色
-    const background = brightness > 0.5 ? '#1a1a1a' : '#0a0a0a';
-    const text = brightness > 0.5 ? '#e0e0e0' : '#f0f0f0';
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+    let background, text;
+    if (currentTheme === 'light') {
+      // 亮色主题：背景应是高亮度、低饱和的封面色调
+      background = this.lighten(adjustedPrimary, 0.92);
+      text = '#3d3320';
+    } else {
+      // 暗色主题：背景应是低亮度、高饱和的封面色调
+      background = brightness > 0.5 ? '#1a1a1a' : '#0a0a0a';
+      text = '#e0e0e0';
+    }
     
     return {
       primary: adjustedPrimary,
@@ -585,6 +594,31 @@ class ThemeParameterGenerator {
   adjustSaturation(hex, amount) {
     // 简化实现，实际需要HSL转换
     return hex;
+  }
+
+  /**
+   * 将颜色提亮到指定亮度 (0~1)
+   */
+  lighten(hex, targetLightness) {
+    const rgb = this.hexToRgb(hex);
+    if (!rgb) return hex;
+    const factor = targetLightness / Math.max(rgb.l, 0.01);
+    const r = Math.min(255, Math.round(rgb.r * factor + (1 - factor) * 255));
+    const g = Math.min(255, Math.round(rgb.g * factor + (1 - factor) * 255));
+    const b = Math.min(255, Math.round(rgb.b * factor + (1 - factor) * 255));
+    return this.rgbToHex(r, g, b);
+  }
+
+  hexToRgb(hex) {
+    const m = hex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+    if (!m) return null;
+    const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
+    const l = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return { r, g, b, l };
+  }
+
+  rgbToHex(r, g, b) {
+    return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
   }
 }
 

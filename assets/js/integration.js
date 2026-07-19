@@ -85,9 +85,30 @@ function applyThemeToCSS(theme) {
   if (colors.text) root.style.setProperty('--text', colors.text);
   if (colors.highlight) root.style.setProperty('--accent-soft', colors.highlight + '12');
   
+  // 应用歌词颜色（跟封面联动）
+  if (colors.primary) {
+    root.style.setProperty('--lyric-color', colors.primary + '80');  // 普通行：主色半透明
+    root.style.setProperty('--lyric-active-color', colors.primary);  // 当前行：主色
+    if (colors.accent) {
+      root.style.setProperty('--lyric-chorus-color', colors.accent);  // 副歌行：强调色
+    }
+  }
+  
   // 应用布局参数
   if (layout && layout.fontSize) {
     root.style.setProperty('--font-base', layout.fontSize + 'px');
+  }
+  
+  // 应用动效参数
+  if (animation) {
+    if (animation.speed) root.style.setProperty('--anim-speed', animation.speed);
+    if (animation.glowIntensity !== undefined) root.style.setProperty('--anim-glow-intensity', animation.glowIntensity);
+    if (animation.pulse !== undefined) root.style.setProperty('--anim-pulse', animation.pulse);
+    // 根据能量级别添加呼吸动画到封面
+    const cover = document.getElementById('npCover');
+    if (cover && animation.energy > 0.6) {
+      cover.style.animation = 'breath ' + (2 / (animation.tempo || 1)) + 's ease-in-out infinite';
+    }
   }
   
   console.log('[AI Theme] Applied to CSS:', colors.primary);
