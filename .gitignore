@@ -13,3 +13,4 @@ __pycache__/
 *.pyc
 *.new
 patch_*.js
+PROJECT_LOG.md
