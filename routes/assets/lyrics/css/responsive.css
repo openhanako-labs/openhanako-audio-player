@@ -1,0 +1,65 @@
+/**
+ * responsive.css — AUDIO-09 独立歌词舞台响应式样式
+ */
+
+/* 基础字号通过 CSS 变量 --ls-base-size 控制，由 stage-app.js 动态设置 */
+
+.stage-container {
+  --ls-base-size: clamp(11px, 2.2vw, 15px);
+}
+
+/* 极窄容器（嵌入式小面板） */
+@media (max-width: 180px) {
+  .stage-container {
+    --ls-base-size: 10px;
+  }
+  .lyric-line.active {
+    font-size: calc(var(--ls-base-size, 10px) * 1.1);
+  }
+  .translate-toggle { display: none; }
+}
+
+/* 窄容器（侧边栏歌词面板） */
+@media (max-width: 260px) {
+  .stage-container {
+    --ls-base-size: 11px;
+  }
+}
+
+/* 中等容器（弹出窗口默认） */
+@media (min-width: 261px) and (max-width: 500px) {
+  .stage-container {
+    --ls-base-size: 13px;
+  }
+}
+
+/* 宽容器（大弹窗/分屏） */
+@media (min-width: 501px) and (max-width: 800px) {
+  .stage-container {
+    --ls-base-size: 15px;
+  }
+}
+
+@media (min-width: 801px) {
+  .stage-container {
+    --ls-base-size: 17px;
+  }
+}
+
+/* 高屏比（手机竖屏）— 增加行间距 */
+@media (aspect-ratio: portrait) {
+  .lyric-line {
+    line-height: 2.1;
+    padding: 4px 0;
+  }
+}
+
+/* 低性能设备 — 减少动画 */
+@media (prefers-reduced-motion: reduce) {
+  .lyric-line {
+    transition: color 0.1s ease;
+  }
+  .stage-body {
+    scroll-behavior: auto;
+  }
+}
