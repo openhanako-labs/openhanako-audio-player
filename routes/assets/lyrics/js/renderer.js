@@ -2,7 +2,8 @@
  * renderer.js
  * 歌词渲染引擎 — AUDIO-09 独立歌词舞台
  * 
- * 负责歌词列表渲染、行高亮、主题切换
+ * 负责歌词列表渲染、行高亮、逐字高亮、主题切换
+ * P4: 支持逐字高亮动画（有逐字数据时按字高亮，否则按行高亮）
  */
 
 class LyricRenderer {
@@ -20,31 +21,47 @@ class LyricRenderer {
 
   /**
    * 渲染歌词列表（全量）
-   * @param {Array<{time: number, text: string, translate?: string}>} lrcData
+   * @param {Array<{time: number, text: string, translate?: string, words?: Array<{time: number, text: string, duration: number}�}>}>} lrcData
    * @param {boolean} showTranslate - 是否显示翻译
    */
   render(lrcData, showTranslate) {
     if (!lrcData || !lrcData.length) {
       this.container.innerHTML = '<div class="lyric-placeholder">暂无歌词</div>';
       this.activeIndex = -1;
+      this._activeWordIndex = -1;
       return;
     }
 
     let html = '';
     for (let i = 0; i < lrcData.length; i++) {
       const line = lrcData[i];
-      html += `<div class="lyric-line" data-idx="${i}">${this._escapeHtml(line.text)}</div>`;
+      
+      // 如果有逐字数据，渲染逐字结构
+      if (line.words && line.words.length > 0) {
+        html += `<div class="lyric-line" data-idx="${i}" data-has-words="true">`;
+        for (let j = 0; j < line.words.length; j++) {
+          const word = line.words[j];
+          html += `<span class="lyric-word" data-word-idx="${j}" data-time="${word.time}">${this._escapeHtml(word.text)}</span>`;
+        }
+        html += `</div>`;
+      } else {
+        // 降级为行级渲染
+        html += `<div class="lyric-line" data-idx="${i}" data-has-words="false">${this._escapeHtml(line.text)}</div>`;
+      }
+      
       if (line.translate && showTranslate !== false) {
+        // 翻译行也支持逐字（通常没有，直接渲染文本）
         html += `<div class="lyric-line lyric-line--translate" data-idx="${i}">${this._escapeHtml(line.translate)}</div>`;
       }
     }
 
     this.container.innerHTML = html;
     this.activeIndex = -1;
+    this._activeWordIndex = -1;
   }
 
   /**
-   * 根据当前时间找到并高亮对应行
+   * 根据当前时间找到并高亮对应行（及逐字）
    * @param {number} timeMs - 当前播放时间（毫秒）
    */
   highlight(timeMs) {
@@ -58,14 +75,58 @@ class LyricRenderer {
       else break;
     }
 
-    if (idx === this.activeIndex) return; // 无变化
+    if (idx === this.activeIndex) {
+      // 同一行内更新逐字高亮
+      this._highlightWords(timeMs, idx);
+      return;
+    }
+    
     this.activeIndex = idx;
+    this._activeWordIndex = -1;
 
     // 更新 DOM — 只切换 class，不重建 DOM
     const lines = this.container.querySelectorAll('.lyric-line');
     lines.forEach((el) => {
       const lineIdx = parseInt(el.dataset.idx, 10);
       el.classList.toggle('active', lineIdx === idx);
+      // 清除所有字的旧高亮状态
+      el.querySelectorAll('.lyric-word').forEach(w => {
+        w.classList.remove('active');
+      });
+    });
+    
+    // 如果当前行有逐字数据，立即高亮第一个字
+    if (idx >= 0 && lrcData[idx] && lrcData[idx].words) {
+      this._highlightWords(timeMs, idx);
+    }
+  }
+
+  /**
+   * 高亮当前行内的特定字
+   * @param {number} timeMs - 当前时间
+   * @param {number} lineIdx - 行索引
+   */
+  _highlightWords(timeMs, lineIdx) {
+    const lineEl = this.container.querySelector(`.lyric-line[data-idx="${lineIdx}"]`);
+    if (!lineEl || lineEl.dataset.hasWords !== 'true') return;
+    
+    const words = lineEl.querySelectorAll('.lyric-word');
+    if (!words.length) return;
+    
+    // 找到当前时间对应的字索引
+    let wordIdx = 0;
+    const lineData = this.state.lrcData[lineIdx];
+    for (let i = 0; i < lineData.words.length; i++) {
+      if (lineData.words[i].time <= timeMs) wordIdx = i;
+      else break;
+    }
+    
+    if (wordIdx === this._activeWordIndex) return;
+    this._activeWordIndex = wordIdx;
+    
+    // 更新字的高亮状态
+    words.forEach((el, i) => {
+      el.classList.toggle('active', i === wordIdx);
     });
   }
 

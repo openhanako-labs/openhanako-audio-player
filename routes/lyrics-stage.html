@@ -30,6 +30,10 @@
   .lyric-line--translate.hidden{display:none}
   .lyric-placeholder{text-align:center;color:var(--ls-text-faint,rgba(255,255,255,0.25));font-size:11px;padding:40px 0}
   .lyric-error{text-align:center;color:#ef4444;font-size:11px;padding:20px 0}
+  /* P4: 逐字高亮样式 */
+  .lyric-word{display:inline;transition:color .15s,font-size .15s,opacity .15s}
+  .lyric-word.active{color:#d49a6a;font-size:1.1em;font-weight:600;opacity:1}
+  [data-theme="light"] .lyric-word.active{color:#c48454}
   .stage-footer{display:flex;justify-content:center;padding:4px 0 2px;flex-shrink:0}
   .progress-text{font-size:9px;color:var(--ls-text-faint,rgba(255,255,255,0.25));font-variant-numeric:tabular-nums;letter-spacing:.5px}
 </style>
