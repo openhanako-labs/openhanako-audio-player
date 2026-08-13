@@ -2,6 +2,7 @@
  * lyrics-match-chain.js — AUDIO-08 歌词匹配链
  *
  * 分层歌词来源链：
+ *   P0: 加密歌词（KRC/QRC 解密）
  *   P1: 音频内嵌歌词（ID3 USLT / Vorbis Comment）
  *   P2: 同目录同名 .lrc 文件
  *   P3: 在线匹配（音乐 API 歌词接口）
@@ -28,6 +29,10 @@ const ONLINE_SERVERS = ["netease", "tencent", "kugou", "kuwo", "baidu"];
 // LRCLIB 配置 — 免费无认证歌词 API
 const LRCLIB_BASE_URL = "https://lrclib.net";
 const LRCLIB_CACHE_KEY = "hanako_audio_lrclib_cache";
+// KRC/QRC 解密常量
+const KRC_XOR_KEY = 0x13;
+// QQ音乐 QRC AES-ECB 固定密钥 (32字节hex)
+const QRC_AES_KEY = Buffer.from("6e731a38d6de757d9c57ba6d1a2c1b3f", "hex");
 
 // ──────────────────────────────────────
 // ID3v2 内嵌歌词读取
@@ -104,6 +109,77 @@ function tryReadEmbeddedLyrics(buf) {
  */
 function readSynchSafeInt(bytes, offset) {
   return (bytes[offset] << 21) | (bytes[offset + 1] << 14) | (bytes[offset + 2] << 7) | bytes[offset + 3];
+}
+
+/**
+ * KRC（酷狗歌词）解密
+ * 格式：krc1标识头 + XOR异或 + Zlib压缩
+ */
+function tryDecryptKRC(buf) {
+  if (!buf || buf.length < 8) return null;
+  if (buf[0] !== 0x6B || buf[1] !== 0x52 || buf[2] !== 0x43 || buf[3] !== 0x31) return null;
+  try {
+    const data = buf.slice(4);
+    const decrypted = new Uint8Array(data.length);
+    for (let i = 0; i < data.length; i++) {
+      decrypted[i] = data[i] ^ KRC_XOR_KEY;
+    }
+    let text = new TextDecoder('utf-8').decode(decrypted);
+    if (text.includes('[') && text.includes(']')) {
+      return { format: 'lrc', content: text.trim() };
+    }
+    const rawText = new TextDecoder('utf-8').decode(data);
+    if (rawText.includes('[') && rawText.includes(']')) {
+      return { format: 'lrc', content: rawText.trim() };
+    }
+    return null;
+  } catch (e) {
+    console.warn('[LrcChain] KRC decryption failed:', e.message);
+    return null;
+  }
+}
+
+/**
+ * QRC（QQ音乐歌词）解密
+ * 格式：qrc1标识头 + AES-ECB-128 加密
+ */
+async function tryDecryptQRC(buf) {
+  if (!buf || buf.length < 8) return null;
+  if (buf[0] !== 0x71 || buf[1] !== 0x72 || buf[2] !== 0x63 || buf[3] !== 0x31) return null;
+  try {
+    const encryptedData = buf.slice(4);
+    const keyBuffer = await crypto.subtle.importKey(
+      'raw', QRC_AES_KEY, { name: 'AES-ECB' }, false, ['decrypt']
+    );
+    const decryptedBuffer = await crypto.subtle.decrypt({ name: 'AES-ECB' }, keyBuffer, encryptedData);
+    const decryptedText = new TextDecoder('utf-8').decode(decryptedBuffer);
+    try {
+      const json = JSON.parse(decryptedText);
+      const content = json.syncedLyrics || json.plainLyrics || decryptedText;
+      return { format: 'lrc', content: content.trim() };
+    } catch (e) {
+      if (decryptedText.includes('[') && decryptedText.includes(']')) {
+        return { format: 'lrc', content: decryptedText.trim() };
+      }
+      return null;
+    }
+  } catch (e) {
+    console.warn('[LrcChain] QRC decryption failed:', e.message);
+    return null;
+  }
+}
+
+/**
+ * 异步加密歌词检测（KRC/QRC）
+ */
+async function tryReadEncryptedLyricsAsync(buf) {
+  if (!buf || buf.byteLength < 8) return null;
+  const bytes = new Uint8Array(buf);
+  // 先尝试 KRC（同步）
+  const krcResult = tryDecryptKRC(bytes);
+  if (krcResult) return krcResult;
+  // 再尝试 QRC（异步）
+  return await tryDecryptQRC(bytes);
 }
 
 /**
@@ -480,6 +556,16 @@ async function runMatchChain(track, ctx) {
     return { success: true, source: track.lrcUrl, lrcUrl: track.lrcUrl, lrcSource: track.lrcSource || "online" };
   }
 
+  // P0: 加密歌词（KRC/QRC）
+  if (audioBuffer) {
+    try {
+      const encrypted = await tryReadEncryptedLyricsAsync(audioBuffer);
+      if (encrypted) {
+        return { success: true, source: "encrypted", lrcContent: encrypted.content, lrcSource: "encrypted" };
+      }
+    } catch (e) { /* skip */ }
+  }
+
   // P1: 内嵌歌词
   if (audioBuffer) {
     try {
@@ -540,6 +626,9 @@ async function runMatchChain(track, ctx) {
 // ──────────────────────────────────────
 
 module.exports = {
+  tryDecryptKRC,
+  tryDecryptQRC,
+  tryReadEncryptedLyricsAsync,
   tryReadEmbeddedLyrics,
   tryReadVorbisLyrics,
   tryLocalLrc,
