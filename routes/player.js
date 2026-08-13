@@ -6574,6 +6574,43 @@ function doPlaylistImport(){
     lyricToggle.classList.toggle('open',lyricOpen);
   });
   }
+
+  // ── 歌词结构化数据缓存 ──
+  var LRC_CACHE_KEY='hanako_audio_lrc_parsed_cache';
+  var LRC_CACHE_MAX=30;
+  var LRC_CACHE_TTL=30*24*60*60*1000; // 30天
+  function _getLrcCacheObj(){
+    try{
+      var raw=localStorage.getItem(LRC_CACHE_KEY);
+      if(!raw) return {};
+      var obj=JSON.parse(raw);
+      return obj && typeof obj==='object' ? obj : {};
+    }catch(e){ return {}; }
+  }
+  function _cachedLrcByUrl(lrcUrl){
+    if(!lrcUrl) return null;
+    var obj=_getLrcCacheObj();
+    var entry=obj[lrcUrl];
+    if(!entry) return null;
+    if(!entry.ts || (Date.now()-entry.ts)>LRC_CACHE_TTL) return null;
+    return entry.lrcData||null;
+  }
+  function _saveLrcCache(lrcUrl, parsed){
+    if(!lrcUrl || !parsed) return;
+    var obj=_getLrcCacheObj();
+    // 超出上限：移除最早写入的条目
+    var keys=Object.keys(obj);
+    if(keys.length>=LRC_CACHE_MAX){
+      var oldestKey=null, oldestTs=Infinity;
+      keys.forEach(function(k){
+        var ts=obj[k] && obj[k].ts ? obj[k].ts : 0;
+        if(ts<oldestTs){ oldestTs=ts; oldestKey=k; }
+      });
+      if(oldestKey) delete obj[oldestKey];
+    }
+    obj[lrcUrl]={ts:Date.now(), lrcData:parsed};
+    try{ localStorage.setItem(LRC_CACHE_KEY, JSON.stringify(obj)); }catch(e){}
+  }
   // 初始渲染占位
   lyricBody.innerHTML='<div class="lyric-line" style="color:var(--text-faint);padding:8px 0">暂无歌词</div>';
 
@@ -6638,10 +6675,18 @@ function doPlaylistImport(){
     var lrcKey=t.url+'|'+lrcUrl;
     if(lrcUrl && lrcKey!==_lastLrcKey){
       _lastLrcKey=lrcKey;
+      var cached=_cachedLrcByUrl(lrcUrl);
+      if(cached){
+        lrcData=cached;
+        renderLrc();
+        return;
+      }
       var proxyUrl=API+'/widget/api/music/lrc-proxy?url='+encodeURIComponent(lrcUrl);
       fetch(proxyUrl).then(function(r){return r.text();}).then(function(raw){
         if(!raw||raw.length<10) return;
-        lrcData=parseLrc(raw);
+        var parsed=parseLrc(raw);
+        _saveLrcCache(lrcUrl, parsed);
+        lrcData=parsed;
         renderLrc();
       }).catch(function(){});
     }
