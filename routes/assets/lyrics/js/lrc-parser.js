@@ -35,8 +35,36 @@ function parseLrc(raw) {
 }
 
 /**
+ * 判断文本是否包含中文字符
+ */
+function _hasChinese(text) {
+  return /[\u4e00-\u9fff\u3400-\u4dbf]/.test(text);
+}
+
+/**
+ * 判断文本是否可能为翻译（非中文歌词）
+ * 独立判断：行内无中文字符 → 翻译候选
+ */
+function _isLikelyTranslation(text) {
+  if (!text) return false;
+  // 包含中文字符 → 不是翻译，是原文歌词
+  if (_hasChinese(text)) return false;
+  // 无中文字符 → 可能是英文/日文翻译或罗马音
+  const latinRatio = (text.match(/[a-zA-Z]/g) || []).length / Math.max(text.length, 1);
+  const kanaRatio = (text.match(/[\u3040-\u309F\u30A0-\u30FF]/g) || []).length / Math.max(text.length, 1);
+  const hasMeaningfulChars = latinRatio > 0.3 || kanaRatio > 0.1 || text.length > 2;
+  return hasMeaningfulChars;
+}
+
+/**
  * 从原始 LRC 文本中智能提取翻译行
  * 策略：时间相近的相邻行视为歌词+翻译对
+ * 
+ * 判定逻辑（v2）：
+ *   1. 当前行有中文 + 下一行无中文 → 翻译对（最可靠）
+ *   2. 两行都无中文 → 用 latin/kana 比例启发式判断
+ *   3. 两行都有中文 → 不合并（都是原文歌词）
+ * 
  * @param {Array<{time: number, text: string}>} parsed - parseLrc 的输出
  * @param {number} [maxGap=800] - 判定为翻译的最大时间间隔(ms)
  * @returns {Array<{time: number, text: string, translate?: string}>}
@@ -56,15 +84,32 @@ function mergeLyricsAndTranslate(parsed, maxGap) {
       const next = parsed[i + 1];
       const gap = next.time - current.time;
       
-      // 如果时间差很小（≤maxGap），且下一行是英文/日文等非中文
-      if (gap <= maxGap && gap >= 0 && _isNonChinese(next.text)) {
-        result.push({
-          time: current.time,
-          text: current.text,
-          translate: next.text
-        });
-        i += 2;
-        continue;
+      // 时间差阈值内才考虑合并
+      if (gap <= maxGap && gap >= 0) {
+        const currentHasChinese = _hasChinese(current.text);
+        const nextHasChinese = _hasChinese(next.text);
+        
+        let isTranslation = false;
+        
+        // 场景1: 当前行有中文 + 下一行无中文 → 最可靠的翻译对
+        if (currentHasChinese && !nextHasChinese) {
+          isTranslation = true;
+        }
+        // 场景2: 两行都无中文（纯英文/日文歌）→ 用旧启发式判断
+        else if (!currentHasChinese && !nextHasChinese) {
+          isTranslation = _isLikelyTranslation(next.text);
+        }
+        // 场景3: 两行都有中文 → 不合并，都是原文歌词
+        
+        if (isTranslation) {
+          result.push({
+            time: current.time,
+            text: current.text,
+            translate: next.text
+          });
+          i += 2;
+          continue;
+        }
       }
     }
     
@@ -73,17 +118,6 @@ function mergeLyricsAndTranslate(parsed, maxGap) {
   }
   
   return result;
-}
-
-/**
- * 判断文本是否可能为翻译（非中文）
- */
-function _isNonChinese(text) {
-  if (!text) return false;
-  // 包含较多英文字符或日文假名 → 可能是翻译
-  const latinRatio = (text.match(/[a-zA-Z]/g) || []).length / Math.max(text.length, 1);
-  const kanaRatio = (text.match(/[\u3040-\u309F\u30A0-\u30FF]/g) || []).length / Math.max(text.length, 1);
-  return latinRatio > 0.3 || kanaRatio > 0.1;
 }
 
 /**
