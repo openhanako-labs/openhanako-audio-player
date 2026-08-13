@@ -5865,7 +5865,9 @@ document.getElementById('urlInput').addEventListener('keydown',function(e){
 });
 
 document.getElementById('popBtn').addEventListener('click',function(){
-  var url = 'http://localhost:14500' + API + '/widget?standalone=1&token=' + encodeURIComponent(TOKEN);
+  // 使用当前页面同源 URL，避免硬编码端口
+  var baseUrl = window.location.protocol + '//' + window.location.host;
+  var url = baseUrl + API + '/widget?standalone=1&token=' + encodeURIComponent(TOKEN);
   window.open(url, 'hanako-player', 'width=800,height=600');
 });
 
