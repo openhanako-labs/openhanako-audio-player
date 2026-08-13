@@ -5,6 +5,7 @@
  *   P1: 音频内嵌歌词（ID3 USLT / Vorbis Comment）
  *   P2: 同目录同名 .lrc 文件
  *   P3: 在线匹配（音乐 API 歌词接口）
+ *   P3.5: LRCLIB 兜底搜索（免费无认证）
  *   P4: 用户手动修正（本地文件 / 粘贴文本 / 指定 URL）
  *   P5: 降级 — 无歌词
  *
@@ -23,6 +24,10 @@ const MANUAL_MATCHES_KEY = "hanako_audio_manual_matches";
 const PROBE_TIMEOUT_MS = 8000;
 
 const ONLINE_SERVERS = ["netease", "tencent", "kugou", "kuwo", "baidu"];
+
+// LRCLIB 配置 — 免费无认证歌词 API
+const LRCLIB_BASE_URL = "https://lrclib.net";
+const LRCLIB_CACHE_KEY = "hanako_audio_lrclib_cache";
 
 // ──────────────────────────────────────
 // ID3v2 内嵌歌词读取
@@ -291,6 +296,77 @@ async function searchLyricsOnline(keyword, apiBase, servers) {
 }
 
 // ──────────────────────────────────────
+// P3.5: LRCLIB 兜底搜索
+// ──────────────────────────────────────
+
+/**
+ * 从 LRCLIB 搜索歌词（免费、无认证、返回同步/异步 LRC）
+ * @param {string} trackName - 歌曲名
+ * @param {string} [artistName] - 艺术家名（可选，提升匹配精度）
+ * @returns {Promise<{ ok: boolean, plainLyrics?: string, syncedLyrics?: string, artist?: string, instrument: boolean }>}
+ */
+async function searchLyricsLRCLIB(trackName, artistName) {
+  try {
+    const encodedTrack = encodeURIComponent(trackName.trim());
+    const encodedArtist = artistName ? encodeURIComponent(artistName.trim()) : '';
+    let url = `${LRCLIB_BASE_URL}/api/search?track_name=${encodedTrack}`;
+    if (encodedArtist) url += `&artist_name=${encodedArtist}`;
+
+    const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+    const results = await resp.json();
+    if (!Array.isArray(results) || !results.length) return { ok: false };
+
+    // 取第一个非 instrumental 的结果，优先 syncedLyrics
+    const hit = results.find(r => !r.instrumental) || results[0];
+    return {
+      ok: true,
+      plainLyrics: hit.plainLyrics || null,
+      syncedLyrics: hit.syncedLyrics || null,
+      artist: hit.artistName || '',
+      instrumental: hit.instrumental || false,
+    };
+  } catch (e) {
+    console.warn(`[LrcChain] LRCLIB search failed for "${trackName}":`, e.message);
+    return { ok: false };
+  }
+}
+
+/**
+ * LRCLIB 歌词缓存（独立于主缓存，有效期 60 天）
+ */
+function getLrcLibCache() {
+  try {
+    const raw = localStorage.getItem(LRCLIB_CACHE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function setLrcLibCache(key, value) {
+  try {
+    const cache = getLrcLibCache();
+    cache[key] = { ...value, cachedAt: Date.now() };
+    localStorage.setItem(LRCLIB_CACHE_KEY, JSON.stringify(cache));
+  } catch (e) { /* quota exceeded */ }
+}
+
+function getLrcLibCacheResult(key) {
+  const cache = getLrcLibCache();
+  const entry = cache[key];
+  if (!entry) return null;
+  // 60 天有效期（LRCLIB 数据稳定，缓存更久）
+  if (Date.now() - (entry.cachedAt || 0) > 60 * 24 * 3600 * 1000) {
+    delete cache[key];
+    try { localStorage.setItem(LRCLIB_CACHE_KEY, JSON.stringify(cache)); } catch (e) {}
+    return null;
+  }
+  return entry;
+}
+
+// ──────────────────────────────────────
 // P4: 用户手动修正持久化
 // ──────────────────────────────────────
 
@@ -436,6 +512,25 @@ async function runMatchChain(track, ctx) {
     }
   }
 
+  // P3.5: LRCLIB 兜底搜索
+  if (typeof fetch === 'function') {
+    const libCacheKey = `${track.name || ''}|${track.artist || ''}`;
+    const libCached = getLrcLibCacheResult(libCacheKey);
+    if (libCached && libCached.syncedLyrics) {
+      return { success: true, source: 'lrclib', lrcContent: libCached.syncedLyrics, lrcSource: 'lrclib' };
+    }
+    if (libCached && libCached.plainLyrics) {
+      return { success: true, source: 'lrclib', lrcContent: libCached.plainLyrics, lrcSource: 'lrclib' };
+    }
+
+    const libResult = await searchLyricsLRCLIB(track.name, track.artist);
+    if (libResult.ok && (libResult.syncedLyrics || libResult.plainLyrics)) {
+      const lrcContent = libResult.syncedLyrics || libResult.plainLyrics;
+      setLrcLibCache(libCacheKey, { syncedLyrics: libResult.syncedLyrics, plainLyrics: libResult.plainLyrics });
+      return { success: true, source: 'lrclib', lrcContent, lrcSource: 'lrclib' };
+    }
+  }
+
   // P5: 降级
   return { success: false, source: "none", lrcSource: "none" };
 }
@@ -449,9 +544,13 @@ module.exports = {
   tryReadVorbisLyrics,
   tryLocalLrc,
   searchLyricsOnline,
+  searchLyricsLRCLIB,
   getLrcCache,
   setLrcCache,
   getLrcCacheResult,
+  getLrcLibCache,
+  setLrcLibCache,
+  getLrcLibCacheResult,
   getManualMatches,
   saveManualMatch,
   getManualMatch,
