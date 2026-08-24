@@ -59,7 +59,7 @@ async function execute(input, toolCtx) {
     return {
       content: [{ type: "text", text: `🔊 ${path.basename(filePathInput)}` }],
       details: {
-        card: { type: "iframe", route: cardRoute, aspectRatio: "10:3" },
+        card: { type: "iframe", route: cardRoute, aspectRatio: "10:3", pluginId: toolCtx.pluginId },
         media: { items: [] },
       },
     };
