@@ -1,7 +1,7 @@
 /**
  * hanako-audio-player/tools/play.js
  *
- * 播放工具 — 将音频加入播放器队列
+ * 播放工具 — 将音频添加到播放器播放列表，并返回播放卡片
  */
 
 import fs from 'node:fs';
@@ -25,8 +25,8 @@ const parameters = {
   required: ['source'],
 };
 
-async function execute({ source, title }, { sessionPath, pluginId, dataDir, stageFile }) {
-  // 空参数保护：快速路由不带参数时，返回友好提示而非崩溃
+async function execute({ source, title }, { sessionPath, pluginId, dataDir }) {
+  // 空参数保护
   if (!source) {
     return {
       content: [{ type: 'text', text: '请指定要播放的音频文件路径或在线 URL，比如：播放 C:/音乐/歌.mp3' }],
@@ -51,6 +51,7 @@ async function execute({ source, title }, { sessionPath, pluginId, dataDir, stag
     mediaUrl = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(fileName)}`;
   }
 
+  // 加入播放队列
   let queue = [];
   try {
     if (fs.existsSync(queuePath)) {
@@ -60,31 +61,26 @@ async function execute({ source, title }, { sessionPath, pluginId, dataDir, stag
 
   if (!queue.some(t => t.url === mediaUrl)) {
     queue.push({ name: trackName, url: mediaUrl, mode: isLocal ? '本地' : '在线' });
-    // 原子写入
     const tmpPath = queuePath + '.tmp.' + process.pid;
     fs.writeFileSync(tmpPath, JSON.stringify(queue, null, 2), 'utf-8');
     fs.renameSync(tmpPath, queuePath);
   }
 
-  // 生成对话内嵌播放卡片
-  const cardRoute = isLocal
-    ? `/play?file=${encodeURIComponent(fileName)}`
-    : `/play?url=${encodeURIComponent(source)}&title=${encodeURIComponent(trackName)}`;
-
-  // 尝试 stageFile（仅本地文件）
-  if (isLocal && stageFile && sessionPath && destPath) {
-    try {
-      await stageFile({ sessionPath: sessionPath, filePath: destPath, label: trackName });
-    } catch (_) {}
-  }
-
+  // 返回文本 + 播放卡片
   return {
     content: [{
       type: 'text',
       text: `🎵 ${trackName}`,
     }],
     details: {
-      card: { type: 'iframe', route: cardRoute, aspectRatio: '10:3', pluginId: pluginId },
+      card: { 
+        type: 'iframe', 
+        route: isLocal 
+          ? `/play?file=${encodeURIComponent(fileName)}`
+          : `/play?url=${encodeURIComponent(source)}&title=${encodeURIComponent(trackName)}`,
+        aspectRatio: '10:3', 
+        pluginId: pluginId 
+      },
       media: { items: [] },
     },
   };
