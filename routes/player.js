@@ -124,10 +124,11 @@ export default function (app, ctx) {
     const title = c.req.query("title");
     const translate = c.req.query("translate") || "";
 
-    // 在线 URL 模式
+    // 在线 URL 模式 — 使用 stream 代理绕过 CORS
     if (url) {
       const displayName = title || "在线音频";
-      const html = getInlinePlayerHTML(displayName, url, translate, true);
+      const streamUrl = `/widget/api/music/stream?url=${encodeURIComponent(url)}`;
+      const html = getInlinePlayerHTML(displayName, streamUrl, translate, true);
       return c.html(html);
     }
 
