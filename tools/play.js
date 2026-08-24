@@ -76,7 +76,7 @@ async function execute({ source, title }, { sessionPath, pluginId, dataDir }) {
       text: `🎵 ${trackName}`,
     }],
     details: {
-      card: { type: 'iframe', route: cardRoute, aspectRatio: '10:3' },
+      card: { type: 'iframe', route: cardRoute, aspectRatio: '10:3', pluginId: pluginId },
       media: { items: [] },
     },
   };
