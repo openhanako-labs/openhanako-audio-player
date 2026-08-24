@@ -124,12 +124,12 @@ export default function (app, ctx) {
     const title = c.req.query("title");
     const translate = c.req.query("translate") || "";
 
-    // 在线 URL 模式 — 使用 stream 代理绕过 CORS
+    // 在线 URL 模式 — 返回带 fetch.request 绑定的播放器
     if (url) {
       const displayName = title || "在线音频";
+      // 使用相对路径指向 stream 端点
       const streamUrl = `/widget/api/music/stream?url=${encodeURIComponent(url)}`;
-      const html = getInlinePlayerHTML(displayName, streamUrl, translate, true);
-      return c.html(html);
+      return getInlinePlayerHTML(displayName, streamUrl, translate, true, pluginId);
     }
 
     // 本地文件模式
