@@ -31,13 +31,13 @@ function getPlayerHTML(displayName, audioSrc, isOnline) {
   const themeBorder = isOnline ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
   
   return `<div style="width:100%;max-width:480px;background:${themeBg};border-radius:10px;overflow:hidden;font-family:system-ui,sans-serif;border:1px solid ${themeBorder}">
-  <div style="height:2px;background:linear-gradient(90deg,#d49a6a,#c48454);"></div>
-  <div style="padding:8px 14px;">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-      <div style="width:26px;height:26px;border-radius:5px;background:linear-gradient(135deg,#d49a6a,#c48454);display:flex;align-items:center;justify-content:center;font-size:13px;color:white;">♫</div>
-      <div style="color:${themeText};font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;">${escapeHtml(displayName)}</div>
+  <div style="height:2px;background:linear-gradient(90deg,#d49a6a,#c48454)"></div>
+  <div style="padding:8px 14px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <div style="width:26px;height:26px;border-radius:5px;background:linear-gradient(135deg,#d49a6a,#c48454);display:flex;align-items:center;justify-content:center;font-size:13px;color:white">♫</div>
+      <div style="color:${themeText};font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(displayName)}</div>
     </div>
-    <audio src="${escapeHtml(audioSrc)}" controls preload="auto" style="width:100%;height:36px;border-radius:6px;outline:none;background:${themeBg};"></audio>
+    <audio src="${escapeHtml(audioSrc)}" controls preload="auto" style="width:100%;height:36px;border-radius:6px;outline:none;background:${themeBg}"></audio>
   </div>
 </div>`;
 }
@@ -50,7 +50,7 @@ function escapeHtml(text) {
     .replace(/"/g, '&quot;');
 }
 
-async function execute({ source, title }, { sessionPath, pluginId, dataDir }) {
+async function execute({ source, title }, { sessionPath, pluginId, dataDir, stageFile }) {
   // 空参数保护
   if (!source) {
     return {
@@ -100,6 +100,13 @@ async function execute({ source, title }, { sessionPath, pluginId, dataDir }) {
   // 生成播放卡片 HTML
   const cardHtml = getPlayerHTML(trackName, playUrl, isLocal);
   
+  // 尝试 stageFile（仅本地文件）
+  if (isLocal && stageFile && sessionPath && destPath) {
+    try {
+      await stageFile({ sessionPath: sessionPath, filePath: destPath, label: trackName });
+    } catch (_) {}
+  }
+
   // 返回文本 + 卡片
   return {
     content: [{
@@ -108,9 +115,10 @@ async function execute({ source, title }, { sessionPath, pluginId, dataDir }) {
     }],
     details: {
       card: { 
-        type: 'html', 
-        content: cardHtml,
-        aspectRatio: '10:3', 
+        type: 'iframe', 
+        route: `/play?url=${encodeURIComponent(playUrl)}&title=${encodeURIComponent(trackName)}`,
+        aspectRatio: '10:3',
+        pluginId: pluginId,
       },
       media: { items: [] },
     },
