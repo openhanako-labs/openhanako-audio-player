@@ -91,8 +91,14 @@ async function execute({ source, title }, { sessionPath, pluginId, dataDir }) {
     fs.renameSync(tmpPath, queuePath);
   }
 
+  // 在线音频使用 stream 代理 URL
+  let playUrl = mediaUrl;
+  if (!isLocal) {
+    playUrl = `/widget/api/music/stream?url=${encodeURIComponent(source)}`;
+  }
+  
   // 生成播放卡片 HTML
-  const cardHtml = getPlayerHTML(trackName, mediaUrl, isLocal);
+  const cardHtml = getPlayerHTML(trackName, playUrl, isLocal);
   
   // 返回文本 + 卡片
   return {
