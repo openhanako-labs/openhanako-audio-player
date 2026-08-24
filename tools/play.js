@@ -25,7 +25,7 @@ const parameters = {
   required: ['source'],
 };
 
-async function execute({ source, title }, { sessionPath, pluginId, dataDir }) {
+async function execute({ source, title }, { sessionPath, pluginId, dataDir, stageFile }) {
   // 空参数保护：快速路由不带参数时，返回友好提示而非崩溃
   if (!source) {
     return {
@@ -72,9 +72,9 @@ async function execute({ source, title }, { sessionPath, pluginId, dataDir }) {
     : `/play?url=${encodeURIComponent(source)}&title=${encodeURIComponent(trackName)}`;
 
   // 尝试 stageFile（仅本地文件）
-  if (isLocal && toolCtx.stageFile && toolCtx.sessionPath) {
+  if (isLocal && stageFile && sessionPath && destPath) {
     try {
-      await toolCtx.stageFile({ sessionPath: toolCtx.sessionPath, filePath: destPath, label: trackName });
+      await stageFile({ sessionPath: sessionPath, filePath: destPath, label: trackName });
     } catch (_) {}
   }
 
