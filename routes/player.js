@@ -886,6 +886,78 @@ function getInlinePlayerHTML(displayName, audioSrc, translate, isOnline) {
   const themeBg = isOnline ? '#1e1e22' : '#FFFBF5';
   const themeText = isOnline ? '#e4e4e7' : '#2c2c2c';
   const themeBorder = isOnline ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+  
+  // 在线模式：使用 fetch.request 绑定获取音频流
+  if (isOnline) {
+    // 提取 stream URL 中的原始 URL
+    const streamMatch = audioSrc.match(/url=([^&]+)/);
+    const originalUrl = streamMatch ? decodeURIComponent(streamMatch[1]) : audioSrc;
+    
+    return `<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{display:flex;align-items:center;justify-content:center;min-height:52px;padding:0;background:transparent;font-family:system-ui,-apple-system,sans-serif}
+.player-wrap{width:100%;max-width:480px;background:${themeBg};border:1px solid ${themeBorder};border-radius:10px;overflow:hidden;margin:0 auto}
+.top{height:2px;background:linear-gradient(90deg,#d49a6a,#c48454)}
+.body{padding:8px 14px}
+.row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.icon{width:26px;height:26px;border-radius:5px;background:linear-gradient(135deg,#d49a6a,#c48454);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;color:white}
+.name{color:${themeText};font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
+.status{font-size:10px;color:var(--text-faint,rgba(255,255,255,0.4));margin-top:4px}
+.audio{width:100%;height:36px;border-radius:6px;outline:none;background:${themeBg}}
+.audio::-webkit-media-controls-panel{background:${themeBg}}
+</style>
+</head>
+<body>
+<div class="player-wrap">
+  <div class="top"></div>
+  <div class="body">
+    <div class="row">
+      <div class="icon">♫</div>
+      <div class="name">${escAttr(displayName)}</div>
+    </div>
+    <audio id="player" controls preload="none"></audio>
+    <div id="status" class="status">加载中...</div>
+  </div>
+</div>
+<script type="application/json" data-card-manifest>{"toolBindings":{"fetch-audio":{"tool":"fetch.request","input":{"hosts":["127.0.0.1","localhost"]}}}}</script>
+<script>
+(async function(){
+  var player=document.getElementById("player");
+  var status=document.getElementById("status");
+  var streamUrl="${escAttr(audioSrc)}";
+  try{
+    var result=await window.card.invoke("fetch-audio",{url:streamUrl});
+    if(result&&result.ok&&result.body){
+      var blob=new Blob([result.body],{type:result.contentType||"audio/mpeg"});
+      var url=URL.createObjectURL(blob);
+      player.src=url;
+      status.textContent="";
+      try{parent.postMessage({type:"ready"},"*")}catch(e){}
+      function resize(){try{parent.postMessage({type:"resize-request",payload:{height:document.body.scrollHeight}},"*")}catch(e){}}
+      player.onloadedmetadata=resize;
+      new ResizeObserver(resize).observe(document.body);
+      setTimeout(resize,100);
+    }else{
+      status.textContent="加载失败";
+    }
+  }catch(e){
+    status.textContent="请求错误: "+e.message;
+    // 降级：直接尝试播放 stream URL
+    player.src=streamUrl;
+    try{parent.postMessage({type:"ready"},"*")}catch(e){}
+  }
+})();
+</script>
+</body>
+</html>`;
+  }
+  
+  // 本地文件模式：使用 data: URI
   return `<!DOCTYPE html>
 <html lang="zh">
 <head>
