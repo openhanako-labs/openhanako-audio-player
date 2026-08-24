@@ -40,12 +40,13 @@ async function execute({ source, title }, { sessionPath, pluginId, dataDir }) {
   const queuePath = path.join(dataDir, 'queue.json');
 
   let mediaUrl = source;
+  let destPath = null;
 
   if (isLocal && fs.existsSync(source)) {
     fs.mkdirSync(mediaDir, { recursive: true });
-    const dst = path.join(mediaDir, fileName);
-    if (!fs.existsSync(dst)) {
-      try { fs.copyFileSync(source, dst); } catch (e) { console.warn('[play] copyFile failed:', e.message); }
+    destPath = path.join(mediaDir, fileName);
+    if (!fs.existsSync(destPath)) {
+      try { fs.copyFileSync(source, destPath); } catch (e) { console.warn('[play] copyFile failed:', e.message); }
     }
     mediaUrl = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(fileName)}`;
   }
@@ -69,6 +70,13 @@ async function execute({ source, title }, { sessionPath, pluginId, dataDir }) {
   const cardRoute = isLocal
     ? `/play?file=${encodeURIComponent(fileName)}`
     : `/play?url=${encodeURIComponent(source)}&title=${encodeURIComponent(trackName)}`;
+
+  // 尝试 stageFile（仅本地文件）
+  if (isLocal && toolCtx.stageFile && toolCtx.sessionPath) {
+    try {
+      await toolCtx.stageFile({ sessionPath: toolCtx.sessionPath, filePath: destPath, label: trackName });
+    } catch (_) {}
+  }
 
   return {
     content: [{
