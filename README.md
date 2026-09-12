@@ -1,199 +1,85 @@
-# 🎵 hanako-audio-player
+# 音频播放器 (hanako-audio-player)
 
+Hana 的音频播放应用 —— 本地音乐与在线音乐播放、歌词横幅、播放凭证。
 
-![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)
-
-
-Hanako 音频播放器插件。侧边栏常驻播放器，支持本地音乐、在线流、音乐搜索、场景调度、Bus 编排。
+从 v1 插件迁移到 **v2 App 架构**（`manifestVersion: 2`）。
 
 ## 功能
 
-### 🎧 播放器核心
-- ✅ **深色玻璃主题 + 亮色切换** — 暖琥珀色点缀，一键切亮色（#FFF8E7）
-- ✅ **播放列表** — 曲目管理、删除、拖拽排序
-- ✅ **收藏筛选** — ★/☆ 收藏，收藏置顶筛选
-- ✅ **播放列表持久化** — localStorage 存储，刷新不丢失
-- ✅ **URL/本地路径添加** — 粘贴链接或路径 → 添加
-- ✅ **ID3v2 元数据读取** — Range 请求解析 TIT2，文件名美化回退
-- ✅ **本地文件删除同步** — HEAD 检测本地文件是否仍存在
-- ✅ **弹出独立窗口** ↗ — 不占面板位置
-- ✅ **MutationObserver** — 自动修复父 iframe `writing-mode: vertical-lr` 注入
-
-### 📁 本地音乐导入
-
-支持三种方式添加本地音乐：
-
-#### 方式1：粘贴文件夹路径
-1. 复制文件夹路径（如 `D:\Music`）
-2. 粘贴到输入框，点击「添加」
-3. 插件自动扫描文件夹，复制音频文件到媒体目录
-4. 选择分组后批量添加
-
-#### 方式2：粘贴单文件路径
-1. 复制文件路径（如 `D:\Music\song.mp3`）
-2. 粘贴到输入框，点击「添加」
-3. 插件自动复制文件到媒体目录
-4. 选择分组后添加
-
-#### 方式3：手动复制文件
-1. 将音频文件复制到以下目录之一：
-   - `~/.hanako/plugin-data/hanako-audio-player/media/`
-   - 插件的 `dataDir/media/` 目录
-2. 刷新播放器，文件自动出现在「本地音乐」分组
-
-> 支持格式：`.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`
-> 文件名以 `_` 开头的文件会被跳过
-
-### 🔍 音乐搜索（Meting）
-- ✅ **搜索歌曲/歌手** — 网易云 / QQ 双源
-- ✅ **封面缩略图** — 搜索结果带专辑封面
-- ✅ **一键操作** — ▶ 播放 / + 加入 Bus 队列 / ☾ 加入场景
-- ✅ **导入歌单** — 粘贴歌单 ID 或链接 → 批量导入
-- ✅ **歌单批量操作** — 全部播放 / 加入队列 / 加入场景
-
-> 搜索功能通过 HTTP 代理访问公共 Meting 实例（api.i-meto.com），零本地依赖。
-> 可通过环境变量 `METING_API_URL` 切换到自建实例。
-
-### 🌙 场景调度
-- ✅ **3 场景预设** — 💻 工作 / ☕ 休息 / 🌙 深夜
-- ✅ **时段自动推荐** — 根据当前时间推荐最合适的场景
-- ✅ **搜索结果加场景** — ☾ 按钮将歌曲追加到指定场景
-- ✅ **场景持久化** — 自定义场景曲目存 localStorage
-
-### 🚌 Bus 编排
-- ✅ **播放/跳过/清空** — Bus 队列控制
-- ✅ **队列 × 删除** — 点 × 移除单条，持久化到文件
-- ✅ **Add URL** — 添加任意音频 URL 到编排队列
-- ✅ **Segue 自动前进** — 过渡条目自动定时 next
-- ✅ **Toast 通知** — 操作反馈 + TTS 失败提示
-
-### 🛡 稳定性
-- ✅ **Bus 文件直写** — 绕过 require 缓存问题，路由层完全接管文件读写
-- ✅ **旧单例 no-op** — bus.js 的 _saveQueue/_saveState 改空操作，防旧定时器覆写
-- ✅ **内存同步** — 写文件后同步旧单例内存（防御性）
-- ✅ **Fetch 拦截器** — Authorization 只加本地 URL，外部流不加（修复 CORS）
-- ✅ **AbortError 静默** — audio.play() 的 AbortError 不再刷控制台
-
-## 技术栈
-
-- **后端**: Node.js + Hono (Bun 兼容)
-- **前端**: 原生 HTML/CSS/JS，CSS Custom Properties 主题系统
-- **音乐搜索**: Meting-API HTTP 代理 (api.i-meto.com)
-- **TTS**: CosyVoice 本地模型 / 浏览器原生 (降级链)
+| 功能 | 说明 |
+|---|---|
+| **在线音乐** | 经 Meting 节点搜索/播放，302 直链，不经后端代理 |
+| **本地音乐** | 导入本机文件（`ctx.resources` 读取，复制进 `media/`） |
+| **播放列表** | 持久化到 `app-data/`，支持分组 / 收藏 / 搜索 |
+| **歌词横幅** | 播放时把当前歌词行推到会话输入框上方（`ctx.inputBanner`） |
+| **播放凭证** | 配置 cookie 后可取高音质音频（网易云 / QQ 音乐） |
+| **三套主题** | default / spectrum / waveform（内联在 `ui/index.html`） |
+| **横竖版** | 卡片右上角 ⇆ 切换 |
 
 ## 安装
 
-### 开发模式
+1. 把本目录（或解压后的 zip）放进 `<HANA_HOME>/apps/`。
+   **目录名必须一字不差等于 `manifest.id`（`hanako-audio-player`）。**
+2. 打开 Market → Installed → App，批准该应用。
+3. 之后改代码在详情页 Reload 即可（改 `tools/` 或 `index.js` 需重启宿主）。
 
-```bash
-# 克隆到工作目录
-git clone <repo> W:/Games/Hanako/Work/hanako-audio-player
+最低 Hana 版本：`0.946.2`。
 
-# 在 Hana 中安装 dev 插件（通过 plugin_dev_install 或 UI）
-# 修改后热加载：plugin_dev_reload
-```
+## 播放凭证（高音质）
 
-### 正式安装
-
-```bash
-cp -r hanako-audio-player ~/.hanako/plugins/hanako-audio-player
-# 重启 Hana
-```
-
-## 环境变量
-
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `METING_API_URL` | Meting 实例地址 | `https://api.i-meto.com/meting/api` |
-| `METING_TOKEN` | Meting HMAC 鉴权密钥 | `token` |
-
-> Cookie 配置请使用 `cookies.env` 文件（见下方「获取完整音频」章节），不再推荐环境变量方式。
-
-## 文件结构
+在 `app-data/hanako-audio-player/cookies.env` 里填登录 cookie：
 
 ```
-hanako-audio-player/
-├── manifest.json        # 插件清单
-├── index.js             # 入口 + 生命周期
-├── README.md             # 本文件
-├── routes/
-│   └── player.js        # widget HTML + API 路由 + Bus 文件直写
-├── tools/
-│   ├── bus.js            # AudioBus 编排引擎 (singleton, _save* 已 no-op)
-│   ├── generate_speech.js # 对话内嵌播放卡片
-│   ├── play.js           # 添加音频到播放器
-│   └── tts.js            # TTS Bus (L1 CosyVoice → L2 HTTP → L3 浏览器原生)
+NETEASE_COOKIE=MUSIC_U=xxx; __csrf=xxx; ...
+TENCENT_COOKIE=uin=xxx; qqmusic_key=xxx; ...
 ```
 
-## API 路由
+- **不填也能用** —— 走试听版，`full-url` 端点自动回退。
+- 文件格式：每行 `KEY=VALUE`，`#` 开头是注释。
+- 登录态失效时，播放器会 toast 提示。
 
-| 路由 | 方法 | 说明 |
-|------|------|------|
-| `/widget` | GET | 播放器 widget HTML |
-| `/widget/api/queue` | GET | 返回 media 目录文件列表 |
-| `/widget/api/speakers` | GET | 返回可用 TTS 说话人 |
-| `/widget/api/bus/state` | GET | Bus 状态 (纯文件读取) |
-| `/widget/api/bus/control` | POST | Bus 控制 (load/say/play/next/remove/clear) |
-| `/widget/api/music/search` | GET | 音乐搜索 (keyword, server) |
-| `/widget/api/music/playlist` | GET | 歌单导入 (id, server) |
-| `/widget/api/music/url` | GET | 音频 URL 302 跳转 |
-| `/widget/api/music/full-url` | GET | 完整音频 URL（带 cookie，回退到 Meting） |
-| `/widget/api/music/pic` | GET | 封面图 302 跳转 |
-| `/widget/api/music/lrc` | GET | 歌词文本 |
-| `/widget/api/scan-folder` | GET | 扫描文件夹，复制音频到媒体目录 |
-| `/widget/api/import-file` | GET | 导入单个音频文件 |
-| `/widget/media/:filename` | GET | 本地音频文件服务 |
+## 目录结构
 
-## 获取完整音频（绕过 30 秒试听）
-
-默认使用公共 Meting 实例，未登录状态下平台只返回 30 秒试听片段。配置 cookie 后可获取完整音频。
-
-### 配置步骤
-
-在插件根目录创建 `cookies.env` 文件（参考 `cookies.env.example`）：
-
-```env
-NETEASE_COOKIE=MUSIC_U=你的值; __csrf=你的值
-TENCENT_COOKIE=uin=你的uin; qqmusic_key=你的key
+```
+manifest.json          应用清单（v2）
+index.js               入口：apply(ctx)
+lib/
+  state.js             播放队列 + 会话粘性
+  meting.js            Meting 节点搜索 / 歌词
+  cookies.js           播放凭证读取
+  register-tools.js    工具注册
+  register-routes.js   后端路由
+tools/
+  play.js              audio_play：入队 + 投递播放卡
+  list-music.js        audio_list_music：读播放列表
+ui/
+  index.html           主卡（自包含：CSS/JS/主题全内联）
+  standalone.html      拆窗版（同内容，body class 不同）
+  sdk.js               卡片侧 SDK
+  face.png             卡片封面
+  _build.json          构建标记（看门狗自刷新用）
+assets/icon.svg        应用图标
 ```
 
-> ⚠️ `cookies.env` 已在 `.gitignore` 中排除，不会被提交到仓库。
+## 工具接口
 
-#### 网易云
+| 工具 | 说明 |
+|---|---|
+| `audio_play` | 播放音频。`source` 传本地路径或在线 URL |
+| `audio_list_music` | 列播放列表，支持 `keyword` / `group` / `limit` |
 
-1. 浏览器登录 [网易云网页版](https://music.163.com)
-2. 打开开发者工具（F12）→ Application → Cookies → `https://music.163.com`
-3. 找到 `MUSIC_U` 和 `__csrf` 两个字段
-4. 按格式写入 `cookies.env`：
+## 实现要点
 
-```env
-NETEASE_COOKIE=MUSIC_U=00B83B...; __csrf=371f81...
-```
+- **在线播放不代理**：Meting 节点 302 到 CDN 直链，前端 `<audio>` 直接播，
+  绕开 v2 的响应体上限（`ctx.network.fetch` 默认 5 MiB）。
+- **卡片鉴权**：v2 的 app 路由全部要求凭据。iframe URL 带 `appSurfaceSession`，
+  但 `<audio src>` / `<img src>` / ESM import 是浏览器自发请求、不带票 —— 
+  `ui/index.html` 里注入了补票 shim 处理这三种情况。
+- **会话粘性**：卡片拿不到 `sessionPath`（宿主只给 `appId/slot/cardInstanceId`），
+  所以经 `ctx.bus.subscribe` 的回调第二参数自动捕获，并持久化。
+- **自刷新**：`ui/_build.json` + 页面轮询，构建标记变化时自动 reload，
+  改 UI 不必重启宿主。
 
-#### QQ音乐
+## 许可证
 
-1. 浏览器登录 [QQ音乐网页版](https://y.qq.com)
-2. 打开开发者工具（F12）→ Application → Cookies → `https://y.qq.com`
-3. 找到 `uin` 和 `qqmusic_key` 两个字段
-4. 按格式写入 `cookies.env`：
-
-```env
-TENCENT_COOKIE=uin=12345678; qqmusic_key=abcdef123456
-```
-
-5. 重启 Hanako
-
-> Cookie 有效期通常数周到数月，过期后重新获取即可。
-> 未配置 cookie 时自动回退到 Meting 试听 URL，不影响基本功能。
-> 也支持通过环境变量 `NETEASE_COOKIE` / `TENCENT_COOKIE` 配置（`cookies.env` 优先）。
-
-### 其他平台
-
-酷狗、百度、酷我通过 Meting 搜索，暂不支持 cookie 升级完整音频，使用 30 秒试听。
-
-## 许可
-
-本项目采用**双重许可**：
-
-- **开源许可**：[GNU AGPL v3](https://www.gnu.org/licenses/agpl-3.0.html) — 开源免费，但修改必须开源
-- **商业许可**：闭源使用需购买商业授权，详见 [COMMERCIAL-LICENSE.md](./COMMERCIAL-LICENSE.md)
+见 `LICENSE`。商用授权见 `COMMERCIAL-LICENSE.md`。

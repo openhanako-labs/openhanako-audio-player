@@ -1,1 +1,61 @@
-{"name":"音频播放器","description":"音频播放器，支持 TTS 结果播放、本地音乐和在线音乐。","version":"0.4.0","trust":"full-access","contributes":{"cards":[{"id":"audio-player","description":"TTS播放、本地音乐与在线音乐","title":{"en":"Audio Player","zh":"音频播放器"},"type":"webview","icon":"<svg viewBox=\"0 0 24 24\" fill=\"none\"><circle cx=\"12\" cy=\"12\" r=\"10\" stroke=\"#d49a6a\" stroke-width=\"1.5\"/><polygon points=\"10,8 16,12 10,16\" fill=\"#d49a6a\"/></svg>","route":"/widget"}],"tools":[{"source":"tools/play.js"},{"source":"tools/tts.js"},{"source":"tools/generate_speech.js"},{"source":"tools/bus.js"},{"source":"tools/tts-bus.js"}]},"manifestVersion":1,"ui":{"hostCapabilities":["external.open","clipboard.writeText"]},"minAppVersion":"0.0.0","id":"hanako-audio-player"}
+{
+  "manifestVersion": 2,
+  "id": "hanako-audio-player",
+  "name": "音频播放器",
+  "version": "0.5.0",
+  "description": "音频播放器：本地音乐与在线音乐播放，含歌词横幅。从 v1 插件迁移而来。",
+  "minAppVersion": "0.946.2",
+  "entry": "index.js",
+  "icon": "assets/icon.svg",
+  "capabilities": [
+    "app/tools.expose-to-model",
+    "app/ui.clipboard-write",
+    "app/ui.open-external",
+    "app/resources.read"
+  ],
+  "network": {
+    "allowedHosts": [
+      "metingapi.nanorocky.top",
+      "api.amarea.cn",
+      "api.qijieya.cn",
+      "met.liiiu.cn",
+      "music.163.com",
+      "*.music.126.net",
+      "u.y.qq.com"
+    ],
+    "methods": [
+      "GET"
+    ],
+    "allowLocalhost": false,
+    "defaultTimeoutMs": 15000,
+    "maxResponseBytes": 5242880
+  },
+  "contributes": {
+    "cards": [
+      {
+        "id": "player",
+        "title": "音频播放器",
+        "description": "播放当前曲目、查看队列与歌词。",
+        "route": "/index.html",
+        "face": {
+          "image": "face.png"
+        },
+        "cardForm": "flush",
+        "titlebar": "solid",
+        "detached": {
+          "route": "/standalone.html"
+        },
+        "detachedDefaultSize": {
+          "width": 1040,
+          "height": 780
+        }
+      }
+    ],
+    "messageRenderers": [
+      {
+        "customType": "now-playing",
+        "cardId": "player"
+      }
+    ]
+  }
+}
