@@ -1,937 +1,10 @@
-/**
- * hanako-audio-player/routes/player.js
- *
- * 播放器路由：
- *   /widget                    — widget 页面（嵌入式）
- *   /widget/media/{filename} — 流式音频
- *   /play                      — 对话内嵌播放器
- */
-
-import fs from "node:fs";
-import path from "node:path";
-import { createHmac } from "node:crypto";
-import { getBus } from "../tools/bus.js";
-
-const MIME = { mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac", m4a: "audio/mp4" };
-
-// ── Cookie 加载：优先从 cookies.env 文件读取，回退到环境变量 ──
-function _loadCookies() {
-  let netease = process.env.NETEASE_COOKIE || "";
-  let tencent = process.env.TENCENT_COOKIE || "";
-  try {
-    let cookiePath = null;
-    // 方案1：import.meta.url（ESM）
-    try {
-      const _url = new URL("cookies.env", import.meta.url);
-      // Windows 路径标准化：file:///W:/... → W:...
-      let fp = _url.pathname;
-      if (fp.startsWith("/")) fp = fp.slice(1);
-      fp = fp.replace(/\//g, "\\");
-      if (fs.existsSync(fp)) cookiePath = fp;
-    } catch(e) {}
-    // 方案2：USERPROFILE 硬编码路径
-    if (!cookiePath) {
-      const home = process.env.USERPROFILE || process.env.HOME || "";
-      if (home) {
-        const fp2 = path.join(home, ".hanako", "plugins", "hanako-audio-player", "cookies.env");
-        if (fs.existsSync(fp2)) cookiePath = fp2;
-      }
-    }
-    // 方案3：__dirname（CJS 兼容）
-    if (!cookiePath && typeof __dirname !== "undefined") {
-      const fp3 = path.join(__dirname, "cookies.env");
-      if (fs.existsSync(fp3)) cookiePath = fp3;
-    }
-    if (cookiePath) {
-      const raw = fs.readFileSync(cookiePath, "utf-8");
-      for (const line of raw.split("\n")) {
-        const m = line.match(/^([A-Z_]+)=(.*)$/);
-        if (!m) continue;
-        if (m[1] === "NETEASE_COOKIE" && m[2].trim()) netease = m[2].trim();
-        if (m[1] === "TENCENT_COOKIE" && m[2].trim()) tencent = m[2].trim();
-      }
-    }
-  } catch(e) { console.warn("[player] cookies.env load failed:", e.message); }
-  return { NETEASE_COOKIE: netease, TENCENT_COOKIE: tencent };
-}
-const { NETEASE_COOKIE, TENCENT_COOKIE } = _loadCookies();
-
-export default function (app, ctx) {
-  const pluginId = ctx.pluginId;
-  const dataDir = ctx.dataDir;
-  const mediaDir = path.join(dataDir, "media");
-  fs.mkdirSync(mediaDir, { recursive: true });
-  const home = process.env.USERPROFILE || process.env.HOME || "";
-  const pluginDataMediaDir = home ? path.join(home, ".hanako", "plugin-data", "hanako-audio-player", "media") : null;
-
-  // ── 扫描本地媒体文件 ──
-  let _mediaCache = null, _cacheTime = 0;
-  function collectMediaFiles() {
-    if (_mediaCache && Date.now() - _cacheTime < 20000) return _mediaCache;
-    const results = [];
-    const seen = new Set();
-    const exts = [".mp3", ".wav", ".ogg", ".flac", ".m4a"];
-    function scanDir(dir, urlPrefix) {
-      if (!dir || !fs.existsSync(dir)) return;
-      try {
-        for (const name of fs.readdirSync(dir)) {
-          const lower = name.toLowerCase();
-          if (!exts.some(e => lower.endsWith(e))) continue;
-          if (name.startsWith("_")) continue;
-          if (seen.has(name)) continue;
-          seen.add(name);
-          try {
-            const stat = fs.statSync(path.join(dir, name));
-            // 读取 _names.json 做美化
-            let displayName = name.replace(/\.\w+$/, "");
-            try {
-              const namesPath = path.join(dir, "_names.json");
-              if (fs.existsSync(namesPath)) {
-                const namesMap = JSON.parse(fs.readFileSync(namesPath, "utf-8"));
-                if (namesMap[name]) displayName = namesMap[name];
-              }
-            } catch (e) {}
-            results.push({
-              name: displayName,
-              url: `${urlPrefix}/${encodeURIComponent(name)}`,
-              size: stat.size,
-              mtime: stat.mtime.toISOString(),
-            });
-          } catch (e) {}
-        }
-      } catch (e) {}
-    }
-    scanDir(mediaDir, `/api/plugins/${pluginId}/widget/media`);
-    scanDir(pluginDataMediaDir, `/api/plugins/${pluginId}/widget/media`);
-    _mediaCache = results; _cacheTime = Date.now();
-    return results;
-  }
-
-  // ── Widget 页面 ──
-  app.get("/widget", (c) => {
-    const hanaCss = c.req.query("hana-css") || "";
-    const token = c.req.query("token") || "";
-    const standalone = c.req.query("standalone") || "";
-    const html = getWidgetHTML(pluginId, hanaCss, token, standalone);
-    c.header("Cache-Control", "no-cache, no-store, must-revalidate");
-    return c.html(html);
-  });
-
-  // ── 对话内嵌播放器 ──
-  app.get("/play", (c) => {
-    const filename = c.req.query("file");
-    const translate = c.req.query("translate") || "";
-    if (!filename) return c.text("Missing file", 400);
-    if (filename.includes("/") || filename.includes("\\") || filename.includes("..")) {
-      return c.text("Invalid filename", 400);
-    }
-    let filePath = path.join(mediaDir, filename);
-    if (!fs.existsSync(filePath) && pluginDataMediaDir) {
-      filePath = path.join(pluginDataMediaDir, filename);
-    }
-    if (!fs.existsSync(filePath)) return c.text("File not found", 404);
-
-    const ext = path.extname(filename).slice(1).toLowerCase();
-    const mime = MIME[ext] || "audio/mpeg";
-
-    const stat = fs.statSync(filePath);
-    if (stat.size > 1024 * 1024) {
-      const redirectUrl = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(filename)}`;
-      return c.redirect(redirectUrl);
-    }
-
-    const buf = fs.readFileSync(filePath);
-    const base64 = buf.toString("base64");
-    const audioSrc = `data:${mime};base64,${base64}`;
-
-    let displayName = filename.replace(/\.\w+$/, "");
-    try {
-      const namesPath = path.join(dataDir, "media", "_names.json");
-      let namesMap = null;
-      if (fs.existsSync(namesPath)) {
-        namesMap = JSON.parse(fs.readFileSync(namesPath, "utf-8"));
-      } else if (pluginDataMediaDir) {
-        const fallbackNames = path.join(pluginDataMediaDir, "_names.json");
-        if (fs.existsSync(fallbackNames)) {
-          namesMap = JSON.parse(fs.readFileSync(fallbackNames, "utf-8"));
-        }
-      }
-      if (namesMap && namesMap[filename]) displayName = namesMap[filename];
-    } catch (e) {
-      console.warn("[play] _names.json read failed:", e.message);
-    }
-
-    const html = `<!DOCTYPE html>
-<html lang="zh">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{
-  display:flex;align-items:center;justify-content:center;
-  min-height:52px;padding:0;background:transparent;
-  font-family:system-ui,-apple-system,sans-serif;
-}
-.player-wrap{
-  width:100%;max-width:480px;
-  background:#FFFBF5;border:1px solid rgba(0,0,0,0.06);
-  border-radius:10px;overflow:hidden;
-  margin:0 auto;
-}
-.top{height:2px;background:linear-gradient(90deg,#d49a6a,#c48454)}
-.body{padding:8px 14px}
-.row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-.icon{
-  width:26px;height:26px;border-radius:5px;
-  background:linear-gradient(135deg,#d49a6a,#c48454);
-  display:flex;align-items:center;justify-content:center;
-  font-size:13px;flex-shrink:0;color:white;
-}
-.name{color:#2c2c2c;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
-.trans{color:#666;font-size:12px;line-height:1.4;padding:6px 0 2px 0;border-top:1px solid rgba(0,0,0,0.04);margin-top:6px;word-break:break-all}
-audio{width:100%;height:36px;border-radius:6px;outline:none;background:#FFFBF5}
-audio::-webkit-media-controls-panel{background:#FFFBF5}
-</style>
-</head>
-<body>
-<div class="player-wrap">
-  <div class="top"></div>
-  <div class="body">
-    <div class="row">
-      <div class="icon">♫</div>
-      <div class="name">${escAttr(displayName)}</div>
-    </div>
-    <audio src="${escAttr(audioSrc)}" controls preload="auto"></audio>
-    ${translate ? `<div class="trans">${escAttr(translate)}</div>` : ""}
-  </div>
-</div>
-<script>
-(function(){
-var a=document.querySelector("audio");
-try{parent.postMessage({type:"ready"},"*")}catch(e){}
-function n(){try{parent.postMessage({type:"resize-request",payload:{height:document.body.scrollHeight}},"*")}catch(e){}}
-a.onloadedmetadata=n;
-new ResizeObserver(n).observe(document.body);
-setTimeout(n,100);
-})();
-</script>
-</body>
-</html>`;
-    return c.html(html);
-  });
-
-  // ── 播放队列 ──
-  // ── Media 库 API（替代旧的 queue.json） ──
-  app.get("/widget/api/queue", (c) => {
-    try {
-      const files = collectMediaFiles().map(({ name, size, mtime, url }) => ({ name, size, mtime, url }));
-      return c.json(files);
-    } catch (e) { return c.json([]); }
-  });
-
-  // ── 单文件导入 API ──
-  app.get("/widget/api/import-file", (c) => {
-    const filePath = c.req.query("path") || "";
-    if (!filePath) return c.json({ ok:false, error:"path required" }, 400);
-    try {
-      const absPath = path.resolve(filePath);
-      if (!fs.existsSync(absPath) || !fs.statSync(absPath).isFile()) {
-        return c.json({ ok:false, error:"not a file" }, 400);
-      }
-      const exts = [".mp3", ".wav", ".ogg", ".flac", ".m4a"];
-      const name = path.basename(absPath);
-      const lower = name.toLowerCase();
-      if (!exts.some(e => lower.endsWith(e))) {
-        return c.json({ ok:false, error:"unsupported format" }, 400);
-      }
-      // 复制文件到 mediaDir
-      const destPath = path.join(mediaDir, name);
-      if (!fs.existsSync(destPath)) {
-        fs.copyFileSync(absPath, destPath);
-      }
-      const url = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(name)}`;
-      let displayName = name.replace(/\.\w+$/, "");
-      return c.json({ ok:true, name:displayName, url, mode:"本地" });
-    } catch(e) { return c.json({ ok:false, error:e.message }, 500); }
-  });
-
-  // ── 文件夹扫描 API ──
-  app.get("/widget/api/scan-folder", (c) => {
-    const dir = c.req.query("path") || "";
-    if (!dir) return c.json({ ok:false, error:"path required" }, 400);
-    try {
-      const absPath = path.resolve(dir);
-      if (!fs.existsSync(absPath) || !fs.statSync(absPath).isDirectory()) {
-        return c.json({ ok:false, error:"not a directory" }, 400);
-      }
-      const exts = [".mp3", ".wav", ".ogg", ".flac", ".m4a"];
-      const results = [];
-      const seen = new Set();
-      function _scan(d) {
-        try {
-          for (const name of fs.readdirSync(d)) {
-            if (name.startsWith("_")) continue;
-            const full = path.join(d, name);
-            const stat = fs.statSync(full);
-            if (stat.isDirectory()) { _scan(full); continue; }
-            const lower = name.toLowerCase();
-            if (!exts.some(e => lower.endsWith(e))) continue;
-            if (seen.has(name)) continue;
-            seen.add(name);
-            // 复制文件到 mediaDir，确保可以通过 /widget/media/ 端点访问
-            const destPath = path.join(mediaDir, name);
-            if (!fs.existsSync(destPath)) {
-              try {
-                fs.copyFileSync(full, destPath);
-              } catch (copyErr) {
-                console.warn(`[scan-folder] copy failed: ${name}`, copyErr.message);
-                continue;
-              }
-            }
-            const url = `/api/plugins/${pluginId}/widget/media/${encodeURIComponent(name)}`;
-            let displayName = name.replace(/\.\w+$/, "");
-            results.push({ name: displayName, url, mode: "本地", size: stat.size });
-          }
-        } catch(e) {}
-      }
-      _scan(absPath);
-      return c.json({ ok:true, files:results, count:results.length });
-    } catch(e) { return c.json({ ok:false, error:e.message }, 500); }
-  });
-
-  // ── Playlist persistence (server-side single source of truth) ──
-  const playlistPath = path.join(dataDir, "playlist.json");
-
-  function loadPlaylistFromDisk() {
-    try {
-      if (fs.existsSync(playlistPath)) {
-        return JSON.parse(fs.readFileSync(playlistPath, "utf-8"));
-      }
-    } catch(e) { console.warn("[playlist] load failed:", e.message); }
-    return null;
-  }
-
-  function savePlaylistToDisk(tracks) {
-    try {
-      fs.writeFileSync(playlistPath, JSON.stringify(tracks, null, 2), "utf-8");
-    } catch(e) { console.warn("[playlist] save failed:", e.message); }
-  }
-
-  // GET /widget/api/playlist — 返回完整播放列表
-  app.get("/widget/api/playlist", (c) => {
-    const saved = loadPlaylistFromDisk();
-    if (saved && saved.length) {
-      return c.json({ ok: true, tracks: saved, count: saved.length });
-    }
-    // 首次加载：从本地媒体文件初始化
-    const files = collectMediaFiles();
-    const initial = files.map(function(f) { return { name: f.name, url: f.url, mode: "本地", dur: 0, group: "本地音乐" }; });
-    savePlaylistToDisk(initial);
-    return c.json({ ok: true, tracks: initial, count: initial.length });
-  });
-
-  // POST /widget/api/playlist — 保存完整播放列表
-  app.post("/widget/api/playlist", async (c) => {
-    try {
-      const body = await c.req.json();
-      if (body && body.tracks && Array.isArray(body.tracks)) {
-        savePlaylistToDisk(body.tracks);
-        return c.json({ ok: true, count: body.tracks.length });
-      }
-      return c.json({ ok: false, error: "invalid tracks" }, 400);
-    } catch(e) {
-      return c.json({ ok: false, error: e.message }, 500);
-    }
-  });
-
-  app.post("/widget/api/queue", async (c) => {
-    return c.json({ ok: true });
-  });
-
-  // 增量 diff API
-  let _lastFileSet = null, _lastNameMap = null;
-  app.get("/widget/api/queue/diff", (c) => {
-    try {
-      const files = collectMediaFiles();
-      const currentSet = new Set(files.map(f => f.url.split("/").pop()));
-      const currentMap = new Map(files.map(f => [f.url.split("/").pop(), f]));
-      if (!_lastFileSet) {
-        _lastFileSet = currentSet; _lastNameMap = currentMap;
-        return c.json({ added: files.map(f => ({ name: f.name, url: f.url, mode: "本地" })), removed: [] });
-      }
-      const added = [], removed = [];
-      for (const [fn, f] of currentMap) { if (!_lastFileSet.has(fn)) added.push({ name: f.name, url: f.url, mode: "本地" }); }
-      for (const fn of _lastFileSet) { if (!currentSet.has(fn)) { const old = _lastNameMap.get(fn); if (old) removed.push(old.url); } }
-      _lastFileSet = currentSet; _lastNameMap = currentMap;
-      return c.json({ added, removed });
-    } catch (e) { return c.json({ added: [], removed: [] }); }
-  });
-
-  // ── Speakers API ──
-  app.get("/widget/api/speakers", (c) => {
-    try {
-      const cosyBase = process.env.COSYVOICE_BASE || "";
-      const home = process.env.USERPROFILE || process.env.HOME || "";
-      const candidates = [
-        cosyBase,
-        path.join(home, "cosyvoice-tts"),
-        path.join(home, "CosyVoice"),
-        path.join(home, "CosyVoice2"),
-      ].filter(Boolean);
-      for (const base of candidates) {
-        const refsPath = path.join(base, "speaker_refs.json");
-        if (fs.existsSync(refsPath)) {
-          try {
-            const refs = JSON.parse(fs.readFileSync(refsPath, "utf-8"));
-            const cnMap = { ophelia:"奥菲莉娅", aimis:"爱弥斯", alice:"艾莉丝", luoqixi:"洛琪希", glados:"GLaDOS", rebecca:"瑞贝卡", rebecca_normal:"瑞贝卡(混合)", my_voice:"我的声音" };
-            const speakers = Object.keys(refs).map(function(id){ return { id:id, name:cnMap[id]||id }; });
-            return c.json({ ok:true, speakers:speakers });
-          } catch(e) { console.warn('[speakers] parse failed for', refsPath, e.message); }
-        }
-      }
-      return c.json({ ok:true, speakers:[{id:"my_voice",name:"我的声音"}] });
-    } catch(e) {
-      console.warn('[speakers] endpoint error:', e.message);
-      return c.json({ ok:false, speakers:[{id:"my_voice",name:"我的声音"}] });
-    }
-  });
-
-  // ── Meting 音乐搜索代理（HTTP 代理到公共/本地 Meting 实例） ──
-  const METING_BASE = process.env.METING_API_URL || "https://api.i-meto.com/meting/api";
-  const METING_TOKEN = process.env.METING_TOKEN || "token";
-  const metingAuth = (server, type, id) => createHmac("sha1", METING_TOKEN).update(`${server}${type}${id}`).digest("hex");
-  const metingCache = new Map();
-  const metingCacheTTL = 5 * 60 * 1000;
-
-  // ── 多节点降级：主节点失败时自动尝试备用节点 ──
-  const METING_NODES = [
-    "https://meting.mikus.ink/api",
-    METING_BASE,
-    "https://meting.elysium-stack.cn/api",
-    "https://metingapi.mo-app.cn/",
-    "https://metingapi.nanorocky.top/",
-    "https://api.amarea.cn/meting/",
-    "https://api.qijieya.cn/meting/",
-    "https://met.liiiu.cn/meting/api"
-  ];
-
-  async function fetchMetingWithFallback(path, timeoutMs = 8000) {
-    const errors = [];
-    for (const node of METING_NODES) {
-      try {
-        const resp = await fetch(node + path, { signal: AbortSignal.timeout(timeoutMs) });
-        if (resp.ok) return { resp, node };
-        errors.push(`${node} → ${resp.status}`);
-      } catch (e) {
-        errors.push(`${node} → ${e.message}`);
-      }
-    }
-    throw new Error(`所有 Meting 节点均不可用: ${errors.join('; ')}`);
-  }
-
-  app.get("/widget/api/music/search", async (c) => {
-    const keyword = c.req.query("keyword") || "";
-    const server = c.req.query("server") || "netease";
-    if (!keyword) return c.json({ ok: false, error: "keyword required" }, 400);
-    if (!["netease","tencent","kugou","baidu","kuwo"].includes(server)) return c.json({ ok:false, error:"invalid server" }, 400);
-    try {
-      const cacheKey = `${server}/search/${keyword}`;
-      const cached = metingCache.get(cacheKey);
-      if (cached && Date.now() - cached.ts < metingCacheTTL) return c.json({ ok:true, results:cached.data, node:cached.node });
-      const path = `?server=${encodeURIComponent(server)}&type=search&id=${encodeURIComponent(keyword)}`;
-      const { resp, node } = await fetchMetingWithFallback(path);
-      const raw = await resp.json();
-      const data = raw.map(x => ({
-        title: x.title || "", author: x.author || "",
-        url: x.url || "", pic: x.pic || "", lrc: x.lrc || "",
-      }));
-      metingCache.set(cacheKey, { ts: Date.now(), data, node });
-      console.log(`[meting] search ok via ${node}`);
-      return c.json({ ok:true, results:data, node });
-    } catch(e) {
-      console.warn(`[meting] search failed:`, e.message);
-      return c.json({ ok:false, error:e.message }, 500);
-    }
-  });
-
-  app.get("/widget/api/music/url", async (c) => {
-    // 公共实例返回的搜索结果里 url 字段已经是带 auth 的完整地址，直接 302
-    const url = c.req.query("url") || "";
-    if (!url) return c.json({ ok:false, error:"url required" }, 400);
-    return c.redirect(url);
-  });
-
-  // ── 完整音频 URL（带 cookie，绕过试听限制）──
-  // 环境变量 NETEASE_COOKIE 在文件顶部已声明
-  app.get("/widget/api/music/full-url", async (c) => {
-    const id = c.req.query("id") || "";
-    const server = c.req.query("server") || "netease";
-    const fallback = c.req.query("fallback") || ""; // Meting 原始 URL
-    if (!id) return c.json({ ok:false, error:"id required" }, 400);
-
-    // 没配任何 cookie → 直接回退到 Meting URL
-    if (!NETEASE_COOKIE && !TENCENT_COOKIE && fallback) return c.redirect(fallback);
-    if (!NETEASE_COOKIE && !TENCENT_COOKIE) return c.json({ ok:false, error:"no cookie configured" });
-
-    try {
-      if (server === "netease" && NETEASE_COOKIE) {
-        const apiUrl = `https://music.163.com/api/song/enhance/player/url?ids=[${id}]&br=320000`;
-        const resp = await fetch(apiUrl, {
-          headers: {
-            Cookie: NETEASE_COOKIE,
-            Referer: "https://music.163.com",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          },
-        });
-        const data = await resp.json();
-        const fullUrl = data?.data?.[0]?.url;
-        if (fullUrl) {
-          const httpsUrl = fullUrl.replace("http://", "https://");
-          return c.json({ ok:true, url:httpsUrl });
-        }
-        // 网易云返回了空 URL → 检查是 cookie 失效还是歌曲不可用
-        const songCode = data?.data?.[0]?.code;
-        const outerCode = data?.code;
-        if (outerCode === 301 || (!fullUrl && data?.message === "need login")) {
-          return c.json({ ok:false, error:"session_expired", cookieExpired:true, message:"网易云登录态已失效" });
-        }
-        // 歌曲不可用(404/403)≠cookie失效，不算错误
-        if (songCode === 404 || songCode === 403) {
-          if (fallback) return c.json({ ok:true, url:fallback });
-          return c.json({ ok:false, error:"song_unavailable", cookieExpired:false });
-        }
-      }
-      if (server === "tencent" && TENCENT_COOKIE) {
-        // QQ 音乐：cookie 格式 uin=xxx; qqmusic_key=xxx
-        const uinMatch = TENCENT_COOKIE.match(/uin=([^;]+)/);
-        const keyMatch = TENCENT_COOKIE.match(/qqmusic_key=([^;]+)/);
-        const uin = uinMatch ? uinMatch[1] : "";
-        const qqmusic_key = keyMatch ? keyMatch[1] : "";
-        const guid = (Math.random() * 10000000).toFixed(0);
-        const reqBody = {
-          req_0: {
-            module: "vkey.GetVkeyServer",
-            method: "CgiGetVkey",
-            param: { guid: guid, songmid: id, songtype: [0], uin: uin, loginflag: 1, platform: "20" },
-          },
-          comm: { uin: uin, format: "json", ct: 19, cv: 0, authst: qqmusic_key },
-        };
-        const apiUrl = "https://u.y.qq.com/cgi-bin/musicu.fcg?-=getplaysongvkey&g_tk=5381&loginUin="+uin+"&hostUin=0&format=json&inCharset=utf8&outCharset=utf-8&platform=yqq.json&needNewCode=0&data="+encodeURIComponent(JSON.stringify(reqBody));
-        const resp = await fetch(apiUrl);
-        const data = await resp.json();
-        const purl = data?.req_0?.data?.midurlinfo?.[0]?.purl;
-        if (purl) {
-          const sip = data.req_0.data.sip.find(s => !s.startsWith("http://ws")) || data.req_0.data.sip[0];
-          const fullUrl = (sip + purl).replace("http://", "https://");
-          return c.json({ ok:true, url:fullUrl });
-        }
-      }
-      // cookie 无效或拿不到 → 回退
-      if (fallback) {
-        // 如果网易云返回了空 URL 且有 fallback，区分一下是 cookie 问题还是接口问题
-        if (server === "netease") {
-          return c.json({ ok:true, url:fallback, cookieExpired:true, message:"网易云 cookie 失效，使用试听版" });
-        }
-        return c.json({ ok:true, url:fallback });
-      }
-      return c.json({ ok:false, error:"failed to get full url", cookieExpired: server==="netease" });
-    } catch (e) {
-      if (fallback) return c.json({ ok:true, url:fallback });
-      return c.json({ ok:false, error:e.message }, 500);
-    }
-  });
-
-  app.get("/widget/api/music/pic", async (c) => {
-    const url = c.req.query("url") || "";
-    if (!url) return c.json({ ok:false, error:"url required" }, 400);
-    return c.redirect(url);
-  });
-
-  app.get("/widget/api/music/lrc", async (c) => {
-    const id = c.req.query("id"); const server = c.req.query("server") || "netease";
-    if (!id) return c.json({ok:false, error:"id required"}, 400);
-    try {
-      const path = `?server=${encodeURIComponent(server)}&type=lrc&id=${encodeURIComponent(id)}`;
-      const { resp } = await fetchMetingWithFallback(path);
-      const data = await resp.json();
-      if (Array.isArray(data) && data.length && data[0].lrc) {
-        return c.text(data[0].lrc, 200, { "Content-Type":"text/plain; charset=utf-8" });
-      }
-      // 有些实例直接返回文本
-      const text = typeof data === "string" ? data : JSON.stringify(data);
-      return c.text(text, 200, { "Content-Type":"text/plain; charset=utf-8" });
-    } catch(e) { return c.json({ok:false, error:e.message}, 500); }
-  });
-
-  app.get("/widget/api/music/lrc-proxy", async (c) => {
-    const url = c.req.query("url") || "";
-    if (!url) return c.text("url required", 400);
-    try {
-      const resp = await fetch(url);
-      const text = await resp.text();
-      return c.text(text, 200, { "Content-Type":"text/plain; charset=utf-8" });
-    } catch(e) { return c.text("lyric fetch failed", 502); }
-  });
-
-  // ── 音频流代理（绕过 CDN 反盗链）──
-  app.get("/widget/api/music/stream", async (c) => {
-    const url = c.req.query("url") || "";
-    if (!url) return c.text("url required", 400);
-    if (!url.startsWith("http://") && !url.startsWith("https://")) return c.text("invalid url", 400);
-
-    const range = c.req.header("Range") || "";
-    const ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
-
-    // 判断域名，设置对应的 Referer/Origin
-    let referer = "https://music.163.com/";
-    let origin = "https://music.163.com";
-    if (url.includes("qq.com") || url.includes("gtimg.cn")) {
-      referer = "https://y.qq.com/";
-      origin = "https://y.qq.com";
-    }
-
-    const fwdHeaders = {
-      "Referer": referer,
-      "Origin": origin,
-      "User-Agent": ua,
-      "Accept": "*/*",
-      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-      "Accept-Encoding": "identity;q=1, *;q=0",
-    };
-    if (range) fwdHeaders["Range"] = range;
-
-    try {
-      const resp = await fetch(url, { headers: fwdHeaders, redirect: "follow" });
-
-      if (!resp.ok) {
-        console.warn(`[music-stream] upstream ${resp.status} for ${url.slice(0, 80)}`);
-        return c.text(`upstream ${resp.status}`, resp.status);
-      }
-
-      const respHeaders = {
-        "Content-Type": resp.headers.get("content-type") || "audio/mpeg",
-        "Accept-Ranges": "bytes",
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "public, max-age=3600",
-      };
-      const cl = resp.headers.get("content-length");
-      const cr = resp.headers.get("content-range");
-      if (cl) respHeaders["Content-Length"] = cl;
-      if (cr) respHeaders["Content-Range"] = cr;
-
-      return new Response(resp.body, { status: resp.status, headers: respHeaders });
-    } catch (e) {
-      console.warn(`[music-stream] fetch error:`, e.message);
-      return c.text(`stream error: ${e.message}`, 502);
-    }
-  });
-
-  app.get("/widget/api/music/playlist", async (c) => {
-    const id = c.req.query("id"); const server = c.req.query("server") || "netease";
-    if (!id) return c.json({ ok:false, error:"id required" }, 400);
-    try {
-      const path = `?server=${encodeURIComponent(server)}&type=playlist&id=${encodeURIComponent(id)}`;
-      const { resp } = await fetchMetingWithFallback(path, 10000);
-      const raw = await resp.json();
-      const data = raw.map(x => ({
-        title: x.title || "", author: x.author || "",
-        url: x.url || "", pic: x.pic || "", lrc: x.lrc || "",
-      }));
-      return c.json({ ok:true, tracks:data });
-    } catch(e) { return c.json({ ok:false, error:e.message }, 500); }
-  });
-
-  // ── Bus API（节目编排引擎）──
-  app.get("/widget/api/bus/state", (c) => {
-    try {
-      const q = busFile.readQueue();
-      const st = busFile.readState();
-      return c.json({ ok: true, status: st.status || "idle", current: st.current, currentIndex: st.currentIndex ?? -1, queue: q, history: (st.history || []).slice(-20) });
-    } catch (e) {
-      return c.json({ ok: false, error: e.message }, 500);
-    }
-  });
-
-  // ── Bus 文件直读直写辅助（彻底绕过 require 缓存问题）──
-  const busFile = {
-    queuePath: path.join(ctx.dataDir, "bus-queue.json"),
-    statePath: path.join(ctx.dataDir, "bus-state.json"),
-    readQueue() {
-      try {
-        if (fs.existsSync(this.queuePath))
-          return JSON.parse(fs.readFileSync(this.queuePath, "utf-8"));
-      } catch(e) {}
-      return [];
-    },
-    writeQueue(q) {
-      try {
-        const tmp = this.queuePath + ".tmp." + process.pid;
-        fs.writeFileSync(tmp, JSON.stringify(q, null, 2), "utf-8");
-        fs.renameSync(tmp, this.queuePath);
-      } catch(e) {}
-      // 同步旧单例内存（防止旧定时器 _saveQueue 覆写文件）
-      try { const bus = getBus(ctx); if(bus) bus.queue = q.map(x => ({...x})); } catch(e) {}
-    },
-    readState() {
-      try {
-        if (fs.existsSync(this.statePath))
-          return JSON.parse(fs.readFileSync(this.statePath, "utf-8"));
-      } catch(e) {}
-      return { status: "idle", current: null, history: [], currentIndex: -1 };
-    },
-    writeState(s) {
-      try {
-        const tmp = this.statePath + ".tmp." + process.pid;
-        fs.writeFileSync(tmp, JSON.stringify(s, null, 2), "utf-8");
-        fs.renameSync(tmp, this.statePath);
-      } catch(e) {}
-      // 同步旧单例内存（防止旧定时器 _saveState 覆写文件）
-      try { const bus = getBus(ctx); if(bus) { bus.status = s.status; bus.current = s.current; bus.currentIndex = s.currentIndex; bus.history = s.history || []; } } catch(e) {}
-    }
-  };
-
-  app.post("/widget/api/bus/control", async (c) => {
-    try {
-      const body = await c.req.json();
-      const action = body.action || "state";
-      switch (action) {
-        case "load": {
-          const playlist = body.playlist || [];
-          busFile.writeQueue(playlist);
-          const st = busFile.readState();
-          st.status = "idle"; st.current = null; st.currentIndex = -1;
-          busFile.writeState(st);
-          return c.json({ ok: true, queue: playlist });
-        }
-        case "say": {
-          if (!body.text) return c.json({ ok: false, code: "missing_text" });
-          // 添加 say 条目到队列末尾
-          const q = busFile.readQueue();
-          const item = { type: "say", text: body.text, spk: body.spk || "my_voice", instruct: body.instruct || "", translate: body.translate || "", id: `say_${Date.now()}` };
-          q.push(item);
-          busFile.writeQueue(q);
-          return c.json({ ok: true, queued: item, queueLength: q.length });
-        }
-        case "play": {
-          if (!body.url) return c.json({ ok: false, code: "missing_url" });
-          const q = busFile.readQueue();
-          const item = { type: "play", url: body.url, name: body.name || path.basename(body.url), mode: body.mode || (body.url.startsWith("http") ? "在线" : "本地"), id: `play_${Date.now()}` };
-          q.push(item);
-          busFile.writeQueue(q);
-          return c.json({ ok: true, queued: item, queueLength: q.length });
-        }
-        case "next": {
-          const q = busFile.readQueue();
-          const st = busFile.readState();
-          if (!q.length) {
-            st.status = "idle"; st.current = null;
-            busFile.writeState(st);
-            return c.json({ ok: true, event: "bus_idle" });
-          }
-          let ci = st.currentIndex ?? -1;
-          if (ci < q.length - 1) ci++; else ci = 0;
-          const item = q[ci];
-
-          // say 类型：TTS 合成
-          if (item.type === "say") {
-            st.status = "playing"; st.current = item; st.currentIndex = ci;
-            busFile.writeState(st);
-            let ttsResult = null;
-            try {
-              const bus = getBus(ctx);
-              ttsResult = await bus.ttsBus.synthesize(item.text, { spk: item.spk || "my_voice", instruct: item.instruct || "" });
-              if (ttsResult.ok && ttsResult.url) {
-                const playItem = { ...item, type: "play", url: ttsResult.url, name: item.text.length > 20 ? item.text.slice(0, 20) + "…" : item.text, mode: ttsResult.layer === "cosyvoice" ? "本地" : "在线", _origin: { ...item } };
-                q[ci] = playItem;
-                busFile.writeQueue(q);
-                st.current = playItem;
-                busFile.writeState(st);
-                return c.json({ ok: true, event: "track_start", item: playItem });
-              }
-            } catch(e) {}
-            // TTS 失败
-            st.history = st.history || [];
-            st.history.push({ ...item, playedAt: Date.now(), skipped: true });
-            busFile.writeState(st);
-            return c.json({ ok: true, event: "say_skipped", item, _reason: "TTS failed" });
-          }
-
-          // play / other 类型 — 如果无 URL 但有 searchKey，先搜索拿完整音频
-          if (!item.url && item.searchKey) {
-            const sv = item.searchServer || "netease";
-            try {
-              const searchPath = `?server=${sv}&type=search&id=${encodeURIComponent(item.searchKey)}`;
-              const { resp: searchRes } = await fetchMetingWithFallback(searchPath);
-              const searchJson = await searchRes.json();
-              if (searchJson && searchJson.length > 0 && searchJson[0].url) {
-                item.url = searchJson[0].url;
-                item.name = item.name || searchJson[0].title;
-                // 更新队列中的条目
-                q[ci] = item;
-                busFile.writeQueue(q);
-              } else {
-                // 搜索无结果：跳过此条
-                st.history = st.history || [];
-                st.history.push({ ...item, playedAt: Date.now(), skipped: true });
-                busFile.writeState(st);
-                // 自动前进到下一首
-                const nextCi = ci < q.length - 1 ? ci + 1 : (q.length > 1 ? 0 : -1);
-                if (nextCi >= 0 && nextCi !== ci) {
-                  st.currentIndex = nextCi;
-                  busFile.writeState(st);
-                }
-                return c.json({ ok: true, event: "say_skipped", item, _reason: "search_no_result" });
-              }
-            } catch(e) {
-              // 搜索失败：跳过
-              st.history = st.history || [];
-              st.history.push({ ...item, playedAt: Date.now(), skipped: true });
-              busFile.writeState(st);
-              return c.json({ ok: true, event: "say_skipped", item, _reason: "search_failed" });
-            }
-          }
-
-          st.status = "playing"; st.current = item; st.currentIndex = ci;
-          st.history = st.history || [];
-          st.history.push({ ...item, playedAt: Date.now() });
-          busFile.writeState(st);
-          return c.json({ ok: true, event: "track_start", item });
-        }
-        case "remove": {
-          const q = busFile.readQueue();
-          const st = busFile.readState();
-          const rmIdx = body.index;
-          if (rmIdx < 0 || rmIdx >= q.length) return c.json({ ok: false, code: "bad_index" });
-          q.splice(rmIdx, 1);
-          if (rmIdx <= (st.currentIndex ?? -1)) st.currentIndex = Math.max(-1, st.currentIndex - 1);
-          busFile.writeQueue(q);
-          busFile.writeState(st);
-          return c.json({ ok: true, queueLength: q.length });
-        }
-        case "clear": {
-          busFile.writeQueue([]);
-          const st = busFile.readState();
-          st.status = "idle"; st.current = null; st.currentIndex = -1;
-          busFile.writeState(st);
-          return c.json({ ok: true, event: "bus_idle" });
-        }
-        case "state":
-        default: {
-          const q = busFile.readQueue();
-          const st = busFile.readState();
-          return c.json({ ok: true, status: st.status || "idle", current: st.current, currentIndex: st.currentIndex ?? -1, queue: q, history: (st.history || []).slice(-20) });
-        }
-      }
-    } catch (e) {
-      return c.json({ ok: false, error: e.message }, 500);
-    }
-  });
-
-  // ── 媒体文件 ──
-  app.get("/widget/media/:filename", async (c) => {
-    const filename = c.req.param("filename");
-    if (filename.includes("/") || filename.includes("\\") || filename.includes("..")) {
-      return c.json({ error: "invalid filename" }, 400);
-    }
-
-    let filePath = path.join(mediaDir, filename);
-    if (!fs.existsSync(filePath) && pluginDataMediaDir) {
-      filePath = path.join(pluginDataMediaDir, filename);
-    }
-    if (!fs.existsSync(filePath)) {
-      return c.json({ error: "not found" }, 404);
-    }
-
-    const stat = fs.statSync(filePath);
-    const ext = path.extname(filename).slice(1);
-    const mime = MIME[ext] || "audio/mpeg";
-    const total = stat.size;
-    const range = c.req.header("range");
-
-    if (range) {
-      const match = range.match(/^bytes=(\d+)-(\d*)$/);
-      if (!match) {
-        return c.text("Invalid Range", 416);
-      }
-      const start = parseInt(match[1], 10);
-      const end = match[2] !== "" ? parseInt(match[2], 10) : total - 1;
-      if (start >= total || end >= total) {
-        return c.text("Range Not Satisfiable", 416);
-      }
-      const stream = fs.createReadStream(filePath, { start, end });
-      const { readable, writable } = new TransformStream();
-      streamPipe(stream, writable);
-      return new Response(readable, {
-        status: 206,
-        headers: {
-          "Content-Type": mime,
-          "Content-Range": `bytes ${start}-${end}/${total}`,
-          "Content-Length": String(end - start + 1),
-          "Accept-Ranges": "bytes",
-          "Access-Control-Allow-Origin": "*",
-          "Cache-Control": "public, max-age=86400",
-        },
-      });
-    }
-
-    const stream = fs.createReadStream(filePath);
-    const { readable, writable } = new TransformStream();
-    streamPipe(stream, writable);
-    return new Response(readable, {
-      headers: {
-        "Content-Type": mime,
-        "Content-Length": String(total),
-        "Accept-Ranges": "bytes",
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "public, max-age=86400",
-      },
-    });
-  });
-}
-
-function streamPipe(nodeStream, writable) {
-  const writer = writable.getWriter();
-  nodeStream.on("data", (chunk) => writer.write(chunk));
-  nodeStream.on("end", () => writer.close());
-  nodeStream.on("error", () => writer.close());
-}
-
-function esc(s) {
-  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
-function escAttr(s) {
-  return esc(s);
-}
-
-function showToast(msg, dur) {
-  dur = dur || 2500;
-  var c = document.getElementById('toastContainer');
-  if (!c) return;
-  var t = document.createElement('div');
-  t.className = 'toast-item';
-  t.textContent = msg;
-  c.appendChild(t);
-  requestAnimationFrame(function() { t.classList.add('show'); });
-  setTimeout(function() {
-    t.classList.remove('show');
-    setTimeout(function() { t.remove(); }, 300);
-  }, dur);
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Widget HTML — 深色玻璃质感 + 琥珀色点缀
-// ═══════════════════════════════════════════════════════════════
-function getWidgetHTML(pluginId, hanaCss, token, standalone) {
-  const apiBase = `/api/plugins/${pluginId}`;
-  const bodyClass = standalone ? 'player-popup' : '';
-  return `<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>🎵 播放器</title>
-${hanaCss ? `<link rel="stylesheet" href="${esc(hanaCss)}">` : ""}
+
 <style>
 :root, [data-theme="dark"] {
   --bg: #161618;
@@ -1849,8 +922,2975 @@ body {
 }
 .bus-queue-title { font-size:12px; font-weight:600; color:var(--text-dim); margin-bottom:6px; }
 </style>
+<script type="module">
+// ../plugin-protocol/dist/index.js
+var PLUGIN_UI_PROTOCOL = "hana.plugin.ui";
+var PLUGIN_UI_PROTOCOL_VERSION = 1;
+var APP_SURFACE_SESSION_HEADER = "X-Hana-App-Surface-Session";
+var APP_SURFACE_SESSION_QUERY = "appSurfaceSession";
+var PLUGIN_UI_ERROR_CODE = {
+  BAD_MESSAGE: "BAD_MESSAGE",
+  UNSUPPORTED_VERSION: "UNSUPPORTED_VERSION",
+  UNKNOWN_TYPE: "UNKNOWN_TYPE",
+  CAPABILITY_DENIED: "CAPABILITY_DENIED",
+  SLOT_DENIED: "SLOT_DENIED",
+  TIMEOUT: "TIMEOUT",
+  HOST_ERROR: "HOST_ERROR"
+};
+var PLUGIN_UI_CAPABILITY = {
+  TOAST_SHOW: "toast.show",
+  EXTERNAL_OPEN: "external.open",
+  SESSION_FILE_OPEN: "sessionFile.open",
+  RESOURCE_OPEN: "resource.open",
+  RESOURCE_PICK: "resource.pick",
+  RESOURCE_SAVE_FILE: "resource.saveFile",
+  RESOURCE_REQUEST_ACCESS: "resource.requestAccess",
+  UI_RESIZE: "ui.resize",
+  CLIPBOARD_WRITE_TEXT: "clipboard.writeText",
+  // 实例态（卡实例私有的草稿纸，随 Client Layout Profile 持久化，只在 card slot 生效）
+  STATE_GET: "hana.state.get",
+  STATE_SET: "hana.state.set",
+  // 应用态（插件级 KV，pluginId 命名空间，经宿主 owner 凭证代调 server 存储）。
+  // v1 插件专属的冻结兼容层能力，与上面的 v2 卡实例态 hana.state 并存，互不影响。
+  STORAGE_GET: "hana.storage.get",
+  STORAGE_GET_ALL: "hana.storage.getAll",
+  STORAGE_SET: "hana.storage.set",
+  STORAGE_DELETE: "hana.storage.delete",
+  // 功能面板：插件把要显示的内容推给宿主，宿主用内置原语画（只在 card slot
+  // 生效，面板是主卡的一块投影，不是第二个插件实例）
+  PANEL_SET: "hana.panel.set",
+  // 回传：把一次用户操作送进会话并唤醒 agent。只在 card slot 生效；
+  // 手势由 SDK 注入层采集，作者不可自报。进模型走既有起回合授权。
+  EMIT: "hana.emit",
+  // 安静日志：写入独立活动仓，不唤醒 agent。只在 card slot 生效。
+  TRACK: "hana.track",
+  // 宿主驱动：看卡 / 点卡。只由宿主发 request，不是作者向宿主申请的能力。
+  UI_ACTION: "hana.ui.action"
+};
+var PLUGIN_UI_HOST_EVENT = {
+  THEME_CHANGED: "hana.theme.changed",
+  SURFACE_RUNTIME_CHANGED: "hana.surface.runtime.changed",
+  SURFACE_ENVELOPE_CHANGED: "hana.surface.envelope.changed",
+  // 应用态变更广播：宿主消费 server 的 plugin-storage-changed 后，向同 pluginId 的
+  // 所有已挂载插件卡 iframe 推送（不带值，只带 keys；订阅方自行重拉）
+  STORAGE_CHANGED: "hana.storage.changed",
+  // 用户在功能面板里点了什么：宿主把事件送回贡献这块面板的那张卡
+  PANEL_EVENT: "hana.panel.event",
+  // 到了声明的刷新节奏：宿主叫插件重推一次内容（面板不可见时不发）
+  PANEL_REFRESH: "hana.panel.refresh"
+};
+var PLUGIN_CARD_STATE_MAX_BYTES = 64 * 1024;
+var APP_STORAGE_CAPABILITY = {
+  GET: "hana.app.storage.get",
+  GET_ALL: "hana.app.storage.getAll",
+  SET: "hana.app.storage.set",
+  DELETE: "hana.app.storage.delete",
+  KEYS: "hana.app.storage.keys"
+};
+var APP_STORAGE_HOST_EVENT = {
+  CHANGED: "hana.app.storage.changed"
+};
+var MESSAGE_KINDS = /* @__PURE__ */ new Set([
+  "event",
+  "request",
+  "response",
+  "error"
+]);
+function isObject(value) {
+  return typeof value === "object" && value !== null;
+}
+function badMessage(message) {
+  return {
+    ok: false,
+    error: {
+      code: PLUGIN_UI_ERROR_CODE.BAD_MESSAGE,
+      message
+    }
+  };
+}
+function parsePluginUiMessage(value) {
+  if (!isObject(value)) {
+    return badMessage("Plugin UI messages must be objects.");
+  }
+  if (value.protocol !== PLUGIN_UI_PROTOCOL) {
+    return badMessage("Plugin UI message protocol is missing or invalid.");
+  }
+  if (value.version !== PLUGIN_UI_PROTOCOL_VERSION) {
+    return {
+      ok: false,
+      error: {
+        code: PLUGIN_UI_ERROR_CODE.UNSUPPORTED_VERSION,
+        message: `Unsupported Plugin UI protocol version: ${String(value.version)}.`
+      }
+    };
+  }
+  if (typeof value.kind !== "string" || !MESSAGE_KINDS.has(value.kind)) {
+    return badMessage("Plugin UI message kind is missing or invalid.");
+  }
+  if (typeof value.type !== "string" || value.type.trim() === "") {
+    return badMessage("Plugin UI message type must be a non-empty string.");
+  }
+  const kind = value.kind;
+  if (kind !== "event" && (typeof value.id !== "string" || value.id.trim() === "")) {
+    return badMessage(`Plugin UI ${kind} messages must include a non-empty id.`);
+  }
+  if (kind === "error") {
+    if (!isObject(value.error)) {
+      return badMessage("Plugin UI error messages must include an error object.");
+    }
+    if (typeof value.error.code !== "string" || value.error.code.trim() === "") {
+      return badMessage("Plugin UI error code must be a non-empty string.");
+    }
+    if (typeof value.error.message !== "string" || value.error.message.trim() === "") {
+      return badMessage("Plugin UI error message must be a non-empty string.");
+    }
+  }
+  return {
+    ok: true,
+    value
+  };
+}
+var PLUGIN_MANIFEST_TOP_LEVEL_FIELDS = [
+  "manifestVersion",
+  "id",
+  "name",
+  "version",
+  "description",
+  "minAppVersion",
+  "trust",
+  "hidden",
+  "activationEvents",
+  "capabilities",
+  "sensitiveCapabilities",
+  "permissions",
+  "network",
+  "formFactors",
+  "ui",
+  "contributes",
+  "dev"
+];
+var PLUGIN_MANIFEST_CONTRIBUTES_KEYS = [
+  "cards",
+  "agentTypes",
+  "configuration",
+  "settingsTab",
+  "page",
+  "widget"
+];
+var PLUGIN_V2_MANIFEST_CONTRIBUTES_KEYS = [
+  "settings",
+  "ui",
+  "cards",
+  "agentTypes",
+  "messageRenderers",
+  "providers",
+  "previewers"
+];
+var PLUGIN_MANIFEST_TRUST_LEVELS = ["restricted", "full-access"];
+var PLUGIN_MANIFEST_ACTIVATION_EVENT_NAMES = [
+  "onStartup",
+  "onPageOpen",
+  "onWidgetOpen",
+  "onToolCall",
+  "onBusRequest"
+];
+var TOP_LEVEL_FIELD_SET = new Set(PLUGIN_MANIFEST_TOP_LEVEL_FIELDS);
+var CONTRIBUTES_KEY_SET = new Set(PLUGIN_MANIFEST_CONTRIBUTES_KEYS);
+var V2_CONTRIBUTES_KEY_SET = new Set(PLUGIN_V2_MANIFEST_CONTRIBUTES_KEYS);
+var TRUST_LEVEL_SET = new Set(PLUGIN_MANIFEST_TRUST_LEVELS);
+var ACTIVATION_EVENT_EXACT_SET = /* @__PURE__ */ new Set([
+  "*",
+  ...PLUGIN_MANIFEST_ACTIVATION_EVENT_NAMES
+]);
+var UI_HOST_CAPABILITY_VALUES = Object.values(PLUGIN_UI_CAPABILITY);
+var UI_HOST_CAPABILITY_SET = new Set(UI_HOST_CAPABILITY_VALUES);
+
+// src/index.ts
+var HanaPluginError = class extends Error {
+  name = "HanaPluginError";
+  code;
+  details;
+  constructor(error) {
+    super(error.message);
+    this.code = error.code;
+    this.details = error.details;
+  }
+};
+var fallbackIdSeq = 0;
+var DEFAULT_PLUGIN_MAX_FRAME_RATE = 60;
+var MAX_PLUGIN_MAX_FRAME_RATE = 240;
+function defaultIdFactory() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  fallbackIdSeq += 1;
+  return `hana-plugin-${Date.now()}-${fallbackIdSeq}`;
+}
+function getBrowserWindow() {
+  if (typeof window === "undefined") {
+    throw new Error("@hana/plugin-sdk requires a browser iframe window.");
+  }
+  return window;
+}
+function safeOriginFromUrl(value) {
+  if (!value) return null;
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+function resolveTargetOrigin(targetWindow, explicit) {
+  if (explicit) return explicit;
+  const hostOrigin = new URLSearchParams(targetWindow.location.search).get("hana-host-origin");
+  if (hostOrigin) return hostOrigin;
+  return safeOriginFromUrl(targetWindow.document.referrer) ?? "*";
+}
+var HANA_THEME_STYLE_ATTR = "data-hana-theme-style";
+async function applyHostThemeStylesheet(doc, cssUrl) {
+  const response = await fetch(cssUrl, { credentials: "same-origin" });
+  if (!response.ok) {
+    throw new Error(`hana theme stylesheet request failed with ${response.status}`);
+  }
+  const css = await response.text();
+  const head = doc.head ?? doc.documentElement;
+  if (!head) throw new Error("hana theme stylesheet has nowhere to attach");
+  let element = doc.querySelector(`style[${HANA_THEME_STYLE_ATTR}]`);
+  if (!element) {
+    element = doc.createElement("style");
+    element.setAttribute(HANA_THEME_STYLE_ATTR, "");
+  }
+  element.textContent = css;
+  head.appendChild(element);
+}
+function readInitialTheme(targetWindow) {
+  const params = new URLSearchParams(targetWindow.location.search);
+  return {
+    theme: params.get("hana-theme") ?? void 0,
+    cssUrl: params.get("hana-css") ?? void 0
+  };
+}
+function normalizeFrameRate(value, fallback = DEFAULT_PLUGIN_MAX_FRAME_RATE) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.max(0, Math.min(MAX_PLUGIN_MAX_FRAME_RATE, Math.round(value)));
+}
+function createRuntimeSnapshot({
+  visible,
+  maxFrameRate,
+  slot,
+  reason
+}) {
+  const normalizedMaxFrameRate = visible ? normalizeFrameRate(maxFrameRate) : 0;
+  const active = visible && normalizedMaxFrameRate > 0;
+  return {
+    visible,
+    active,
+    maxFrameRate: active ? normalizedMaxFrameRate : 0,
+    motion: active ? "full" : "paused",
+    ...slot === "page" || slot === "widget" || slot === "card" || slot === "settings" ? { slot } : {},
+    ...reason ? { reason } : {}
+  };
+}
+function readInitialRuntimeSnapshot(targetWindow) {
+  const params = new URLSearchParams(targetWindow.location.search);
+  const rawVisible = params.get("hana-visible");
+  const visible = rawVisible === "0" || rawVisible === "false" ? false : true;
+  const rawFrameRate = params.get("hana-max-fps");
+  const parsedFrameRate = rawFrameRate === null ? NaN : Number(rawFrameRate);
+  const maxFrameRate = Number.isFinite(parsedFrameRate) ? parsedFrameRate : DEFAULT_PLUGIN_MAX_FRAME_RATE;
+  return createRuntimeSnapshot({
+    visible,
+    maxFrameRate,
+    reason: "initial"
+  });
+}
+function normalizeRuntimeSnapshotPayload(payload, current) {
+  if (typeof payload !== "object" || payload === null) return null;
+  const record = payload;
+  const visible = typeof record.visible === "boolean" ? record.visible : current.visible;
+  const requestedFrameRate = normalizeFrameRate(
+    record.maxFrameRate,
+    current.maxFrameRate > 0 ? current.maxFrameRate : DEFAULT_PLUGIN_MAX_FRAME_RATE
+  );
+  const active = typeof record.active === "boolean" ? record.active && visible && requestedFrameRate > 0 : visible && requestedFrameRate > 0;
+  const rawMotion = record.motion;
+  const motion = rawMotion === "full" || rawMotion === "reduced" || rawMotion === "paused" ? rawMotion : active ? "full" : "paused";
+  const slot = typeof record.slot === "string" ? record.slot : current.slot;
+  const reason = typeof record.reason === "string" ? record.reason : current.reason;
+  return {
+    visible,
+    active,
+    maxFrameRate: active ? requestedFrameRate : 0,
+    motion: active ? motion : "paused",
+    ...slot === "page" || slot === "widget" || slot === "card" || slot === "settings" ? { slot } : {},
+    ...reason ? { reason } : {}
+  };
+}
+function normalizeLegacyVisibilityPayload(payload, current) {
+  if (typeof payload !== "object" || payload === null) return null;
+  const visible = payload.visible;
+  if (typeof visible !== "boolean") return null;
+  return createRuntimeSnapshot({
+    visible,
+    maxFrameRate: visible && current.maxFrameRate > 0 ? current.maxFrameRate : DEFAULT_PLUGIN_MAX_FRAME_RATE,
+    slot: current.slot,
+    reason: "legacy-visibility"
+  });
+}
+function areRuntimeSnapshotsEqual(a, b) {
+  return a.visible === b.visible && a.active === b.active && a.maxFrameRate === b.maxFrameRate && a.motion === b.motion && a.slot === b.slot && a.reason === b.reason;
+}
+function copyEnvelope(envelope) {
+  return {
+    width: { ...envelope.width },
+    height: { ...envelope.height }
+  };
+}
+function normalizeEnvelopeAxis(value) {
+  if (typeof value !== "object" || value === null) return null;
+  const record = value;
+  if (record.mode === "fixed") {
+    if (typeof record.value !== "number" || !Number.isFinite(record.value)) return null;
+    return { mode: "fixed", value: Math.round(record.value) };
+  }
+  if (record.mode === "flexible") {
+    if (typeof record.max !== "number" || !Number.isFinite(record.max)) return null;
+    return { mode: "flexible", max: Math.round(record.max) };
+  }
+  if (record.mode === "unbounded") {
+    return { mode: "unbounded" };
+  }
+  return null;
+}
+function normalizeEnvelopePayload(payload) {
+  if (typeof payload !== "object" || payload === null) return null;
+  const record = payload;
+  const width = normalizeEnvelopeAxis(record.width);
+  const height = normalizeEnvelopeAxis(record.height);
+  if (!width || !height) return null;
+  return { width, height };
+}
+function isTrustedHostEvent(event, parentWindow, targetOrigin) {
+  if (event.source !== parentWindow) return false;
+  if (targetOrigin !== "*" && event.origin !== targetOrigin) return false;
+  return true;
+}
+var UI_ACTION_SCAN_LIMIT = 600;
+var UI_ACTION_OUTLINE_LIMIT = 120;
+var UI_ACTION_TEXT_CAP = 4e3;
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isVisibleElement(el) {
+  if (!(el instanceof HTMLElement)) return true;
+  const style = el.ownerDocument.defaultView?.getComputedStyle(el);
+  if (!style) return true;
+  if (style.display === "none" || style.visibility === "hidden") return false;
+  return true;
+}
+function describeUiActionNode(el) {
+  const html = el;
+  const tagName = el.tagName.toLowerCase();
+  const node = { tagName };
+  if (typeof html.id === "string" && html.id) node.id = html.id.slice(0, 80);
+  if (typeof html.className === "string" && html.className.trim()) {
+    node.className = html.className.trim().slice(0, 120);
+  }
+  const text = html.textContent?.trim();
+  if (text) node.text = text.slice(0, 160);
+  if (html instanceof HTMLInputElement || html instanceof HTMLTextAreaElement) {
+    if (html.disabled) node.disabled = true;
+    if (html.type) node.type = html.type;
+  }
+  if (html.id) node.elementId = html.id;
+  return node;
+}
+function describeUiActionDom(doc) {
+  const outline = [];
+  let visibleNodeCount = 0;
+  let totalNodeCount = 0;
+  const root = doc.body;
+  if (!root) {
+    return { outline, visibleNodeCount: 0, totalNodeCount: 0, truncated: false };
+  }
+  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+  let current = walker.currentNode;
+  while (current && totalNodeCount < UI_ACTION_SCAN_LIMIT) {
+    if (current instanceof Element) {
+      totalNodeCount += 1;
+      if (isVisibleElement(current)) {
+        visibleNodeCount += 1;
+        if (outline.length < UI_ACTION_OUTLINE_LIMIT) {
+          outline.push(describeUiActionNode(current));
+        }
+      }
+    }
+    current = walker.nextNode();
+  }
+  return {
+    outline,
+    visibleNodeCount,
+    totalNodeCount,
+    truncated: current !== null
+  };
+}
+function findUiActionElement(doc, elementId) {
+  if (typeof elementId !== "string" || !elementId.trim()) return null;
+  return doc.getElementById(elementId.trim());
+}
+function clickUiActionElement(el) {
+  if (!(el instanceof HTMLElement)) {
+    return { ok: false, error: "Target is not an element." };
+  }
+  if (el instanceof HTMLInputElement && (el.type === "file" || el.disabled)) {
+    return { ok: false, error: "This element cannot be clicked." };
+  }
+  if (el instanceof HTMLButtonElement && el.disabled) {
+    return { ok: false, error: "This element cannot be clicked." };
+  }
+  el.click();
+  return { ok: true };
+}
+function typeUiActionElement(el, text) {
+  const value = typeof text === "string" ? text.slice(0, UI_ACTION_TEXT_CAP) : "";
+  if (el instanceof HTMLInputElement) {
+    if (el.type === "file" || el.disabled || el.readOnly) {
+      return { ok: false, error: "This element cannot accept text." };
+    }
+    el.value = `${el.value}${value}`;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    return { ok: true };
+  }
+  if (el instanceof HTMLTextAreaElement) {
+    if (el.disabled || el.readOnly) return { ok: false, error: "This element cannot accept text." };
+    el.value = `${el.value}${value}`;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    return { ok: true };
+  }
+  return { ok: false, error: "This element cannot accept text." };
+}
+function performHostUiAction(doc, payload) {
+  const action = isRecord(payload) && typeof payload.action === "string" ? payload.action : "";
+  if (action === "describe_dom") {
+    return { ok: true, result: describeUiActionDom(doc) };
+  }
+  if (action === "read_state") {
+    return { ok: true, result: { state: {} } };
+  }
+  if (action === "click_element") {
+    const el = findUiActionElement(doc, isRecord(payload) ? payload.elementId : null);
+    if (!el) return { ok: false, code: "UI_ACTION_ELEMENT_NOT_FOUND", error: "No element matches this elementId." };
+    const clicked = clickUiActionElement(el);
+    if (clicked.ok === false) return { ok: false, code: "UI_ACTION_ELEMENT_NOT_OPERABLE", error: clicked.error };
+    return { ok: true, result: { clicked: true } };
+  }
+  if (action === "type_text") {
+    const el = findUiActionElement(doc, isRecord(payload) ? payload.elementId : null);
+    if (!el) return { ok: false, code: "UI_ACTION_ELEMENT_NOT_FOUND", error: "No element matches this elementId." };
+    const typed = typeUiActionElement(el, isRecord(payload) ? payload.text : "");
+    if (typed.ok === false) return { ok: false, code: "UI_ACTION_ELEMENT_NOT_OPERABLE", error: typed.error };
+    return { ok: true, result: { typed: true } };
+  }
+  if (action === "click_sequence" || action === "drag_element" || action === "press_key") {
+    return { ok: false, code: "UI_ACTION_UNSUPPORTED_FOR_APP_CARD", error: `App cards do not support ${action}.` };
+  }
+  return { ok: false, code: "UI_ACTION_UNKNOWN_ACTION", error: `Unknown UI action: ${action || "(missing)"}.` };
+}
+function externalOpenPayload(input) {
+  return typeof input === "string" ? { url: input } : input;
+}
+function clipboardWriteTextPayload(input) {
+  return typeof input === "string" ? { text: input } : input;
+}
+function readAppIdFromIframeRoute(targetWindow) {
+  const match = /^\/api\/apps\/([^/]+)\/ui(?:\/|$)/.exec(targetWindow.location.pathname || "");
+  if (!match) {
+    throw new Error("App asset/API URL helper requires an iframe route under /api/apps/:appId/ui/.");
+  }
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    throw new Error("App asset/API URL helper could not decode the current app id.");
+  }
+}
+function normalizeAssetPath(input) {
+  if (typeof input !== "string" || input.length === 0) {
+    throw new Error("Invalid plugin asset path.");
+  }
+  if (input.includes("\\") || input.includes("\0") || /^[a-z][a-z0-9+.-]*:/i.test(input)) {
+    throw new Error("Invalid plugin asset path.");
+  }
+  const stripped = input.replace(/^\/+/, "");
+  if (!stripped || stripped.startsWith("./")) {
+    throw new Error("Invalid plugin asset path.");
+  }
+  const segments = stripped.split("/");
+  if (segments.some((segment) => !segment || segment === "." || segment === ".." || segment.startsWith("."))) {
+    throw new Error("Invalid plugin asset path.");
+  }
+  return segments.map((segment) => encodeURIComponent(segment)).join("/");
+}
+function readAssetBase(targetWindow) {
+  return new URLSearchParams(targetWindow.location.search).get("hana-asset-base") || null;
+}
+function pluginAssetUrl(targetWindow, input) {
+  const assetPath = normalizeAssetPath(input);
+  const assetBase = readAssetBase(targetWindow);
+  if (!assetBase) {
+    throw new Error(
+      "hana.assets.url() requires the host-issued hana-asset-base query parameter: this page was not opened by the host with an asset base; hana.assets.url() only works inside a Hana app surface."
+    );
+  }
+  const url = new URL(assetBase);
+  url.pathname = `${url.pathname.replace(/\/+$/, "")}/${assetPath}`;
+  return url.toString();
+}
+function readSurfaceSession(targetWindow) {
+  return new URLSearchParams(targetWindow.location.search).get(APP_SURFACE_SESSION_QUERY) || null;
+}
+function normalizePluginApiPath(input) {
+  if (typeof input !== "string" || input.length === 0) {
+    throw new Error("Invalid plugin API path.");
+  }
+  const trimmed = input.trim();
+  if (!trimmed || trimmed.includes("\\") || trimmed.includes("\0") || trimmed.includes("#") || trimmed.startsWith("//") || /^[a-z][a-z0-9+.-]*:/i.test(trimmed)) {
+    throw new Error("Invalid plugin API path.");
+  }
+  const stripped = trimmed.replace(/^\/+/, "");
+  if (!stripped || stripped.startsWith("./") || stripped === "api/apps" || stripped.startsWith("api/apps/")) {
+    throw new Error("Invalid plugin API path. Use a route path relative to the current plugin.");
+  }
+  const queryIndex = stripped.indexOf("?");
+  const rawPath = queryIndex >= 0 ? stripped.slice(0, queryIndex) : stripped;
+  if (!rawPath) {
+    throw new Error("Invalid plugin API path.");
+  }
+  const segments = rawPath.split("/");
+  for (const segment of segments) {
+    if (!segment) throw new Error("Invalid plugin API path.");
+    let decoded;
+    try {
+      decoded = decodeURIComponent(segment);
+    } catch {
+      throw new Error("Invalid plugin API path.");
+    }
+    if (decoded === "." || decoded === ".." || decoded.includes("/") || decoded.includes("\\")) {
+      throw new Error("Invalid plugin API path.");
+    }
+  }
+  const parsed = new URL(`http://hana.local/${stripped}`);
+  const safePath = segments.map((segment) => encodeURIComponent(decodeURIComponent(segment))).join("/");
+  return `${safePath}${parsed.search}`;
+}
+function pluginApiUrl(targetWindow, input) {
+  const appId = readAppIdFromIframeRoute(targetWindow);
+  const apiPath = normalizePluginApiPath(input);
+  return `${targetWindow.location.origin}/api/apps/${encodeURIComponent(appId)}/routes/${apiPath}`;
+}
+function pluginApiFetch(targetWindow, input, init, documentBindingId) {
+  const surfaceSession = readSurfaceSession(targetWindow);
+  if (!surfaceSession) {
+    throw new Error("hana.api.fetch requires appSurfaceSession in the iframe URL.");
+  }
+  const fetchImpl = targetWindow.fetch?.bind(targetWindow) ?? globalThis.fetch?.bind(globalThis);
+  if (!fetchImpl) {
+    throw new Error("hana.api.fetch requires window.fetch.");
+  }
+  const requestInit = init ?? {};
+  const headers = new Headers(requestInit.headers);
+  headers.set(APP_SURFACE_SESSION_HEADER, surfaceSession);
+  if (documentBindingId) headers.set("X-Hana-Document-Binding", documentBindingId);
+  return fetchImpl(pluginApiUrl(targetWindow, input), {
+    ...requestInit,
+    headers
+  });
+}
+function readUserGesture(targetWindow) {
+  try {
+    const nav = targetWindow.navigator;
+    if (nav.userActivation && typeof nav.userActivation.isActive === "boolean") {
+      return nav.userActivation.isActive === true;
+    }
+  } catch {
+  }
+  try {
+    const current = targetWindow.event;
+    return !!(current && current.isTrusted);
+  } catch {
+  }
+  return false;
+}
+function appStorageScopesMatch(subscriberScope, eventScope) {
+  if (typeof eventScope !== "object" || eventScope === null) return false;
+  const es = eventScope;
+  if (subscriberScope.kind === "global") return es.kind === "global";
+  return es.kind === "agent" && es.agentId === subscriberScope.agentId;
+}
+function createHanaPluginSdk(options = {}) {
+  const targetWindow = options.targetWindow ?? getBrowserWindow();
+  const parentWindow = options.parentWindow ?? targetWindow.parent;
+  const targetOrigin = resolveTargetOrigin(targetWindow, options.targetOrigin);
+  const requestTimeoutMs = options.requestTimeoutMs ?? 1e4;
+  const idFactory = options.idFactory ?? defaultIdFactory;
+  const themeFollowEnabled = options.followHostTheme !== false;
+  let themeSnapshot = readInitialTheme(targetWindow);
+  let runtimeSnapshot = readInitialRuntimeSnapshot(targetWindow);
+  let envelopeSnapshot = null;
+  const themeSubscribers = /* @__PURE__ */ new Set();
+  const envelopeSubscribers = /* @__PURE__ */ new Set();
+  const lifecycleSubscribers = /* @__PURE__ */ new Set();
+  const storageChangedSubscribers = /* @__PURE__ */ new Set();
+  const appStorageChangedSubscribers = /* @__PURE__ */ new Set();
+  const panelEventSubscribers = /* @__PURE__ */ new Set();
+  const panelRefreshSubscribers = /* @__PURE__ */ new Set();
+  let documentBindingId = null;
+  let documentRequestHandler = null;
+  let documentViewRequestHandler = null;
+  const animationCallbacks = /* @__PURE__ */ new Map();
+  let nextAnimationHandle = 1;
+  let animationPumpCancel = null;
+  let lastAnimationFrameTime = null;
+  function followHostTheme(cssUrl) {
+    if (!themeFollowEnabled || !cssUrl) return;
+    const doc = targetWindow.document;
+    if (!doc) return;
+    void applyHostThemeStylesheet(doc, cssUrl).catch((error) => {
+      if (options.onThemeError) {
+        options.onThemeError(error);
+        return;
+      }
+      console.error("[hana] failed to follow host theme", error);
+    });
+  }
+  function post(message) {
+    parentWindow.postMessage(message, targetOrigin);
+  }
+  function postEvent(type, payload) {
+    const message = {
+      protocol: PLUGIN_UI_PROTOCOL,
+      version: PLUGIN_UI_PROTOCOL_VERSION,
+      kind: "event",
+      type
+    };
+    if (payload !== void 0) message.payload = payload;
+    post(message);
+  }
+  function requestNativeAnimationFrame(callback) {
+    const requestFrame = targetWindow.requestAnimationFrame?.bind(targetWindow);
+    const cancelFrame = targetWindow.cancelAnimationFrame?.bind(targetWindow);
+    if (requestFrame && cancelFrame) {
+      const handle = requestFrame(callback);
+      return () => cancelFrame(handle);
+    }
+    const timeout = targetWindow.setTimeout(() => {
+      const now = targetWindow.performance?.now?.() ?? Date.now();
+      callback(now);
+    }, Math.max(1, Math.round(1e3 / Math.max(runtimeSnapshot.maxFrameRate, DEFAULT_PLUGIN_MAX_FRAME_RATE))));
+    return () => targetWindow.clearTimeout(timeout);
+  }
+  function cancelAnimationPump() {
+    if (!animationPumpCancel) return;
+    animationPumpCancel();
+    animationPumpCancel = null;
+  }
+  function scheduleAnimationPump() {
+    if (animationPumpCancel || animationCallbacks.size === 0) return;
+    if (!runtimeSnapshot.active || runtimeSnapshot.maxFrameRate <= 0) return;
+    animationPumpCancel = requestNativeAnimationFrame((time) => {
+      animationPumpCancel = null;
+      if (!runtimeSnapshot.active || runtimeSnapshot.maxFrameRate <= 0) return;
+      const frameInterval = 1e3 / runtimeSnapshot.maxFrameRate;
+      if (lastAnimationFrameTime !== null && time >= lastAnimationFrameTime && time - lastAnimationFrameTime < frameInterval) {
+        scheduleAnimationPump();
+        return;
+      }
+      lastAnimationFrameTime = time;
+      const callbacks = Array.from(animationCallbacks.entries());
+      for (const [handle, callback] of callbacks) {
+        if (!animationCallbacks.delete(handle)) continue;
+        try {
+          callback(time);
+        } catch (err) {
+          targetWindow.setTimeout(() => {
+            throw err;
+          }, 0);
+        }
+      }
+      scheduleAnimationPump();
+    });
+  }
+  function setRuntimeSnapshot(next) {
+    if (areRuntimeSnapshotsEqual(runtimeSnapshot, next)) return;
+    runtimeSnapshot = next;
+    for (const callback of lifecycleSubscribers) callback({ ...runtimeSnapshot });
+    if (!runtimeSnapshot.active || runtimeSnapshot.maxFrameRate <= 0) {
+      cancelAnimationPump();
+      return;
+    }
+    scheduleAnimationPump();
+  }
+  function onHostMessage(event) {
+    if (!isTrustedHostEvent(event, parentWindow, targetOrigin)) return;
+    if (typeof event.data === "object" && event.data !== null && event.data.protocol === void 0 && event.data.type === "visibility-changed") {
+      const next = normalizeLegacyVisibilityPayload(
+        event.data.payload,
+        runtimeSnapshot
+      );
+      if (next) setRuntimeSnapshot(next);
+      return;
+    }
+    const parsed = parsePluginUiMessage(event.data);
+    if (!parsed.ok) return;
+    const message = parsed.value;
+    if (message.kind === "request" && message.type === "hana.document.view-request") {
+      const record = typeof message.payload === "object" && message.payload !== null ? message.payload : null;
+      const requestId = record && typeof record.requestId === "string" ? record.requestId : "";
+      const documentId = record && typeof record.documentId === "string" ? record.documentId : "";
+      const viewId = record && typeof record.viewId === "string" ? record.viewId : "";
+      const revision = record?.revision;
+      const method = record && typeof record.method === "string" ? record.method.trim() : "";
+      if (!requestId || !documentId || !viewId || !method || method.length > 128 || !Number.isSafeInteger(revision) || Number(revision) < 0) {
+        post({
+          protocol: PLUGIN_UI_PROTOCOL,
+          version: PLUGIN_UI_PROTOCOL_VERSION,
+          id: message.id,
+          kind: "error",
+          type: message.type,
+          error: { code: "DOCUMENT_VIEW_REQUEST_INVALID", message: "Invalid document view request." }
+        });
+        return;
+      }
+      if (!documentViewRequestHandler) {
+        post({
+          protocol: PLUGIN_UI_PROTOCOL,
+          version: PLUGIN_UI_PROTOCOL_VERSION,
+          id: message.id,
+          kind: "error",
+          type: message.type,
+          error: { code: "DOCUMENT_VIEW_REQUEST_UNHANDLED", message: "The document view cannot handle this request." }
+        });
+        return;
+      }
+      const payload = record?.payload;
+      const handler = documentViewRequestHandler;
+      void Promise.resolve().then(() => handler({
+        requestId,
+        documentId,
+        viewId,
+        revision,
+        method,
+        ...Object.prototype.hasOwnProperty.call(record, "payload") ? { payload } : {}
+      })).then((result) => {
+        post({ protocol: PLUGIN_UI_PROTOCOL, version: PLUGIN_UI_PROTOCOL_VERSION, id: message.id, kind: "response", type: message.type, payload: result });
+      }, (error) => {
+        post({
+          protocol: PLUGIN_UI_PROTOCOL,
+          version: PLUGIN_UI_PROTOCOL_VERSION,
+          id: message.id,
+          kind: "error",
+          type: message.type,
+          error: { code: "DOCUMENT_VIEW_REQUEST_FAILED", message: error instanceof Error ? error.message : "Document view request failed." }
+        });
+      });
+      return;
+    }
+    if (message.kind === "request" && message.type === "hana.document.request") {
+      const payload = message.payload;
+      const record = typeof payload === "object" && payload !== null ? payload : null;
+      const requestId = record && typeof record.requestId === "string" ? record.requestId : "";
+      const kind = record?.kind;
+      const revision = record?.revision;
+      if (!requestId || !["save", "prepareClose", "revert", "undo", "redo"].includes(String(kind)) || !Number.isSafeInteger(revision)) {
+        post({
+          protocol: PLUGIN_UI_PROTOCOL,
+          version: PLUGIN_UI_PROTOCOL_VERSION,
+          id: message.id,
+          kind: "error",
+          type: message.type,
+          error: { code: "DOCUMENT_REQUEST_INVALID", message: "Invalid document request." }
+        });
+        return;
+      }
+      if (!documentRequestHandler) {
+        post({
+          protocol: PLUGIN_UI_PROTOCOL,
+          version: PLUGIN_UI_PROTOCOL_VERSION,
+          id: message.id,
+          kind: "error",
+          type: message.type,
+          error: { code: "DOCUMENT_REQUEST_UNHANDLED", message: "The document editor cannot handle this request." }
+        });
+        return;
+      }
+      const request2 = {
+        requestId,
+        kind,
+        revision
+      };
+      void Promise.resolve(documentRequestHandler(request2)).then((result) => {
+        post({ protocol: PLUGIN_UI_PROTOCOL, version: PLUGIN_UI_PROTOCOL_VERSION, id: message.id, kind: "response", type: message.type, payload: result });
+      }, (error) => {
+        post({
+          protocol: PLUGIN_UI_PROTOCOL,
+          version: PLUGIN_UI_PROTOCOL_VERSION,
+          id: message.id,
+          kind: "error",
+          type: message.type,
+          error: { code: "DOCUMENT_REQUEST_FAILED", message: error instanceof Error ? error.message : "Document request failed." }
+        });
+      });
+      return;
+    }
+    if (message.kind === "request" && message.type === PLUGIN_UI_CAPABILITY.UI_ACTION) {
+      const doc = targetWindow.document;
+      const outcome = doc ? performHostUiAction(doc, message.payload) : { ok: false, code: "UI_ACTION_DOCUMENT_UNAVAILABLE", error: "No document is available." };
+      if (outcome.ok === true) {
+        post({
+          protocol: PLUGIN_UI_PROTOCOL,
+          version: PLUGIN_UI_PROTOCOL_VERSION,
+          id: message.id,
+          kind: "response",
+          type: PLUGIN_UI_CAPABILITY.UI_ACTION,
+          payload: outcome.result
+        });
+      } else {
+        post({
+          protocol: PLUGIN_UI_PROTOCOL,
+          version: PLUGIN_UI_PROTOCOL_VERSION,
+          id: message.id,
+          kind: "error",
+          type: PLUGIN_UI_CAPABILITY.UI_ACTION,
+          error: { code: outcome.code, message: outcome.error }
+        });
+      }
+      return;
+    }
+    if (message.kind !== "event") return;
+    if (message.type === "hana.document.binding") {
+      const payload = message.payload;
+      const access = typeof payload === "object" && payload !== null ? payload.access : null;
+      documentBindingId = typeof access?.bindingId === "string" && access.bindingId ? access.bindingId : null;
+      return;
+    }
+    if (message.type === PLUGIN_UI_HOST_EVENT.THEME_CHANGED) {
+      if (typeof message.payload !== "object" || message.payload === null) return;
+      const payload = message.payload;
+      themeSnapshot = {
+        theme: typeof payload.theme === "string" ? payload.theme : themeSnapshot.theme,
+        cssUrl: typeof payload.cssUrl === "string" ? payload.cssUrl : themeSnapshot.cssUrl
+      };
+      for (const callback of themeSubscribers) callback({ ...themeSnapshot });
+      followHostTheme(themeSnapshot.cssUrl);
+      return;
+    }
+    if (message.type === PLUGIN_UI_HOST_EVENT.SURFACE_ENVELOPE_CHANGED) {
+      const next = normalizeEnvelopePayload(message.payload);
+      if (!next) return;
+      envelopeSnapshot = next;
+      for (const callback of envelopeSubscribers) callback(copyEnvelope(envelopeSnapshot));
+      return;
+    }
+    if (message.type === PLUGIN_UI_HOST_EVENT.SURFACE_RUNTIME_CHANGED) {
+      const next = normalizeRuntimeSnapshotPayload(message.payload, runtimeSnapshot);
+      if (next) setRuntimeSnapshot(next);
+      return;
+    }
+    if (message.type === PLUGIN_UI_HOST_EVENT.STORAGE_CHANGED) {
+      if (typeof message.payload !== "object" || message.payload === null) return;
+      const rawKeys = message.payload.keys;
+      const keys = Array.isArray(rawKeys) ? rawKeys.filter((k) => typeof k === "string") : [];
+      for (const callback of storageChangedSubscribers) callback(keys.slice());
+      return;
+    }
+    if (message.type === APP_STORAGE_HOST_EVENT.CHANGED) {
+      if (typeof message.payload !== "object" || message.payload === null) return;
+      const payload = message.payload;
+      const rawKeys = payload.keys;
+      const keys = Array.isArray(rawKeys) ? rawKeys.filter((k) => typeof k === "string") : [];
+      for (const entry of appStorageChangedSubscribers) {
+        if (appStorageScopesMatch(entry.scope, payload.scope)) entry.callback(keys.slice());
+      }
+      return;
+    }
+    if (message.type === PLUGIN_UI_HOST_EVENT.PANEL_EVENT) {
+      if (typeof message.payload !== "object" || message.payload === null) return;
+      const payload = message.payload;
+      const sectionId = typeof payload.sectionId === "string" ? payload.sectionId : null;
+      const kind = payload.kind;
+      if (!sectionId || kind !== "select" && kind !== "action" && kind !== "toggle") return;
+      const event2 = {
+        sectionId,
+        kind,
+        ...typeof payload.itemId === "string" ? { itemId: payload.itemId } : {},
+        ...typeof payload.checked === "boolean" ? { checked: payload.checked } : {}
+      };
+      for (const callback of panelEventSubscribers) callback(event2);
+      return;
+    }
+    if (message.type === PLUGIN_UI_HOST_EVENT.PANEL_REFRESH) {
+      for (const callback of panelRefreshSubscribers) callback();
+    }
+  }
+  targetWindow.addEventListener("message", onHostMessage);
+  function request(type, payload, requestOptions = {}) {
+    const id = idFactory();
+    const timeoutMs = requestOptions.timeoutMs ?? requestTimeoutMs;
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        targetWindow.removeEventListener("message", onMessage);
+        targetWindow.clearTimeout(timeout);
+      };
+      const onMessage = (event) => {
+        if (!isTrustedHostEvent(event, parentWindow, targetOrigin)) return;
+        const parsed = parsePluginUiMessage(event.data);
+        if (!parsed.ok) return;
+        const message2 = parsed.value;
+        if (message2.id !== id || message2.type !== type) return;
+        if (message2.kind === "response") {
+          cleanup();
+          resolve(message2.payload);
+        }
+        if (message2.kind === "error" && message2.error) {
+          cleanup();
+          reject(new HanaPluginError(message2.error));
+        }
+      };
+      const timeout = targetWindow.setTimeout(() => {
+        cleanup();
+        reject(new HanaPluginError({
+          code: "TIMEOUT",
+          message: `Plugin host request timed out: ${type}.`
+        }));
+      }, timeoutMs);
+      targetWindow.addEventListener("message", onMessage);
+      const message = {
+        protocol: PLUGIN_UI_PROTOCOL,
+        version: PLUGIN_UI_PROTOCOL_VERSION,
+        id,
+        kind: "request",
+        type
+      };
+      if (payload !== void 0) message.payload = payload;
+      post(message);
+    });
+  }
+  function makeAppStorageScope(scope) {
+    return {
+      get(key, options2) {
+        return request(APP_STORAGE_CAPABILITY.GET, { scope, key }, options2);
+      },
+      getAll(options2) {
+        return request(APP_STORAGE_CAPABILITY.GET_ALL, { scope }, options2);
+      },
+      set(key, value, options2) {
+        return request(APP_STORAGE_CAPABILITY.SET, { scope, key, value }, options2);
+      },
+      delete(key, options2) {
+        return request(APP_STORAGE_CAPABILITY.DELETE, { scope, key }, options2);
+      },
+      keys(options2) {
+        return request(APP_STORAGE_CAPABILITY.KEYS, { scope }, options2);
+      },
+      onChanged(callback) {
+        if (scope.kind === "agent" && !scope.agentId) {
+          throw new Error(
+            "hana.storage.agent() with no agentId cannot subscribe with onChanged \u2014 a subscription outlives any single request, so pass an explicit agentId to subscribe to a stable scope."
+          );
+        }
+        const entry = { scope, callback };
+        appStorageChangedSubscribers.add(entry);
+        return () => {
+          appStorageChangedSubscribers.delete(entry);
+        };
+      }
+    };
+  }
+  return {
+    ready(payload) {
+      postEvent("hana.ready", payload);
+    },
+    assets: {
+      url(assetPath) {
+        return pluginAssetUrl(targetWindow, assetPath);
+      }
+    },
+    api: {
+      url(apiPath) {
+        return pluginApiUrl(targetWindow, apiPath);
+      },
+      fetch(apiPath, init) {
+        return pluginApiFetch(targetWindow, apiPath, init, documentBindingId);
+      }
+    },
+    ui: {
+      resize(size) {
+        postEvent(PLUGIN_UI_CAPABILITY.UI_RESIZE, size);
+      }
+    },
+    theme: {
+      getSnapshot() {
+        return { ...themeSnapshot };
+      },
+      subscribe(callback) {
+        themeSubscribers.add(callback);
+        callback({ ...themeSnapshot });
+        return () => {
+          themeSubscribers.delete(callback);
+        };
+      }
+    },
+    envelope: {
+      getSnapshot() {
+        return envelopeSnapshot ? copyEnvelope(envelopeSnapshot) : null;
+      },
+      subscribe(callback) {
+        envelopeSubscribers.add(callback);
+        callback(envelopeSnapshot ? copyEnvelope(envelopeSnapshot) : null);
+        return () => {
+          envelopeSubscribers.delete(callback);
+        };
+      }
+    },
+    lifecycle: {
+      getSnapshot() {
+        return { ...runtimeSnapshot };
+      },
+      subscribe(callback) {
+        lifecycleSubscribers.add(callback);
+        callback({ ...runtimeSnapshot });
+        return () => {
+          lifecycleSubscribers.delete(callback);
+        };
+      }
+    },
+    performance: {
+      requestAnimationFrame(callback) {
+        const handle = nextAnimationHandle;
+        nextAnimationHandle += 1;
+        animationCallbacks.set(handle, callback);
+        scheduleAnimationPump();
+        return handle;
+      },
+      cancelAnimationFrame(handle) {
+        animationCallbacks.delete(handle);
+        if (animationCallbacks.size === 0) cancelAnimationPump();
+      }
+    },
+    host: {
+      request
+    },
+    toast: {
+      show(input, options2) {
+        return request(PLUGIN_UI_CAPABILITY.TOAST_SHOW, input, options2);
+      }
+    },
+    external: {
+      open(input, options2) {
+        return request(PLUGIN_UI_CAPABILITY.EXTERNAL_OPEN, externalOpenPayload(input), options2);
+      }
+    },
+    clipboard: {
+      writeText(input, options2) {
+        return request(
+          PLUGIN_UI_CAPABILITY.CLIPBOARD_WRITE_TEXT,
+          clipboardWriteTextPayload(input),
+          options2
+        );
+      }
+    },
+    resources: {
+      open(input, options2) {
+        return request(PLUGIN_UI_CAPABILITY.RESOURCE_OPEN, input, options2);
+      },
+      pick(input = {}, options2) {
+        return request(PLUGIN_UI_CAPABILITY.RESOURCE_PICK, input, options2);
+      },
+      saveFile(input, options2) {
+        return request(PLUGIN_UI_CAPABILITY.RESOURCE_SAVE_FILE, input, options2);
+      },
+      requestAccess(input, options2) {
+        return request(
+          PLUGIN_UI_CAPABILITY.RESOURCE_REQUEST_ACCESS,
+          input,
+          options2
+        );
+      }
+    },
+    document: {
+      getContext(options2) {
+        return request("hana.document.get-context", void 0, options2);
+      },
+      read(options2) {
+        return request("hana.document.read", void 0, options2);
+      },
+      reportStatus(status, options2) {
+        return request("hana.document.report-status", status, options2);
+      },
+      open(input, options2) {
+        return request("hana.document.open", input, options2);
+      },
+      rebind(input, options2) {
+        return request("hana.document.rebind", input, options2);
+      },
+      openDrop(event, options2) {
+        if (event.defaultPrevented) return Promise.resolve(null);
+        const dragId = event.dataTransfer?.getData("application/x-hana-file-drag") || "";
+        if (dragId) return request("hana.document.open-drop", { dragId }, options2);
+        const files = Array.from(event.dataTransfer?.files || []);
+        if (files.length !== 1) return Promise.resolve(null);
+        return request("hana.document.open-drop", { file: files[0] }, options2);
+      },
+      onRequest(handler) {
+        documentRequestHandler = handler;
+        return () => {
+          if (documentRequestHandler === handler) documentRequestHandler = null;
+        };
+      },
+      onViewRequest(handler) {
+        documentViewRequestHandler = handler;
+        return () => {
+          if (documentViewRequestHandler === handler) documentViewRequestHandler = null;
+        };
+      }
+    },
+    state: {
+      get(key, options2) {
+        const payload = typeof key === "string" && key ? { key } : {};
+        return request(PLUGIN_UI_CAPABILITY.STATE_GET, payload, options2);
+      },
+      set(keyOrState, value, options2) {
+        const payload = typeof keyOrState === "string" ? { key: keyOrState, value } : { state: keyOrState };
+        return request(PLUGIN_UI_CAPABILITY.STATE_SET, payload, options2);
+      }
+    },
+    storage: {
+      get(key, options2) {
+        return request(PLUGIN_UI_CAPABILITY.STORAGE_GET, { key }, options2);
+      },
+      getAll(options2) {
+        return request(PLUGIN_UI_CAPABILITY.STORAGE_GET_ALL, {}, options2);
+      },
+      set(key, value, options2) {
+        return request(PLUGIN_UI_CAPABILITY.STORAGE_SET, { key, value }, options2);
+      },
+      delete(key, options2) {
+        return request(PLUGIN_UI_CAPABILITY.STORAGE_DELETE, { key }, options2);
+      },
+      onChanged(callback) {
+        storageChangedSubscribers.add(callback);
+        return () => {
+          storageChangedSubscribers.delete(callback);
+        };
+      },
+      global: makeAppStorageScope({ kind: "global" }),
+      agent(agentId) {
+        return makeAppStorageScope({ kind: "agent", agentId });
+      }
+    },
+    emit(name, payload, to, options2) {
+      const wire = {
+        name,
+        userGesture: readUserGesture(targetWindow)
+      };
+      if (arguments.length >= 2) wire.payload = payload;
+      if (typeof to === "string" && to.trim()) wire.to = to.trim();
+      return request(PLUGIN_UI_CAPABILITY.EMIT, wire, options2);
+    },
+    track(name, payload, options2) {
+      const wire = { name };
+      if (arguments.length >= 2) wire.payload = payload;
+      return request(PLUGIN_UI_CAPABILITY.TRACK, wire, options2);
+    },
+    panel: {
+      set(props, options2) {
+        return request(PLUGIN_UI_CAPABILITY.PANEL_SET, props, options2);
+      },
+      onEvent(callback) {
+        panelEventSubscribers.add(callback);
+        return () => {
+          panelEventSubscribers.delete(callback);
+        };
+      },
+      onRefresh(callback) {
+        panelRefreshSubscribers.add(callback);
+        return () => {
+          panelRefreshSubscribers.delete(callback);
+        };
+      }
+    }
+  };
+}
+var singleton = null;
+function getSingleton() {
+  singleton ??= createHanaPluginSdk();
+  return singleton;
+}
+var hana = {
+  ready(payload) {
+    return getSingleton().ready(payload);
+  },
+  assets: {
+    url(assetPath) {
+      return getSingleton().assets.url(assetPath);
+    }
+  },
+  api: {
+    url(apiPath) {
+      return getSingleton().api.url(apiPath);
+    },
+    fetch(apiPath, init) {
+      return getSingleton().api.fetch(apiPath, init);
+    }
+  },
+  ui: {
+    resize(size) {
+      return getSingleton().ui.resize(size);
+    }
+  },
+  theme: {
+    getSnapshot() {
+      return getSingleton().theme.getSnapshot();
+    },
+    subscribe(callback) {
+      return getSingleton().theme.subscribe(callback);
+    }
+  },
+  envelope: {
+    getSnapshot() {
+      return getSingleton().envelope.getSnapshot();
+    },
+    subscribe(callback) {
+      return getSingleton().envelope.subscribe(callback);
+    }
+  },
+  lifecycle: {
+    getSnapshot() {
+      return getSingleton().lifecycle.getSnapshot();
+    },
+    subscribe(callback) {
+      return getSingleton().lifecycle.subscribe(callback);
+    }
+  },
+  performance: {
+    requestAnimationFrame(callback) {
+      return getSingleton().performance.requestAnimationFrame(callback);
+    },
+    cancelAnimationFrame(handle) {
+      return getSingleton().performance.cancelAnimationFrame(handle);
+    }
+  },
+  host: {
+    request(type, payload, options) {
+      return getSingleton().host.request(type, payload, options);
+    }
+  },
+  toast: {
+    show(input, options) {
+      return getSingleton().toast.show(input, options);
+    }
+  },
+  external: {
+    open(input, options) {
+      return getSingleton().external.open(input, options);
+    }
+  },
+  clipboard: {
+    writeText(input, options) {
+      return getSingleton().clipboard.writeText(input, options);
+    }
+  },
+  resources: {
+    open(input, options) {
+      return getSingleton().resources.open(input, options);
+    },
+    pick(input, options) {
+      return getSingleton().resources.pick(input, options);
+    },
+    saveFile(input, options) {
+      return getSingleton().resources.saveFile(input, options);
+    },
+    requestAccess(input, options) {
+      return getSingleton().resources.requestAccess(input, options);
+    }
+  },
+  document: {
+    getContext(options) {
+      return getSingleton().document.getContext(options);
+    },
+    read(options) {
+      return getSingleton().document.read(options);
+    },
+    reportStatus(status, options) {
+      return getSingleton().document.reportStatus(status, options);
+    },
+    open(input, options) {
+      return getSingleton().document.open(input, options);
+    },
+    rebind(input, options) {
+      return getSingleton().document.rebind(input, options);
+    },
+    openDrop(event, options) {
+      return getSingleton().document.openDrop(event, options);
+    },
+    onRequest(handler) {
+      return getSingleton().document.onRequest(handler);
+    },
+    onViewRequest(handler) {
+      return getSingleton().document.onViewRequest(handler);
+    }
+  },
+  state: {
+    get(key, options) {
+      return getSingleton().state.get(key, options);
+    },
+    set(keyOrState, value, options) {
+      return getSingleton().state.set(keyOrState, value, options);
+    }
+  },
+  storage: {
+    get(key, options) {
+      return getSingleton().storage.get(key, options);
+    },
+    getAll(options) {
+      return getSingleton().storage.getAll(options);
+    },
+    set(key, value, options) {
+      return getSingleton().storage.set(key, value, options);
+    },
+    delete(key, options) {
+      return getSingleton().storage.delete(key, options);
+    },
+    onChanged(callback) {
+      return getSingleton().storage.onChanged(callback);
+    },
+    get global() {
+      return getSingleton().storage.global;
+    },
+    agent(agentId) {
+      return getSingleton().storage.agent(agentId);
+    }
+  },
+  emit(name, payload, to, options) {
+    return getSingleton().emit(name, payload, to, options);
+  },
+  track(name, payload, options) {
+    return getSingleton().track(name, payload, options);
+  },
+  panel: {
+    set(props, options) {
+      return getSingleton().panel.set(props, options);
+    },
+    onEvent(callback) {
+      return getSingleton().panel.onEvent(callback);
+    },
+    onRefresh(callback) {
+      return getSingleton().panel.onRefresh(callback);
+    }
+  }
+};
+
+window.__hana = hana;
+try {
+  hana.ready();
+} catch (e) {
+  console.warn("[hana] ready failed", e);
+}
+</script>
+<script>
+(function () {
+  // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
+  window.__HANA_BUILD = "0912081723";
+
+  var H = 460; // 卡片高度上限（px）
+
+  // ── 先掐掉 v1 老 UI 自己的报高器 ──
+  //
+  // 页面 body 脚本里（IIFE 内）有：
+  //   function notifySize() { parent.postMessage({type:'resize-request',
+  //                            payload:{height: document.body.scrollHeight}}, '*'); }
+  //   new ResizeObserver(notifySize).observe(document.body);
+  //   setTimeout(notifySize, 300);
+  //
+  // 它报的是 body.scrollHeight —— 而 body 是 height:100%，等于 iframe 自己的高度，
+  // 于是自我循环、一路上报，被宿主 clamp 到聊天可视区上限（实测 1452px），
+  // 卡片就占满整屏、聊天区被顶住滑不动。
+  //
+  // 试过但**没用**的写法：覆盖 window.notifySize —— 那是 IIFE 内的函数声明，
+  // 压根不在 window 上，覆盖了个空气。必须在它跑之前从更外层拦。
+
+  // 1) ResizeObserver 换成空壳：v1 那个观察器每次 body 变化都重报。
+  try {
+    if (window.ResizeObserver) {
+      window.ResizeObserver = function () {
+        this.observe = function () {};
+        this.unobserve = function () {};
+        this.disconnect = function () {};
+      };
+    }
+  } catch (e) {}
+
+  // 2) 夹住 body.scrollHeight：漏网的一次性 setTimeout(notifySize, 300) 会读它。
+  try {
+    var d = Object.getOwnPropertyDescriptor(Element.prototype, "scrollHeight");
+    if (d && d.get) {
+      Object.defineProperty(Element.prototype, "scrollHeight", {
+        configurable: true,
+        enumerable: d.enumerable,
+        get: function () {
+          var v = d.get.call(this);
+          return this === document.body ? Math.min(v, H) : v;
+        },
+      });
+    }
+  } catch (e) {}
+
+  // 3) 把 v1 的 resize-request 改成发 H，而不是吞掉。
+  //    实测宿主确实认这条消息（卡片就是被它顶到 1452 的），而 v2 的
+  //    hana.ui.resize 这条反而没看到效果。两条通道都报 H，哪条生效都对。
+  try {
+    var pw = window.parent;
+    if (pw && pw !== window) {
+      var origPM = pw.postMessage;
+      pw.postMessage = function (msg) {
+        try {
+          if (msg && msg.type === "resize-request") {
+            msg = { type: "resize-request", payload: { height: H } };
+          }
+        } catch (e) {}
+        return origPM.apply(pw, arguments);
+      };
+    }
+  } catch (e) {}
+
+  // 4) 再自己直发一条（不经父窗口方法改写，双保险）
+  function tellParent() {
+    try {
+      parent.postMessage({ type: "resize-request", payload: { height: H } }, "*");
+    } catch (e) {}
+  }
+
+  // ── 再报我自己的高度（走 v2 协议那条）──
+  function report() {
+    try {
+      if (window.__hana) window.__hana.ui.resize({ height: H });
+    } catch (e) {
+      /* 报不了不影响功能 */
+    }
+    tellParent();
+  }
+  report();
+  setTimeout(report, 300);
+  setTimeout(report, 800);
+  setTimeout(report, 2000);
+  setTimeout(report, 4000);
+})();
+</script>
+<style>
+  /* 默认竖版。
+     卡片在聊天流里会占满整列宽（可能 900px+），内容被拉得很宽、不好看。
+     原 UI 本来就是给侧边栏的窄面板设计的，所以这里给它一个竖屏宽度并居中；
+     想看满宽（横版）就点右上角那个 ⇆ 按钮，它会加上 .player-popup。 */
+  /* 默认竖版：填满卡片宽度。
+     卡片外壳由宿主定宽（实测 886px），之前限 520px 居中，两侧各留 183px 空白，
+     看着像“内容缩在中间”。改成填满，把宽度用起来。
+     想看满宽（横版）就点右上角那个 ⇆ 按钮，它会加上 .player-popup。 */
+  .player-container { width: 100%; max-width: none; margin: 0; }
+  body.player-popup .player-container { max-width: none; }
+
+  /* ── 修：容器比 iframe 视口高，内容溢出后被裁（“无法下滑”的真身之一）──
+   *
+   * 实测：宿主给的是 fixed 高度（envelope.height = {mode:"fixed", value:759}），
+   * 但容器实测 844px —— 溢出 85px。
+   * 根因：v1 的 html,body{height:100%} 是百分比链，当 body 内部
+   * （.player-container 里的固定块 + 内容）总高超过视口时，
+   * 百分比高度会被内容撑开（height:100% 不阻上内容撑高）。
+   * 溢出的那 85px 落在 html/body 的 overflow:hidden 外面，直接不可达。
+   *
+   * 改成按视口硬约束：用 100dvh 钉住外层，内部再各自滚。
+   * 这样无论宿主给 fixed 还是 flexible，高度链都成立。
+   */
+  html, body {
+    height: 100vh;
+    max-height: 100vh;
+    overflow: hidden;
+  }
+  body > .player-container,
+  .player-container {
+    height: 100%;
+    max-height: 100%;
+  }
+  /* 让主容器内的可滚区能真正拿到剩余高度 */
+  .tab-content { min-height: 0; }
+  .tab-pane { height: 100%; overflow-y: auto; }
+
+  /* ── 修：卡片里内部滚不动 ──
+   *
+   * 症状：高度修好后，列表/搜索页在卡片里滑不动。
+   *
+   * 根因（实测）：v1 的 CSS 里有一整块**无前缀**的“大封面”规则：
+   *   .now-playing-section { flex-direction:column; align-items:center; padding:16px; flex-shrink:0 }
+   *   .np-cover { width:160px; height:160px; border-radius:50%; ... margin-bottom:12px }
+   *   .np-info { flex-direction:column; align-items:center; ... }
+   *   .np-name { font-size:16px; ... }
+   * 它们本是宽版（左右分栏）的样式，却因为没有前缀而在窄版也生效，
+   * 把封面从 36px 撑到 160px、播放区撑到 325px。
+   * 实测：40+325+114+37 = 516px > 容器 511px ⇒ .tab-content 的 flex:1 分到 0 高
+   * ⇒ 列表根本滚不动（容器 overflow:hidden，溢出部分直接不可达）。
+   *
+   * 原 UI 本来靠 body.bp-narrow / bp-wide 切，但那两个类**全文 0 次使用**——
+   * 响应式只写了一半。所以这里直接把大封面那套锁回宽版。
+   *
+   * 不改 v1 源码（保持“原样搬运、只做最小干预”），在外层覆盖。
+   */
+  /* ── 窄版播放区：封面居中放大 ──
+   *
+   * 用户要求：竖版封面居中放大，右侧三个按钮不再挤在右边。
+   * 版式对齐宽版左栏：圆封面居中 → 曲名/状态居中 → 三个按钮居中 → 歌词。
+   *
+   * ⚠️ 高度约束：封面用 min(104px, 20vh) 跟视口走。
+   * 之前就是因为大封面（160px）把固定区撑到 516px > 容器 511px，
+   * 导致 .tab-content 的 flex:1 分到 0 高、列表滞不动。
+   * 用 vh 封顶后，小窗口下封面自动缩，不会重演。
+   */
+  .now-playing-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 14px 16px 12px;
+  }
+  .np-cover {
+    width: min(104px, 19vh);
+    height: min(104px, 19vh);
+    border-radius: 50%;
+    font-size: 40px;
+    margin-bottom: 0;
+    background: linear-gradient(135deg, var(--accent), #c48454);
+    box-shadow: 0 4px 16px var(--accent-glow);
+  }
+  .np-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    width: 100%;
+    min-width: 0;
+    margin-bottom: 0;
+  }
+  .np-name {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.1px;
+    max-width: 100%;
+  }
+  .np-mode {
+    font-size: 11px;
+    opacity: 0.7;
+  }
+  /* 三个按钮从右侧挪到信息下方、居中 */
+  .np-actions {
+    flex-direction: row;
+    gap: 10px;
+    margin-top: 4px;
+  }
+  .np-actions .icon-btn { width: 28px; height: 28px; padding: 5px; }
+  .np-actions .icon-btn svg { width: 15px; height: 15px; }
+  .lyrics-section {
+    width: 100%;
+    max-height: min(64px, 12vh);
+    margin-top: 4px;
+  }
+
+  /* 宽版（点 ⇆ 后）恢复原样 */
+  body.player-popup .now-playing-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px;
+    gap: 0;
+  }
+  body.player-popup .np-cover {
+    width: 120px; height: 120px; border-radius: 50%;
+    font-size: 48px; margin-bottom: 12px;
+  }
+  body.player-popup .np-info {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 4px; margin-bottom: 8px;
+  }
+  body.player-popup .np-name { font-size: 16px; font-weight: 600; }
+  body.player-popup .np-mode { opacity: 1; }
+  body.player-popup .np-actions { margin-top: 8px; gap: 12px; }
+  body.player-popup .np-actions .icon-btn { width: 28px; height: 28px; padding: 4px; }
+  body.player-popup .np-actions .icon-btn svg { width: 16px; height: 16px; }
+  body.player-popup .lyrics-section { max-height: none; margin-top: 12px; }
+</style><script>
+(function () {
+  // 防线：卡片里不允许开新窗口（包括别的脚本后面又接上的）
+  try {
+    window.open = function () {
+      console.warn("[hana] 卡片里已拦下 window.open");
+      return null;
+    };
+  } catch (e) {}
+
+  function install() {
+    var btn = document.getElementById("popBtn");
+    if (!btn || btn.__rewired) return false;
+
+    var fresh = btn.cloneNode(true); // 丢弃原监听（包括那个 window.open）
+    fresh.__rewired = true;
+    fresh.title = "切换横竖版";
+    btn.parentNode.replaceChild(fresh, btn);
+
+    fresh.addEventListener("click", function () {
+      // 原 UI 的 .player-popup 就是左右分栏（宽版）布局，
+      // 默认的 .player-container 是上下列（窄版）。
+      document.body.classList.toggle("player-popup");
+      try {
+        if (window.__hana) window.__hana.ui.resize({ height: 460 });
+      } catch (e) {}
+    });
+    return true;
+  }
+
+  // 按钮在 body 里，本脚本在 head —— 等它出现
+  if (!install()) {
+    var t = setInterval(function () {
+      if (install()) clearInterval(t);
+    }, 300);
+    setTimeout(function () { clearInterval(t); }, 15000);
+  }
+})();
+</script>
+<script>
+
+// === default-theme.js ===
+/**
+ * default-theme.js
+ * 默认歌词视觉主题
+ * 
+ * 纯CSS实现，无Canvas/WebGL依赖，兼容所有设备
+ */
+
+const defaultTheme = {
+  id: 'default-theme',
+  name: '默认主题',
+  description: '基础歌词显示，兼容所有设备',
+  version: '1.0.0',
+  author: '奥菲莉娅',
+  
+  // 性能要求
+  requirements: {
+    minTier: 'low',
+    features: [],
+  },
+  
+  // 渲染器
+  renderer: {
+    type: 'css',
+    container: null,
+    settings: null,
+    
+    /**
+     * 初始化渲染器
+     * @param {HTMLElement} container
+     * @param {object} settings
+     */
+    init(container, settings) {
+      this.container = container;
+      this.settings = settings;
+      
+      // 创建歌词容器
+      this.lyricsContainer = document.createElement('div');
+      this.lyricsContainer.className = 'lyrics-container default-theme';
+      this.lyricsContainer.style.cssText = `
+        font-size: ${settings.fontSize || 16}px;
+        line-height: ${settings.lineHeight || 1.8};
+        color: ${settings.text || '#e0e0e0'};
+        padding: ${settings.padding || 16}px;
+        text-align: center;
+        overflow-y: auto;
+        max-height: 100%;
+      `;
+      
+      this.container.appendChild(this.lyricsContainer);
+    },
+    
+    /**
+     * 渲染歌词
+     * @param {object} state
+     */
+    render(state) {
+      if (!this.lyricsContainer) return;
+      
+      const { lines, currentLine, highlightColor } = state;
+      
+      // 清空容器
+      this.lyricsContainer.innerHTML = '';
+      
+      // 渲染每一行歌词
+      lines.forEach((line, index) => {
+        const lineElement = document.createElement('div');
+        lineElement.className = 'lyric-line';
+        lineElement.textContent = line.text;
+        
+        // 高亮当前行
+        if (index === currentLine) {
+          lineElement.style.cssText = `
+            color: ${highlightColor || this.settings.highlight || '#d49a6a'};
+            font-weight: bold;
+            font-size: ${(this.settings.fontSize || 16) * 1.1}px;
+            transition: all 0.3s ease;
+          `;
+        } else {
+          lineElement.style.cssText = `
+            color: ${this.settings.text || '#e0e0e0'};
+            opacity: ${index < currentLine ? 0.5 : 0.8};
+            transition: all 0.3s ease;
+          `;
+        }
+        
+        this.lyricsContainer.appendChild(lineElement);
+      });
+      
+      // 滚动到当前行
+      if (currentLine >= 0 && currentLine < lines.length) {
+        const currentElement = this.lyricsContainer.children[currentLine];
+        if (currentElement) {
+          currentElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+          });
+        }
+      }
+    },
+    
+    /**
+     * 销毁渲染器
+     */
+    destroy() {
+      if (this.lyricsContainer) {
+        this.lyricsContainer.remove();
+        this.lyricsContainer = null;
+      }
+    },
+  },
+  
+  // 设置Schema
+  settingsSchema: {
+    type: 'object',
+    properties: {
+      fontSize: {
+        type: 'number',
+        default: 16,
+        title: '字号',
+        minimum: 12,
+        maximum: 24,
+      },
+      lineHeight: {
+        type: 'number',
+        default: 1.8,
+        title: '行高',
+        minimum: 1.2,
+        maximum: 2.5,
+      },
+      text: {
+        type: 'string',
+        default: '#e0e0e0',
+        title: '文字颜色',
+        format: 'color',
+      },
+      highlight: {
+        type: 'string',
+        default: '#d49a6a',
+        title: '高亮颜色',
+        format: 'color',
+      },
+      padding: {
+        type: 'number',
+        default: 16,
+        title: '内边距',
+        minimum: 8,
+        maximum: 32,
+      },
+    },
+  },
+  
+  // 默认设置
+  defaultSettings: {
+    fontSize: 16,
+    lineHeight: 1.8,
+    text: '#e0e0e0',
+    highlight: '#d49a6a',
+    padding: 16,
+  },
+  
+  // Fallback主题ID（自身是最终fallback）
+  fallback: null,
+};
+
+// 导出
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = defaultTheme;
+} else if (typeof window !== 'undefined') {
+  window.defaultTheme = defaultTheme;
+}
+
+// === waveform-theme.js ===
+/**
+ * waveform-theme.js
+ * 波形歌词视觉主题
+ * 
+ * Canvas实现，显示音频波形，中性能档位
+ */
+
+const waveformTheme = {
+  id: 'waveform-theme',
+  name: '波形主题',
+  description: '歌词与音频波形同步显示',
+  version: '1.0.0',
+  author: '奥菲莉娅',
+  
+  // 性能要求
+  requirements: {
+    minTier: 'medium',
+    features: ['canvas'],
+  },
+  
+  // 渲染器
+  renderer: {
+    type: 'canvas',
+    container: null,
+    settings: null,
+    canvas: null,
+    ctx: null,
+    animationId: null,
+    waveformData: [],
+    
+    /**
+     * 初始化渲染器
+     * @param {HTMLElement} container
+     * @param {object} settings
+     */
+    init(container, settings) {
+      this.container = container;
+      this.settings = settings;
+      
+      // 创建Canvas元素
+      this.canvas = document.createElement('canvas');
+      this.canvas.className = 'waveform-canvas';
+      this.canvas.style.cssText = `
+        width: 100%;
+        height: ${settings.waveHeight || 60}px;
+        display: block;
+      `;
+      this.container.appendChild(this.canvas);
+      
+      // 获取上下文
+      this.ctx = this.canvas.getContext('2d');
+      
+      // 创建歌词容器
+      this.lyricsContainer = document.createElement('div');
+      this.lyricsContainer.className = 'lyrics-container waveform-theme';
+      this.lyricsContainer.style.cssText = `
+        font-size: ${settings.fontSize || 16}px;
+        line-height: ${settings.lineHeight || 1.8};
+        color: ${settings.lyricColor || '#d49a6a'};
+        padding: ${settings.padding || 16}px;
+        text-align: center;
+        overflow-y: auto;
+        max-height: calc(100% - ${settings.waveHeight || 60}px);
+      `;
+      this.container.appendChild(this.lyricsContainer);
+      
+      // 初始化波形数据
+      this.waveformData = new Array(64).fill(0);
+      
+      // 调整Canvas大小
+      this.resizeCanvas();
+      window.addEventListener('resize', () => this.resizeCanvas());
+    },
+    
+    /**
+     * 调整Canvas大小
+     */
+    resizeCanvas() {
+      if (!this.canvas) return;
+      
+      const rect = this.canvas.getBoundingClientRect();
+      this.canvas.width = rect.width * window.devicePixelRatio;
+      this.canvas.height = rect.height * window.devicePixelRatio;
+      this.ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    },
+    
+    /**
+     * 渲染歌词和波形
+     * @param {object} state
+     */
+    render(state) {
+      if (!this.ctx || !this.lyricsContainer) return;
+      
+      const { lines, currentLine, waveData } = state;
+      
+      // 更新波形数据
+      if (waveData && waveData.length > 0) {
+        this.waveformData = waveData;
+      }
+      
+      // 清空Canvas
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      
+      // 绘制波形
+      this.drawWaveform();
+      
+      // 渲染歌词
+      this.renderLyrics(lines, currentLine);
+    },
+    
+    /**
+     * 绘制波形
+     */
+    drawWaveform() {
+      const { width, height } = this.canvas.getBoundingClientRect();
+      const barWidth = width / this.waveformData.length;
+      const waveColor = this.settings.waveColor || '#4ade80';
+      
+      this.ctx.fillStyle = waveColor;
+      
+      this.waveformData.forEach((value, index) => {
+        const barHeight = value * height * 0.8;
+        const x = index * barWidth;
+        const y = (height - barHeight) / 2;
+        
+        this.ctx.fillRect(x, y, barWidth - 1, barHeight);
+      });
+    },
+    
+    /**
+     * 渲染歌词
+     * @param {Array} lines
+     * @param {number} currentLine
+     */
+    renderLyrics(lines, currentLine) {
+      // 清空容器
+      this.lyricsContainer.innerHTML = '';
+      
+      // 渲染每一行歌词
+      lines.forEach((line, index) => {
+        const lineElement = document.createElement('div');
+        lineElement.className = 'lyric-line';
+        lineElement.textContent = line.text;
+        
+        // 高亮当前行
+        if (index === currentLine) {
+          lineElement.style.cssText = `
+            color: ${this.settings.lyricColor || '#d49a6a'};
+            font-weight: bold;
+            font-size: ${(this.settings.fontSize || 16) * 1.1}px;
+            transition: all 0.3s ease;
+          `;
+        } else {
+          lineElement.style.cssText = `
+            color: ${this.settings.lyricColor || '#d49a6a'};
+            opacity: ${index < currentLine ? 0.5 : 0.8};
+            transition: all 0.3s ease;
+          `;
+        }
+        
+        this.lyricsContainer.appendChild(lineElement);
+      });
+      
+      // 滚动到当前行
+      if (currentLine >= 0 && currentLine < lines.length) {
+        const currentElement = this.lyricsContainer.children[currentLine];
+        if (currentElement) {
+          currentElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+          });
+        }
+      }
+    },
+    
+    /**
+     * 销毁渲染器
+     */
+    destroy() {
+      if (this.animationId) {
+        cancelAnimationFrame(this.animationId);
+      }
+      
+      if (this.canvas) {
+        this.canvas.remove();
+        this.canvas = null;
+      }
+      
+      if (this.lyricsContainer) {
+        this.lyricsContainer.remove();
+        this.lyricsContainer = null;
+      }
+      
+      window.removeEventListener('resize', this.resizeCanvas);
+    },
+  },
+  
+  // 设置Schema
+  settingsSchema: {
+    type: 'object',
+    properties: {
+      waveColor: {
+        type: 'string',
+        default: '#4ade80',
+        title: '波形颜色',
+        format: 'color',
+      },
+      lyricColor: {
+        type: 'string',
+        default: '#d49a6a',
+        title: '歌词颜色',
+        format: 'color',
+      },
+      waveHeight: {
+        type: 'number',
+        default: 60,
+        title: '波形高度',
+        minimum: 30,
+        maximum: 120,
+      },
+      fontSize: {
+        type: 'number',
+        default: 16,
+        title: '字号',
+        minimum: 12,
+        maximum: 24,
+      },
+      lineHeight: {
+        type: 'number',
+        default: 1.8,
+        title: '行高',
+        minimum: 1.2,
+        maximum: 2.5,
+      },
+      padding: {
+        type: 'number',
+        default: 16,
+        title: '内边距',
+        minimum: 8,
+        maximum: 32,
+      },
+    },
+  },
+  
+  // 默认设置
+  defaultSettings: {
+    waveColor: '#4ade80',
+    lyricColor: '#d49a6a',
+    waveHeight: 60,
+    fontSize: 16,
+    lineHeight: 1.8,
+    padding: 16,
+  },
+  
+  // Fallback主题ID
+  fallback: 'default-theme',
+};
+
+// 导出
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = waveformTheme;
+} else if (typeof window !== 'undefined') {
+  window.waveformTheme = waveformTheme;
+}
+
+// === spectrum-theme.js ===
+/**
+ * spectrum-theme.js
+ * 频谱歌词视觉主题
+ * 
+ * WebGL实现，实时频谱分析，高性能档位
+ */
+
+const spectrumTheme = {
+  id: 'spectrum-theme',
+  name: '频谱主题',
+  description: '实时频谱分析与歌词同步',
+  version: '1.0.0',
+  author: '奥菲莉娅',
+  
+  // 性能要求
+  requirements: {
+    minTier: 'high',
+    features: ['webgl'],
+  },
+  
+  // 渲染器
+  renderer: {
+    type: 'webgl',
+    container: null,
+    settings: null,
+    canvas: null,
+    gl: null,
+    animationId: null,
+    spectrumData: [],
+    
+    /**
+     * 初始化渲染器
+     * @param {HTMLElement} container
+     * @param {object} settings
+     */
+    init(container, settings) {
+      this.container = container;
+      this.settings = settings;
+      
+      // 创建Canvas元素
+      this.canvas = document.createElement('canvas');
+      this.canvas.className = 'spectrum-canvas';
+      this.canvas.style.cssText = `
+        width: 100%;
+        height: 100%;
+        display: block;
+      `;
+      this.container.appendChild(this.canvas);
+      
+      // 获取WebGL上下文
+      this.gl = this.canvas.getContext('webgl') || this.canvas.getContext('experimental-webgl');
+      
+      if (!this.gl) {
+        console.error('WebGL not supported, falling back to default theme');
+        return;
+      }
+      
+      // 初始化WebGL
+      this.initWebGL();
+      
+      // 创建歌词容器
+      this.lyricsContainer = document.createElement('div');
+      this.lyricsContainer.className = 'lyrics-container spectrum-theme';
+      this.lyricsContainer.style.cssText = `
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        font-size: ${settings.fontSize || 16}px;
+        line-height: ${settings.lineHeight || 1.8};
+        color: ${settings.lyricColor || '#d49a6a'};
+        padding: ${settings.padding || 16}px;
+        text-align: center;
+        background: linear-gradient(transparent, rgba(0,0,0,0.7));
+        max-height: 40%;
+        overflow-y: auto;
+      `;
+      this.container.appendChild(this.lyricsContainer);
+      
+      // 初始化频谱数据
+      this.spectrumData = new Array(settings.barCount || 64).fill(0);
+      
+      // 调整Canvas大小
+      this.resizeCanvas();
+      window.addEventListener('resize', () => this.resizeCanvas());
+    },
+    
+    /**
+     * 初始化WebGL
+     */
+    initWebGL() {
+      const gl = this.gl;
+      
+      // 着色器源码
+      const vertexShaderSource = `
+        attribute vec2 a_position;
+        attribute float a_height;
+        uniform vec2 u_resolution;
+        varying float v_height;
+        
+        void main() {
+          vec2 clipSpace = (a_position / u_resolution) * 2.0 - 1.0;
+          gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
+          v_height = a_height;
+        }
+      `;
+      
+      const fragmentShaderSource = `
+        precision mediump float;
+        uniform vec3 u_color;
+        varying float v_height;
+        
+        void main() {
+          gl_FragColor = vec4(u_color * v_height, 1.0);
+        }
+      `;
+      
+      // 编译着色器
+      const vertexShader = this.compileShader(gl.VERTEX_SHADER, vertexShaderSource);
+      const fragmentShader = this.compileShader(gl.FRAGMENT_SHADER, fragmentShaderSource);
+      
+      // 创建程序
+      this.program = gl.createProgram();
+      gl.attachShader(this.program, vertexShader);
+      gl.attachShader(this.program, fragmentShader);
+      gl.linkProgram(this.program);
+      
+      if (!gl.getProgramParameter(this.program, gl.LINK_STATUS)) {
+        console.error('Program link failed:', gl.getProgramInfoLog(this.program));
+        return;
+      }
+      
+      // 获取属性位置
+      this.positionLocation = gl.getAttribLocation(this.program, 'a_position');
+      this.heightLocation = gl.getAttribLocation(this.program, 'a_height');
+      this.resolutionLocation = gl.getUniformLocation(this.program, 'u_resolution');
+      this.colorLocation = gl.getUniformLocation(this.program, 'u_color');
+      
+      // 创建缓冲区
+      this.positionBuffer = gl.createBuffer();
+      this.heightBuffer = gl.createBuffer();
+    },
+    
+    /**
+     * 编译着色器
+     * @param {number} type
+     * @param {string} source
+     * @returns {WebGLShader}
+     */
+    compileShader(type, source) {
+      const gl = this.gl;
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error('Shader compile failed:', gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+        return null;
+      }
+      
+      return shader;
+    },
+    
+    /**
+     * 调整Canvas大小
+     */
+    resizeCanvas() {
+      if (!this.canvas || !this.gl) return;
+      
+      const rect = this.canvas.getBoundingClientRect();
+      this.canvas.width = rect.width * window.devicePixelRatio;
+      this.canvas.height = rect.height * window.devicePixelRatio;
+      this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    },
+    
+    /**
+     * 渲染歌词和频谱
+     * @param {object} state
+     */
+    render(state) {
+      if (!this.gl || !this.lyricsContainer) return;
+      
+      const { lines, currentLine, spectrumData } = state;
+      
+      // 更新频谱数据
+      if (spectrumData && spectrumData.length > 0) {
+        this.spectrumData = spectrumData;
+      }
+      
+      // 绘制频谱
+      this.drawSpectrum();
+      
+      // 渲染歌词
+      this.renderLyrics(lines, currentLine);
+    },
+    
+    /**
+     * 绘制频谱
+     */
+    drawSpectrum() {
+      const gl = this.gl;
+      const { width, height } = this.canvas.getBoundingClientRect();
+      
+      // 清空画布
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      
+      gl.useProgram(this.program);
+      
+      // 设置分辨率
+      gl.uniform2f(this.resolutionLocation, width, height);
+      
+      // 设置颜色
+      const color = this.hexToRgb(this.settings.spectrumColor || '#818cf8');
+      gl.uniform3f(this.colorLocation, color.r, color.g, color.b);
+      
+      // 计算顶点位置
+      const barWidth = width / this.spectrumData.length;
+      const positions = [];
+      const heights = [];
+      
+      this.spectrumData.forEach((value, index) => {
+        const x = index * barWidth;
+        const barHeight = value * height * 0.8;
+        
+        // 矩形顶点（两个三角形）
+        positions.push(
+          x, height - barHeight,
+          x + barWidth - 1, height - barHeight,
+          x, height,
+          x, height,
+          x + barWidth - 1, height - barHeight,
+          x + barWidth - 1, height
+        );
+        
+        // 高度值
+        heights.push(value, value, value, value, value, value);
+      });
+      
+      // 更新位置缓冲区
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.DYNAMIC_DRAW);
+      gl.enableVertexAttribArray(this.positionLocation);
+      gl.vertexAttribPointer(this.positionLocation, 2, gl.FLOAT, false, 0, 0);
+      
+      // 更新高度缓冲区
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.heightBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(heights), gl.DYNAMIC_DRAW);
+      gl.enableVertexAttribArray(this.heightLocation);
+      gl.vertexAttribPointer(this.heightLocation, 1, gl.FLOAT, false, 0, 0);
+      
+      // 绘制
+      gl.drawArrays(gl.TRIANGLES, 0, positions.length / 2);
+    },
+    
+    /**
+     * 渲染歌词
+     * @param {Array} lines
+     * @param {number} currentLine
+     */
+    renderLyrics(lines, currentLine) {
+      // 清空容器
+      this.lyricsContainer.innerHTML = '';
+      
+      // 渲染每一行歌词
+      lines.forEach((line, index) => {
+        const lineElement = document.createElement('div');
+        lineElement.className = 'lyric-line';
+        lineElement.textContent = line.text;
+        
+        // 高亮当前行
+        if (index === currentLine) {
+          lineElement.style.cssText = `
+            color: ${this.settings.lyricColor || '#d49a6a'};
+            font-weight: bold;
+            font-size: ${(this.settings.fontSize || 16) * 1.1}px;
+            transition: all 0.3s ease;
+            text-shadow: 0 0 10px ${this.settings.lyricColor || '#d49a6a'};
+          `;
+        } else {
+          lineElement.style.cssText = `
+            color: ${this.settings.lyricColor || '#d49a6a'};
+            opacity: ${index < currentLine ? 0.5 : 0.8};
+            transition: all 0.3s ease;
+          `;
+        }
+        
+        this.lyricsContainer.appendChild(lineElement);
+      });
+      
+      // 滚动到当前行
+      if (currentLine >= 0 && currentLine < lines.length) {
+        const currentElement = this.lyricsContainer.children[currentLine];
+        if (currentElement) {
+          currentElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+          });
+        }
+      }
+    },
+    
+    /**
+     * Hex转RGB
+     * @param {string} hex
+     * @returns {object}
+     */
+    hexToRgb(hex) {
+      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+      return result ? {
+        r: parseInt(result[1], 16) / 255,
+        g: parseInt(result[2], 16) / 255,
+        b: parseInt(result[3], 16) / 255,
+      } : { r: 0.5, g: 0.5, b: 1.0 };
+    },
+    
+    /**
+     * 销毁渲染器
+     */
+    destroy() {
+      if (this.animationId) {
+        cancelAnimationFrame(this.animationId);
+      }
+      
+      if (this.gl) {
+        this.gl.deleteProgram(this.program);
+        this.gl.deleteBuffer(this.positionBuffer);
+        this.gl.deleteBuffer(this.heightBuffer);
+      }
+      
+      if (this.canvas) {
+        this.canvas.remove();
+        this.canvas = null;
+      }
+      
+      if (this.lyricsContainer) {
+        this.lyricsContainer.remove();
+        this.lyricsContainer = null;
+      }
+      
+      window.removeEventListener('resize', this.resizeCanvas);
+    },
+  },
+  
+  // 设置Schema
+  settingsSchema: {
+    type: 'object',
+    properties: {
+      spectrumColor: {
+        type: 'string',
+        default: '#818cf8',
+        title: '频谱颜色',
+        format: 'color',
+      },
+      lyricColor: {
+        type: 'string',
+        default: '#d49a6a',
+        title: '歌词颜色',
+        format: 'color',
+      },
+      barCount: {
+        type: 'number',
+        default: 64,
+        title: '频谱条数',
+        minimum: 16,
+        maximum: 128,
+      },
+      sensitivity: {
+        type: 'number',
+        default: 1.0,
+        title: '灵敏度',
+        minimum: 0.5,
+        maximum: 2.0,
+      },
+      fontSize: {
+        type: 'number',
+        default: 16,
+        title: '字号',
+        minimum: 12,
+        maximum: 24,
+      },
+      lineHeight: {
+        type: 'number',
+        default: 1.8,
+        title: '行高',
+        minimum: 1.2,
+        maximum: 2.5,
+      },
+      padding: {
+        type: 'number',
+        default: 16,
+        title: '内边距',
+        minimum: 8,
+        maximum: 32,
+      },
+    },
+  },
+  
+  // 默认设置
+  defaultSettings: {
+    spectrumColor: '#818cf8',
+    lyricColor: '#d49a6a',
+    barCount: 64,
+    sensitivity: 1.0,
+    fontSize: 16,
+    lineHeight: 1.8,
+    padding: 16,
+  },
+  
+  // Fallback主题ID
+  fallback: 'waveform-theme',
+};
+
+// 导出
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = spectrumTheme;
+} else if (typeof window !== 'undefined') {
+  window.spectrumTheme = spectrumTheme;
+}
+
+</script>
+<script>
+(function () {
+  try {
+    var origSetInterval = window.setInterval;
+    window.setInterval = function (fn, ms) {
+      var wrapped = function () {
+        // 30 秒那一轮是清理器：播放中就不执行
+        if (ms === 30000) {
+          var a = document.getElementById("audio");
+          if (a && !a.paused && !a.ended) return;
+        }
+        return fn.apply(this, arguments);
+      };
+      return origSetInterval.call(window, wrapped, ms);
+    };
+  } catch (e) {
+    /* 包不上就维持原行为 */
+  }
+})();
+</script>
+<script>
+(function () {
+  try {
+    var ticket = new URLSearchParams(location.search).get("appSurfaceSession");
+    if (!ticket) return;
+    var KEY = "appSurfaceSession";
+
+    function withTicket(v) {
+      if (typeof v !== "string" || !v) return v;
+      if (v.indexOf(KEY + "=") >= 0) return v;
+      var same;
+      try {
+        same = new URL(v, location.href).origin === location.origin;
+      } catch (e) {
+        same = v.charAt(0) === "/";
+      }
+      if (!same) return v;
+      return v + (v.indexOf("?") > -1 ? "&" : "?") + KEY + "=" + encodeURIComponent(ticket);
+    }
+    window.__apWithTicket = withTicket;
+
+    function patchSrc(proto) {
+      if (!proto) return;
+      var d = Object.getOwnPropertyDescriptor(proto, "src");
+      if (d && d.set) {
+        Object.defineProperty(proto, "src", {
+          configurable: true,
+          enumerable: d.enumerable,
+          get: d.get,
+          set: function (v) {
+            return d.set.call(this, withTicket(v));
+          },
+        });
+      }
+      var origSetAttr = proto.setAttribute;
+      proto.setAttribute = function (name, value) {
+        if (String(name).toLowerCase() === "src") value = withTicket(value);
+        return origSetAttr.call(this, name, value);
+      };
+    }
+
+    patchSrc(window.HTMLMediaElement && window.HTMLMediaElement.prototype);
+    patchSrc(window.HTMLImageElement && window.HTMLImageElement.prototype);
+  } catch (e) {
+    /* 补不上也不能把页面弄死 */
+  }
+})();
+</script>
+<script>
+(function () {
+  var tries = { idx: null, n: 0, ts: 0 };
+  function install() {
+    if (typeof window.load !== "function") return false;
+    if (window.load.__retryGuarded) return true;
+    var orig = window.load;
+    window.load = function (i) {
+      var now = Date.now();
+      if (i === tries.idx && now - tries.ts < 20000) {
+        tries.n++;
+        if (tries.n > 2) {
+          console.warn("[guard] 同一曲目连续失败 " + tries.n + " 次，停止重试");
+          return;
+        }
+      } else {
+        tries.idx = i;
+        tries.n = 1;
+      }
+      tries.ts = now;
+      return orig.apply(this, arguments);
+    };
+    window.load.__retryGuarded = true;
+    return true;
+  }
+  // 页面脚本在 body 里，晚于本脚本执行 —— 轮询等它出现。
+  var t = setInterval(function () {
+    if (install()) clearInterval(t);
+  }, 300);
+})();
+</script>
+<script>
+(function () {
+  var ticket = new URLSearchParams(location.search).get("appSurfaceSession");
+  if (!ticket || !window.fetch) return;
+  var orig = window.fetch;
+  window.fetch = function (input, init) {
+    try {
+      var url = typeof input === "string" ? input : (input && input.url) || "";
+      var isLocal = false;
+      try {
+        var abs = new URL(url, location.href);
+        isLocal = abs.origin === location.origin;
+      } catch (e) {
+        isLocal = url.charAt(0) === "/";
+      }
+      if (isLocal) {
+        init = init || {};
+        var h = new Headers(init.headers || {});
+        if (!h.has("X-Hana-App-Surface-Session")) h.set("X-Hana-App-Surface-Session", ticket);
+        init.headers = h;
+      }
+    } catch (e) {
+      /* 头没补上也不能把请求弄丢 */
+    }
+    return orig.call(this, input, init);
+  };
+})();
+</script>
+<script>
+(function () {
+  var APP_BASE = "/api/apps/hanako-audio-player/routes";
+
+  // 1) 迁移 localStorage 里的 v1 路径
+  try {
+    var KEY = "hanako_audio_playlist";
+    var s = localStorage.getItem(KEY);
+    if (s && s.indexOf("/api/plugins/") >= 0) {
+      localStorage.setItem(KEY, s.split("/api/plugins/hanako-audio-player/").join(APP_BASE + "/"));
+    }
+  } catch (e) {
+    /* 迁移失败不能拦住界面 */
+  }
+
+  // 2) 当前歌词行 → 输入框上方横幅（每 2 秒看一眼，变了才推）
+  //
+  // 前提：必须先在对话里用过一次工具（audio_play），把会话绑上。
+  // 卡片自己拿不到 sessionPath —— 宿主只给 appId/slot/cardInstanceId，
+  // SDK 里也没有任何 session API（查过）。所以这里只能“报告状态”，
+  // 不能在卡片里自己把会话绑上。
+  var lastLine = "";
+  var warned = false;
+  var lastReportedTitle = "";
+
+  // 2b) 当前曲目 → 后端
+  //
+  // 症状：在卡片里换歌后，横幅里的歌名还是旧的。
+  // 根因：后端只在 audio_play 工具调用时更新曲目；卡片自己换歌只改了
+  // 界面（trackName），从没告知后端。而 /api/lyric-line 拼文案时读的
+  // 就是后端的 track.title。
+  // 这里盯 #trackName 的变化，一变就上报。
+  setInterval(function () {
+    try {
+      var el = document.getElementById("trackName");
+      if (!el) return;
+      var title = (el.textContent || "").trim();
+      // “播放器”是待机占位，不是真曲目，别上报
+      if (!title || title === "播放器" || title === lastReportedTitle) return;
+      lastReportedTitle = title;
+      fetch(APP_BASE + "/api/now-playing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: title }),
+      }).catch(function () {});
+    } catch (e) {}
+  }, 1500);
+
+  function tipOnce(msg) {
+    if (warned) return;
+    warned = true;
+    // 页面自带的 toast（toastContainer + .toast-item 样式）
+    try {
+      if (typeof showToast === "function") showToast(msg, 5000);
+    } catch (e) {}
+  }
+
+  // 启动时查一次会话绑定状态，未绑就提醒（只提一次，不烦人）
+  setTimeout(function () {
+    fetch(APP_BASE + "/api/session-status")
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res && res.bound === false) {
+          tipOnce("想让歌词显示在输入框上方？先在对话里让我播一首（会用 audio_play）。");
+        }
+      })
+      .catch(function () {});
+  }, 2500);
+
+  setInterval(function () {
+    try {
+      var el = document.querySelector(".lyric-line.current");
+      if (!el) return;
+      var line = (el.textContent || "").trim();
+      if (!line || line === lastLine) return;
+      lastLine = line;
+      fetch(APP_BASE + "/api/lyric-line", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ line: line }),
+      })
+        .then(function (r) { return r.json().catch(function () { return null; }); })
+        .then(function (res) {
+          if (res && res.error === "no-bound-session") {
+            tipOnce("歌词横幅需要先在对话里播一首（用 audio_play）绑定会话。");
+          }
+        })
+        .catch(function () {});
+    } catch (e) {
+      /* 推不了就算了，不打扰播放 */
+    }
+  }, 2000);
+  // 3) SMTC 可行性探针（只读，Phase B 用；验完可拆）
+  //
+  // 需求文档 §八 的前置条件：先查 navigator.mediaSession 在这个沙盒 iframe
+  // 里到底能不能用，再决定要不要投入实现。
+  // 这个探针不碰播放、不改任何状态，只把“能不能用”报回后端。
+  setTimeout(function () {
+    try {
+      var ms = navigator.mediaSession;
+      var result = {
+        inIframe: window.self !== window.top,
+        hasMediaSession: "mediaSession" in navigator,
+        hasMediaMetadata: typeof window.MediaMetadata === "function",
+        // 逐个方法查存在性 —— 光看对象存在不够，要能真调
+        methods: {},
+        // 权限策略：能不能看到 mediaSession 相关的 controlled features
+        permPolicy:
+          document.featurePolicy && typeof document.featurePolicy.allowsFeature === "function"
+            ? {
+                "mediasession": document.featurePolicy.allowsFeature("mediasession"),
+                autoplay: document.featurePolicy.allowsFeature("autoplay"),
+              }
+            : null,
+        origin: location.origin,
+        isSecureContext: window.isSecureContext === true,
+      };
+      [
+        "setActionHandler",
+        "setPositionState",
+        "setMicrophoneActive",
+        "setCameraActive",
+      ].forEach(function (k) {
+        result.methods[k] = ms ? typeof ms[k] === "function" : false;
+      });
+      // 再试一次真调：setActionHandler 传个合法 action + 空函数
+      if (ms && typeof ms.setActionHandler === "function") {
+        try {
+          ms.setActionHandler("play", function () {});
+          ms.setActionHandler("play", null);
+          result.setActionHandlerWorks = true;
+        } catch (e) {
+          result.setActionHandlerWorks = false;
+          result.setActionHandlerError = String(e && e.message);
+        }
+      }
+      // metadata 赋值测试
+      if (result.hasMediaMetadata && ms) {
+        try {
+          ms.metadata = new window.MediaMetadata({ title: "probe", artist: "probe" });
+          result.metadataAssignWorks = true;
+        } catch (e) {
+          result.metadataAssignWorks = false;
+          result.metadataError = String(e && e.message);
+        }
+      }
+      fetch(APP_BASE + "/api/_probe/smtc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result),
+      }).catch(function () {});
+    } catch (e) {
+      /* 探针本身报错不能影响界面 */
+    }
+  }, 1500);
+
+  // 5) 尺寸探针（只读，诊断用；验完可拆）
+  //
+  // 症状：卡片在聊天流里撑满整个视口，聊天区被顶住滑不动。我上报的是 460px，
+  // 但看着没生效。这里把真实尺寸 + envelope（宿主告知的容器约束）报回后端。
+  // 同时轮询 /api/_probe/resize：从后端就能触发一次 resize，
+  // 用来区分「通道不通」和「通道通但宿主不采纳」。
+  setInterval(function () {
+    try {
+      function box(sel) {
+        var el = document.querySelector(sel);
+        return el ? Math.round(el.getBoundingClientRect().height) : null;
+      }
+      var env = null;
+      try {
+        env =
+          window.__hana && window.__hana.envelope
+            ? window.__hana.envelope.getSnapshot()
+            : null;
+      } catch (e) {}
+      fetch(APP_BASE + "/api/_probe/size", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          innerHeight: window.innerHeight,
+          docClientHeight: document.documentElement.clientHeight,
+          bodyClientHeight: document.body.clientHeight,
+          bodyScrollHeight: document.body.scrollHeight,
+          cssBodyHeight: getComputedStyle(document.body).height,
+          cssHtmlHeight: getComputedStyle(document.documentElement).height,
+          container: box(".player-container"),
+          playerRight: box(".player-right"),
+          plBody: box("#plBody"),
+          hasHana: !!window.__hana,
+          build: window.__HANA_BUILD || null,
+          envelope: env,
+          // ── 滚动诊断 ──
+          // 症状：卡片高度修好了，但内部滚不动。
+          // 这里把每个候选滚动容器的可滚性量出来，不靠猜。
+          scroll: (function () {
+            function m(sel) {
+              var el = document.querySelector(sel);
+              if (!el) return null;
+              var cs = getComputedStyle(el);
+              return {
+                scrollH: el.scrollHeight,
+                clientH: el.clientHeight,
+                scrollable: el.scrollHeight - el.clientHeight,
+                overflowY: cs.overflowY,
+                flex: cs.flex,
+                height: cs.height,
+                minHeight: cs.minHeight,
+                display: cs.display,
+              };
+            }
+            // 把 .player-container 的直接子元素逐个量出来（窄版下 display:contents
+            // 会让 .player-left / .player-right 从布局里消失，子元素变成容器的 flex item）
+            var kids = [];
+            try {
+              var cont = document.querySelector(".player-container");
+              if (cont) {
+                var walk = function (n, depth) {
+                  for (var i = 0; i < n.children.length; i++) {
+                    var c = n.children[i];
+                    var cs = getComputedStyle(c);
+                    var r = c.getBoundingClientRect();
+                    if (depth < 2) {
+                      kids.push({
+                        d: depth,
+                        cls: (c.className || c.id || c.tagName) + "",
+                        h: Math.round(r.height),
+                        display: cs.display,
+                        flex: cs.flex,
+                        flexShrink: cs.flexShrink,
+                        overflowY: cs.overflowY,
+                      });
+                    }
+                    if (cs.display === "contents") walk(c, depth);
+                    else if (depth < 1) walk(c, depth + 1);
+                  }
+                };
+                walk(cont, 0);
+              }
+            } catch (e) {}
+            return {
+              container: m(".player-container"),
+              tabContent: m(".tab-content"),
+              tabPane: m(".tab-pane.active"),
+              plBody: m("#plBody"),
+              kids: kids,
+            };
+          })(),
+        }),
+      }).catch(function () {});
+    } catch (e) {}
+  }, 3000);
+
+  // 6) 修「白天/黑夜切换失效」
+  //
+  // 症状：AI 主题跑过一次后，右上角那个日/月图标就切不动了。
+  //
+  // 原因：applyThemeToCSS() 用 root.style.setProperty() 把 19 个变量写在
+  // **inline style** 上（--bg / --surface / --text …），而 applyTheme() 只改
+  // data-theme 属性。[data-theme="light"] 那些 CSS 规则优先级低于行内，
+  // 所以行内一铺上去，切换就被压住了。
+  //
+  // 不去改 applyThemeToCSS（那是主题引擎的地盘），而在外层包 applyTheme：
+  // 切主题时把那些行内覆盖清掉，让 CSS 接管。清空之后 AI 主题下次仍会重写，
+  // 行为不回退。
+  var THEMED_VARS = [
+    "--accent", "--accent-hover", "--accent-glow", "--accent-soft",
+    "--bg", "--card-bg", "--surface", "--surface-hover", "--surface-active",
+    "--border", "--border-strong", "--text", "--text-dim", "--text-faint",
+    "--lyric-color", "--lyric-active-color", "--lyric-chorus-color",
+    "--font-base", "--anim-speed",
+  ];
+  function clearInlineTheme() {
+    var root = document.documentElement;
+    for (var i = 0; i < THEMED_VARS.length; i++) {
+      root.style.removeProperty(THEMED_VARS[i]);
+    }
+  }
+  function patchApplyTheme() {
+    if (typeof window.applyTheme !== "function") return false;
+    if (window.applyTheme.__themed) return true;
+    var orig = window.applyTheme;
+    window.applyTheme = function () {
+      clearInlineTheme();
+      return orig.apply(this, arguments);
+    };
+    window.applyTheme.__themed = true;
+    return true;
+  }
+  var pt = setInterval(function () {
+    if (patchApplyTheme()) clearInterval(pt);
+  }, 300);
+  setTimeout(function () { clearInterval(pt); }, 15000);
+
+  // 1.5 秒后清一次：初始 applyTheme 会先跑，可能存在早期污染
+  setTimeout(clearInlineTheme, 1500);
+
+  setInterval(function () {
+    fetch(APP_BASE + "/api/_probe/resize")
+      .then(function (r) {
+        return r.json();
+      })
+      .then(function (res) {
+        if (!res || !res.ok || res.height == null) return;
+        try {
+          if (window.__hana) window.__hana.ui.resize({ height: res.height });
+        } catch (e) {}
+      })
+      .catch(function () {});
+  }, 5000);
+})();
+</script>
+<script>
+(function () {
+  var MINE = window.__HANA_BUILD;
+  if (!MINE) return;
+  // APP_BASE 是 .../routes，静态资源在 .../ui
+  var APP_BASE = "/api/apps/hanako-audio-player/routes";
+  var UI_BASE = APP_BASE.replace(/\/routes$/, "/ui");
+  var last = 0;
+  setInterval(function () {
+    var now = Date.now();
+    if (now - last < 5000) return;
+    last = now;
+    fetch(UI_BASE + "/_build.json", { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (j && j.build && j.build !== MINE) {
+          console.log("[hana] 检测到新构建 " + j.build + "（当前 " + MINE + "），重载页面");
+          location.reload();
+        }
+      })
+      .catch(function () {});
+  }, 5000);
+})();
+</script>
 </head>
-<body class="${bodyClass}">
+<body class="player-popup">
 <div id="toastContainer"></div>
 
 <div class="player-container">
@@ -1999,7 +4039,7 @@ body {
       <button class="local-btn" id="localBrowseBtn">浏览</button>
       <button class="local-btn" id="localImportBtn">导入</button>
     </div>
-    <div class="local-import-hint">支持：D:\Music 或 D:\Music\song.mp3</div>
+    <div class="local-import-hint">支持：D:Music 或 D:Musicsong.mp3</div>
   </div>
 
 </div>
@@ -2031,7 +4071,7 @@ body {
         <button class="local-btn local-browse-btn">浏览</button>
         <button class="local-btn" id="localImportBtn">导入</button>
       </div>
-      <div class="local-import-hint">支持：D:\Music 或 D:\Music\song.mp3</div>
+      <div class="local-import-hint">支持：D:Music 或 D:Musicsong.mp3</div>
     </div>
     <div class="music-results" id="musicResults"></div>
   </div>
@@ -2396,12 +4436,12 @@ class ThemeRegistry {
     // 获取主题定义
     const theme = this.themes.get(themeId);
     if (!theme) {
-      throw new Error(\`Theme not found: \${themeId}\`);
+      throw new Error(`Theme not found: ${themeId}`);
     }
 
     // 检查性能要求
     if (!this.checkRequirements(theme)) {
-      console.warn(\`Theme \${themeId} requires higher performance, using fallback\`);
+      console.warn(`Theme ${themeId} requires higher performance, using fallback`);
       return this.loadTheme(theme.fallback || 'default-theme');
     }
 
@@ -2551,7 +4591,7 @@ class FallbackManager {
       
       if (!theme) {
         // 主题不存在，使用默认
-        console.warn(\`Theme \${currentId} not found, using default\`);
+        console.warn(`Theme ${currentId} not found, using default`);
         return this.registry.getTheme('default-theme');
       }
       
@@ -2561,7 +4601,7 @@ class FallbackManager {
       }
       
       // 降级到fallback
-      console.warn(\`Theme \${currentId} requires higher performance, falling back to \${theme.fallback}\`);
+      console.warn(`Theme ${currentId} requires higher performance, falling back to ${theme.fallback}`);
       currentId = theme.fallback;
     }
     
@@ -2598,21 +4638,21 @@ class SettingsPanelGenerator {
   static generate(schema, currentValues = {}, onChange = null) {
     const panel = document.createElement('div');
     panel.className = 'theme-settings-panel';
-    panel.style.cssText = \`
+    panel.style.cssText = `
       padding: 16px;
       background: var(--surface, #2a2a2a);
       border-radius: 8px;
       border: 1px solid var(--border, #3a3a3a);
-    \`;
+    `;
     
     // 标题
     const title = document.createElement('h3');
     title.textContent = '主题设置';
-    title.style.cssText = \`
+    title.style.cssText = `
       margin: 0 0 16px 0;
       color: var(--text, #e0e0e0);
       font-size: 16px;
-    \`;
+    `;
     panel.appendChild(title);
     
     // 生成字段
@@ -2635,19 +4675,19 @@ class SettingsPanelGenerator {
   static createField(key, prop, value, onChange) {
     const wrapper = document.createElement('div');
     wrapper.className = 'settings-field';
-    wrapper.style.cssText = \`
+    wrapper.style.cssText = `
       margin-bottom: 12px;
-    \`;
+    `;
     
     // 标签
     const label = document.createElement('label');
     label.textContent = prop.title || key;
-    label.style.cssText = \`
+    label.style.cssText = `
       display: block;
       margin-bottom: 4px;
       color: var(--text-dim, #888);
       font-size: 12px;
-    \`;
+    `;
     wrapper.appendChild(label);
     
     // 输入控件
@@ -2685,27 +4725,27 @@ class SettingsPanelGenerator {
    */
   static createColorInput(key, prop, value, onChange) {
     const wrapper = document.createElement('div');
-    wrapper.style.cssText = \`
+    wrapper.style.cssText = `
       display: flex;
       align-items: center;
       gap: 8px;
-    \`;
+    `;
     
     const input = document.createElement('input');
     input.type = 'color';
     input.value = value ?? prop.default ?? '#000000';
-    input.style.cssText = \`
+    input.style.cssText = `
       width: 32px;
       height: 32px;
       border: 1px solid var(--border, #3a3a3a);
       border-radius: 4px;
       cursor: pointer;
-    \`;
+    `;
     
     const hexInput = document.createElement('input');
     hexInput.type = 'text';
     hexInput.value = value ?? prop.default ?? '#000000';
-    hexInput.style.cssText = \`
+    hexInput.style.cssText = `
       flex: 1;
       padding: 6px 8px;
       background: var(--bg, #1a1a1a);
@@ -2713,7 +4753,7 @@ class SettingsPanelGenerator {
       border-radius: 4px;
       color: var(--text, #e0e0e0);
       font-size: 12px;
-    \`;
+    `;
     
     // 同步颜色选择器和文本输入
     input.addEventListener('input', (e) => {
@@ -2751,7 +4791,7 @@ class SettingsPanelGenerator {
     const input = document.createElement('input');
     input.type = 'text';
     input.value = value ?? prop.default ?? '';
-    input.style.cssText = \`
+    input.style.cssText = `
       width: 100%;
       padding: 6px 8px;
       background: var(--bg, #1a1a1a);
@@ -2759,7 +4799,7 @@ class SettingsPanelGenerator {
       border-radius: 4px;
       color: var(--text, #e0e0e0);
       font-size: 12px;
-    \`;
+    `;
     
     input.addEventListener('change', (e) => {
       if (onChange) {
@@ -2780,11 +4820,11 @@ class SettingsPanelGenerator {
    */
   static createNumberInput(key, prop, value, onChange) {
     const wrapper = document.createElement('div');
-    wrapper.style.cssText = \`
+    wrapper.style.cssText = `
       display: flex;
       align-items: center;
       gap: 8px;
-    \`;
+    `;
     
     const input = document.createElement('input');
     input.type = 'range';
@@ -2792,23 +4832,23 @@ class SettingsPanelGenerator {
     input.max = prop.maximum ?? 100;
     input.step = prop.step ?? 1;
     input.value = value ?? prop.default ?? 0;
-    input.style.cssText = \`
+    input.style.cssText = `
       flex: 1;
       height: 4px;
       -webkit-appearance: none;
       background: var(--border, #3a3a3a);
       border-radius: 2px;
       outline: none;
-    \`;
+    `;
     
     const valueDisplay = document.createElement('span');
     valueDisplay.textContent = input.value;
-    valueDisplay.style.cssText = \`
+    valueDisplay.style.cssText = `
       min-width: 30px;
       text-align: right;
       color: var(--text, #e0e0e0);
       font-size: 12px;
-    \`;
+    `;
     
     input.addEventListener('input', (e) => {
       valueDisplay.textContent = e.target.value;
@@ -2833,27 +4873,27 @@ class SettingsPanelGenerator {
    */
   static createCheckboxInput(key, prop, value, onChange) {
     const wrapper = document.createElement('div');
-    wrapper.style.cssText = \`
+    wrapper.style.cssText = `
       display: flex;
       align-items: center;
       gap: 8px;
-    \`;
+    `;
     
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.checked = value ?? prop.default ?? false;
-    input.style.cssText = \`
+    input.style.cssText = `
       width: 16px;
       height: 16px;
       cursor: pointer;
-    \`;
+    `;
     
     const label = document.createElement('span');
     label.textContent = input.checked ? '开启' : '关闭';
-    label.style.cssText = \`
+    label.style.cssText = `
       color: var(--text, #e0e0e0);
       font-size: 12px;
-    \`;
+    `;
     
     input.addEventListener('change', (e) => {
       label.textContent = e.target.checked ? '开启' : '关闭';
@@ -2878,7 +4918,7 @@ class SettingsPanelGenerator {
     const values = {};
     
     for (const [key, prop] of Object.entries(schema.properties)) {
-      const field = panel.querySelector(\`[data-key="\${key}"]\`);
+      const field = panel.querySelector(`[data-key="${key}"]`);
       if (!field) continue;
       
       switch (prop.type) {
@@ -3136,7 +5176,7 @@ class CoverColorExtractor {
       const qg = Math.round(g / 32) * 32;
       const qb = Math.round(b / 32) * 32;
       
-      const key = \`\${qr},\${qg},\${qb}\`;
+      const key = `${qr},${qg},${qb}`;
       colorMap.set(key, (colorMap.get(key) || 0) + 1);
     }
     
@@ -3239,7 +5279,7 @@ class LyricsMoodAnalyzer {
     let energyScore = 0;
     let calmScore = 0;
     
-    const words = text.split(/\\s+/);
+    const words = text.split(/\s+/);
     for (const word of words) {
       if (positiveWords.some(p => word.includes(p))) positiveScore++;
       if (negativeWords.some(n => word.includes(n))) negativeScore++;
@@ -3521,7 +5561,7 @@ class ThemeParameterGenerator {
   }
 
   hexToRgb(hex) {
-    const m = hex.match(/^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i);
+    const m = hex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
     if (!m) return null;
     const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
     const l = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
@@ -3550,7 +5590,7 @@ class ThemeCacheManager {
    */
   static generateKey(trackId, coverUrl) {
     const coverHash = coverUrl ? this.hashCode(coverUrl) : 'no-cover';
-    return \`theme_\${trackId}_\${coverHash}\`;
+    return `theme_${trackId}_${coverHash}`;
   }
 
   /**
@@ -3859,7 +5899,7 @@ class AudioStage {
   async loadLyrics(trackId, lrcUrl) {
     const track = this.findTrackById(trackId);
     if (!track) {
-      throw new Error(\`LYRICS_NOT_FOUND: track \${trackId} not in queue\`);
+      throw new Error(`LYRICS_NOT_FOUND: track ${trackId} not in queue`);
     }
     
     const url = lrcUrl || track.lrcUrl;
@@ -3893,7 +5933,7 @@ class AudioStage {
   async loadSession(sessionId) {
     const saved = await this.loadFromStorage(sessionId);
     if (!saved) {
-      throw new Error(\`SESSION_NOT_FOUND: \${sessionId}\`);
+      throw new Error(`SESSION_NOT_FOUND: ${sessionId}`);
     }
     
     // 迁移旧格式到 TrackRef
@@ -3958,7 +5998,7 @@ class AudioStage {
       index = target;
       track = this.internalState.queue[index];
       if (!track) {
-        throw new Error(\`PLAY_INDEX_OUT_OF_RANGE: \${index}\`);
+        throw new Error(`PLAY_INDEX_OUT_OF_RANGE: ${index}`);
       }
     } else {
       // 按 TrackRef 播放
@@ -4232,7 +6272,7 @@ class AudioStage {
    */
   generateMediaSessionId() {
     return crypto.randomUUID?.() || 
-           \`ms_\${Date.now()}_\${Math.random().toString(36).slice(2, 9)}\`;
+           `ms_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   }
 
   /**
@@ -4360,13 +6400,13 @@ class StageAuthGateway {
     
     if (!entry) {
       this._audit('deny', method, token, 'INVALID_TOKEN');
-      throw new Error(\`AUTH_DENIED: invalid token for \${method}\`);
+      throw new Error(`AUTH_DENIED: invalid token for ${method}`);
     }
     
     // 权限检查
     if (!this._hasPermission(entry, method)) {
       this._audit('deny', method, token, 'PERMISSION_DENIED');
-      throw new Error(\`AUTH_DENIED: \${entry.source} lacks permission for \${method}\`);
+      throw new Error(`AUTH_DENIED: ${entry.source} lacks permission for ${method}`);
     }
     
     // 审计日志
@@ -4375,7 +6415,7 @@ class StageAuthGateway {
     // 执行调用
     const stageMethod = this.stage[method];
     if (typeof stageMethod !== 'function') {
-      throw new Error(\`UNKNOWN_METHOD: \${method}\`);
+      throw new Error(`UNKNOWN_METHOD: ${method}`);
     }
     
     return stageMethod.apply(this.stage, args);
@@ -4495,31 +6535,31 @@ if (typeof module !== 'undefined' && module.exports) {
   function createDialogDOM() {
     const bd = document.createElement("div");
     bd.id = "lyricsSettingsDialog";
-    bd.style.cssText = \`
+    bd.style.cssText = `
       position: fixed; inset: 0; z-index: 9999; display: none;
       align-items: center; justify-content: center;
-    \`;
+    `;
 
     // 遮罩
     const back = document.createElement("div");
     back.className = "ls-backdrop";
-    back.style.cssText = \`
+    back.style.cssText = `
       position: absolute; inset: 0; background: rgba(0,0,0,0.45);
-    \`;
+    `;
     bd.appendChild(back);
 
     // 内容
     const content = document.createElement("div");
     content.className = "ls-dialog";
-    content.style.cssText = \`
+    content.style.cssText = `
       position: relative; background: var(--card-bg, #1e1e22);
       border: 1px solid var(--border-strong, rgba(255,255,255,0.14));
       border-radius: 12px; padding: 20px; min-width: 380px; max-width: 500px;
       box-shadow: 0 12px 48px rgba(0,0,0,0.5); color: var(--text, #e4e4e7);
       font-family: inherit; font-size: 13px;
-    \`;
+    `;
 
-    content.innerHTML = \`
+    content.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
         <span style="font-weight:600;font-size:14px">🎵 歌词设置</span>
         <button class="ls-close" title="关闭" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:16px;padding:4px 8px">&times;</button>
@@ -4583,7 +6623,7 @@ if (typeof module !== 'undefined' && module.exports) {
         <button class="ls-cancel" style="padding:6px 16px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text-dim);cursor:pointer;font-size:12px;font-family:inherit">取消</button>
         <button class="ls-save" style="padding:6px 16px;border-radius:6px;border:none;background:linear-gradient(135deg,var(--accent),#c48454);color:#fff;cursor:pointer;font-size:12px;font-weight:500;font-family:inherit">保存修正</button>
       </div>
-    \`;
+    `;
 
     bd.appendChild(content);
     return bd;
@@ -4606,7 +6646,7 @@ if (typeof module !== 'undefined' && module.exports) {
         this.classList.add("active");
         currentMode = this.dataset.mode;
         content.querySelectorAll(".ls-mode-panel").forEach((p) => p.style.display = "none");
-        content.querySelector(\`.ls-mode-\${currentMode}\`).style.display = "block";
+        content.querySelector(`.ls-mode-${currentMode}`).style.display = "block";
       });
     });
 
@@ -4712,16 +6752,16 @@ if (typeof module !== 'undefined' && module.exports) {
       return;
     }
     // 解析前 5 行显示
-    const lines = raw.split("\\n").filter((l) => l.trim()).slice(0, 5);
-    const parsed = parseLrcPreview(lines.join("\\n"));
-    previewEl.innerHTML = parsed.map((l) => \`<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\${escHtml(l.text)}</div>\`).join("");
+    const lines = raw.split("\n").filter((l) => l.trim()).slice(0, 5);
+    const parsed = parseLrcPreview(lines.join("\n"));
+    previewEl.innerHTML = parsed.map((l) => `<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(l.text)}</div>`).join("");
   }
 
   function parseLrcPreview(raw) {
-    const lines = raw.split("\\n");
+    const lines = raw.split("\n");
     const result = [];
     for (const line of lines) {
-      const m = line.match(/\\[(\\d{1,2}):(\\d{2})(?:\\.(\\d{2,3}))?\\](.*)/);
+      const m = line.match(/\[(\d{1,2}):(\d{2})(?:\.(\d{2,3}))?\](.*)/);
       if (m) {
         const ms = parseInt(m[1]) * 60000 + parseInt(m[2]) * 1000 + (m[3] ? parseInt(m[3].padEnd(3, "0")) : 0);
         const txt = m[4].trim();
@@ -4737,7 +6777,7 @@ if (typeof module !== 'undefined' && module.exports) {
     if (track.lrcContent) {
       previewLrcContent(track.lrcContent);
     } else if (track.lrcUrl) {
-      previewEl.textContent = \`当前使用在线歌词: \${track.lrcUrl}\`;
+      previewEl.textContent = `当前使用在线歌词: ${track.lrcUrl}`;
     } else {
       previewEl.textContent = "暂无歌词";
     }
@@ -4917,7 +6957,7 @@ function applyThemeToCSS(theme) {
   // 计算主色亮度
   const primaryHex = colors.primary || '#d49a6a';
   const primaryL = (() => {
-    const m = primaryHex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+    const m = primaryHex.match(/^#?([a-fd]{2})([a-fd]{2})([a-fd]{2})$/i);
     if (!m) return 0.5;
     const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
     return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
@@ -4925,8 +6965,8 @@ function applyThemeToCSS(theme) {
 
   // 颜色混合助手
   const mixColors = (h1, h2, ratio) => {
-    const m1 = h1.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
-    const m2 = h2.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+    const m1 = h1.match(/^#?([a-fd]{2})([a-fd]{2})([a-fd]{2})$/i);
+    const m2 = h2.match(/^#?([a-fd]{2})([a-fd]{2})([a-fd]{2})$/i);
     if (!m1 || !m2) return h1;
     const r = Math.round(parseInt(m1[1],16)*(1-ratio) + parseInt(m2[1],16)*ratio);
     const g = Math.round(parseInt(m1[2],16)*(1-ratio) + parseInt(m2[2],16)*ratio);
@@ -5195,10 +7235,10 @@ if (document.readyState === 'loading') {
   styleOb.observe(document.head, { childList:true });
 })();
 
-const API = ${JSON.stringify(apiBase)};
-const TOKEN = ${JSON.stringify(token)};
-const HAS_NETEASE_COOKIE = ${JSON.stringify(NETEASE_COOKIE ? true : false)};
-const HAS_TENCENT_COOKIE = ${JSON.stringify(TENCENT_COOKIE ? true : false)};
+const API = "/api/apps/hanako-audio-player/routes";
+const TOKEN = "";
+const HAS_NETEASE_COOKIE = false;
+const HAS_TENCENT_COOKIE = false;
 if (TOKEN) {
   const _f = window.fetch.bind(window);
   window.fetch = function(u, o) {
@@ -5822,11 +7862,11 @@ document.getElementById('moreBtn').addEventListener('click', function() {
 document.getElementById('addBtn').addEventListener('click',function(){
   const v=document.getElementById('urlInput').value.trim();
   if(!v)return;
-  // 检测是否是本地文件夹路径（盘符开头，如 W:\...）
+  // 检测是否是本地文件夹路径（盘符开头，如 W:...）
   if(v.length>=3 && v[1]===':' && (v.charCodeAt(2)===92 || v.charCodeAt(2)===47)){
     // 判断是文件还是文件夹
-    const lastPart = v.split(/[\\/]/).pop();
-    const hasExt = lastPart && /\.[a-zA-Z0-9]{1,5}$/.test(lastPart);
+    const lastPart = v.split(/[\/]/).pop();
+    const hasExt = lastPart && /.[a-zA-Z0-9]{1,5}$/.test(lastPart);
     if(hasExt){
       // 单个文件路径
       showToast('导入文件…',1500);
@@ -5865,7 +7905,9 @@ document.getElementById('urlInput').addEventListener('keydown',function(e){
 });
 
 document.getElementById('popBtn').addEventListener('click',function(){
-  var url = 'http://localhost:14500' + API + '/widget?standalone=1&token=' + encodeURIComponent(TOKEN);
+  // 使用当前页面同源 URL，避免硬编码端口
+  var baseUrl = window.location.protocol + '//' + window.location.host;
+  var url = baseUrl + API + '/widget?standalone=1&token=' + encodeURIComponent(TOKEN);
   window.open(url, 'hanako-player', 'width=800,height=600');
 });
 
@@ -5929,7 +7971,7 @@ function addTrack(name,url,mode,group,lrcUrl,pic) {
   }
   // 存 lrc 映射
   if(lrcUrl && url) lrcMap[url]=lrcUrl;
-  trks.push({name:name||url.split('/').pop().split('\\\\').pop().split('?')[0]||'音频',url:url,mode:mode||(url.startsWith('http')?'在线':'本地'),dur:0,group:group,lrcUrl:lrcUrl||'',pic:pic||''});
+  trks.push({name:name||url.split('/').pop().split('\\').pop().split('?')[0]||'音频',url:url,mode:mode||(url.startsWith('http')?'在线':'本地'),dur:0,group:group,lrcUrl:lrcUrl||'',pic:pic||''});
   if(!_batchLoading){ load(trks.length-1); if(trks[trks.length-1] && trks[trks.length-1].url){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});} renderPL(); saveTrks(); }
 }
 
@@ -5953,8 +7995,8 @@ document.getElementById('localImportBtn').addEventListener('click', function() {
   if (!path) return;
   
   // 判断是文件还是文件夹
-  const lastPart = path.split(/[\\/]/).pop();
-  const hasExt = lastPart && /\.[a-zA-Z0-9]{1,5}$/.test(lastPart);
+  const lastPart = path.split(/[\/]/).pop();
+  const hasExt = lastPart && /.[a-zA-Z0-9]{1,5}$/.test(lastPart);
   
   if (hasExt) {
     // 单个文件路径
@@ -6004,7 +8046,7 @@ if (_filePicker) {
       _batchLoading = true;
       for (var bi = 0; bi < files.length; bi++) {
         var blobUrl = URL.createObjectURL(files[bi]);
-        var fname = files[bi].name.replace(/\.[^.]+$/, '');
+        var fname = files[bi].name.replace(/.[^.]+$/, '');
         addTrack(fname, blobUrl, '本地');
       }
       _batchLoading = false;
@@ -6209,8 +8251,8 @@ function tryReadMetadata(audioEl, track) {
   track._metaTried = true;
   // 如果 name 看起来是文件名（有扩展名或 URL 末段），尝试美化
   var rawName = track.name;
-  if (/\.(mp3|wav|ogg|flac|m4a)$/i.test(rawName)) {
-    var baseName = rawName.replace(/\.[^.]+$/, '');
+  if (/.(mp3|wav|ogg|flac|m4a)$/i.test(rawName)) {
+    var baseName = rawName.replace(/.[^.]+$/, '');
     // 常见模式：歌手 - 歌名 或 歌名 - 歌手
     if (baseName.indexOf(' - ') !== -1) {
       var parts = baseName.split(' - ');
@@ -6372,7 +8414,7 @@ function doPlaylistImport(){
   var raw=document.getElementById('playlistInput').value.trim();
   if(!raw) return;
   var id=raw;
-  var idMatch=raw.match(/[?&]id=(\\d+)/);
+  var idMatch=raw.match(/[?&]id=(\d+)/);
   if(idMatch) id=idMatch[1];
   var sv=document.getElementById('musicServer').value;
   var el=document.getElementById('musicResults');
@@ -6572,14 +8614,51 @@ function doPlaylistImport(){
     lyricToggle.classList.toggle('open',lyricOpen);
   });
   }
+
+  // ── 歌词结构化数据缓存 ──
+  var LRC_CACHE_KEY='hanako_audio_lrc_parsed_cache';
+  var LRC_CACHE_MAX=30;
+  var LRC_CACHE_TTL=30*24*60*60*1000; // 30天
+  function _getLrcCacheObj(){
+    try{
+      var raw=localStorage.getItem(LRC_CACHE_KEY);
+      if(!raw) return {};
+      var obj=JSON.parse(raw);
+      return obj && typeof obj==='object' ? obj : {};
+    }catch(e){ return {}; }
+  }
+  function _cachedLrcByUrl(lrcUrl){
+    if(!lrcUrl) return null;
+    var obj=_getLrcCacheObj();
+    var entry=obj[lrcUrl];
+    if(!entry) return null;
+    if(!entry.ts || (Date.now()-entry.ts)>LRC_CACHE_TTL) return null;
+    return entry.lrcData||null;
+  }
+  function _saveLrcCache(lrcUrl, parsed){
+    if(!lrcUrl || !parsed) return;
+    var obj=_getLrcCacheObj();
+    // 超出上限：移除最早写入的条目
+    var keys=Object.keys(obj);
+    if(keys.length>=LRC_CACHE_MAX){
+      var oldestKey=null, oldestTs=Infinity;
+      keys.forEach(function(k){
+        var ts=obj[k] && obj[k].ts ? obj[k].ts : 0;
+        if(ts<oldestTs){ oldestTs=ts; oldestKey=k; }
+      });
+      if(oldestKey) delete obj[oldestKey];
+    }
+    obj[lrcUrl]={ts:Date.now(), lrcData:parsed};
+    try{ localStorage.setItem(LRC_CACHE_KEY, JSON.stringify(obj)); }catch(e){}
+  }
   // 初始渲染占位
   lyricBody.innerHTML='<div class="lyric-line" style="color:var(--text-faint);padding:8px 0">暂无歌词</div>';
 
   function parseLrc(raw){
-    var lines=raw.split('\\n');
+    var lines=raw.split('\n');
     var result=[];
     lines.forEach(function(line){
-      var m=line.match(/\\[(\\d{1,2}):(\\d{2})(?:\\.(\\d{2,3}))?\\](.*)/);
+      var m=line.match(/\[(\d{1,2}):(\d{2})(?:\.(\d{2,3}))?\](.*)/);
       if(m){
         var ms=parseInt(m[1])*60000+parseInt(m[2])*1000+(m[3]?parseInt(m[3].padEnd(3,'0')):0);
         var txt=m[4].trim();
@@ -6636,10 +8715,18 @@ function doPlaylistImport(){
     var lrcKey=t.url+'|'+lrcUrl;
     if(lrcUrl && lrcKey!==_lastLrcKey){
       _lastLrcKey=lrcKey;
+      var cached=_cachedLrcByUrl(lrcUrl);
+      if(cached){
+        lrcData=cached;
+        renderLrc();
+        return;
+      }
       var proxyUrl=API+'/widget/api/music/lrc-proxy?url='+encodeURIComponent(lrcUrl);
       fetch(proxyUrl).then(function(r){return r.text();}).then(function(raw){
         if(!raw||raw.length<10) return;
-        lrcData=parseLrc(raw);
+        var parsed=parseLrc(raw);
+        _saveLrcCache(lrcUrl, parsed);
+        lrcData=parsed;
         renderLrc();
       }).catch(function(){});
     }
@@ -7102,5 +9189,4 @@ setTimeout(notifySize, 300);
 })();
 </script>
 </body>
-</html>`;
-}
+</html>

@@ -1,19 +1,25 @@
+# 依赖
 node_modules/
+
+# 播放凭证（登录 cookie，绝不入库）
 cookies.env
+*.env
+!*.env.example
+
+# 开发产物
+_extract/
+_pack/
+scripts/
 *.bak
+*.bak-*
+*.backup
 *.log
+*.new
+patch_*.js
+__pycache__/
+*.pyc
+
+# 本地数据
 bus-queue.json
 bus-state.json
 plugin-data/
-layout-*.html
-layout-demo-d.html
-layout-demo.html
-routes/player.js.backup
-__pycache__/
-*.pyc
-*.new
-patch_*.js
-
-*.bak-*
-*.backup
-
