@@ -2301,9 +2301,37 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "0912081723";
+  window.__HANA_BUILD = "0922128000";
 
-  var H = 460; // 卡片高度上限（px）
+  // ── 卡片高度：声明意图，不测自己 ──
+  //
+  // 这里踩过的坑：v1 的 notifySize() 报 document.body.scrollHeight，而 body 高 = iframe 高，
+  // 自己喂自己 → 宿主把框一路撑到聊天可视区上限（实测 1452px），卡片占满整屏、聊天区滚不动。
+  //
+  // 按 APPS.md「卡片尺寸与形态契约」：聊天流卡高度是 flexible，页面用
+  // hana.ui.resize({ height }) 报一个**由 UI 意图决定**的数，宿主先 clamp 再落到框上；
+  // 这个数不能由 iframe 当前高度推导，否则就是那个循环本身。
+  //
+  // 所以高度是参数，不是测量结果 —— 两种视图各一个档位：
+  //   full    完整播放器（卡片中心 / 拆窗 / 展开后的对话流卡）
+  //   compact 浓缩单曲卡（对话流默认，route 带 ?view=compact）
+  var HEIGHTS = { full: 560, compact: 168 };
+
+  // 视图判定，两条来源，显式优先：
+  //   ① route 上的 ?view=full|compact —— 投递方显式指定，最可靠
+  //   ② 挂载位推断 —— 流内卡（embeddedSessionId 非空）默认浓缩；
+  //      黑板 / 拆窗 / 卡片中心默认完整。
+  //   SDK 在 module 里、可能晚于本脚本，所以②要等拿到上下文后再补判（见下方轮询）。
+  function viewFromQuery() {
+    var m = /(?:^|[?&])view=(full|compact)(?:&|$)/.exec(location.search);
+    if (m) return m[1];
+    // 拆窗页（standalone.html）永远是完整壳 —— 它本来就只给宽窗口用
+    if (/standalone\.html$/i.test(location.pathname)) return "full";
+    return null;
+  }
+  var view = viewFromQuery() || "full";
+  function currentHeight() { return HEIGHTS[view] || HEIGHTS.full; }
+  var H = currentHeight();
 
   // ── 先掐掉 v1 老 UI 自己的报高器 ──
   //
@@ -2340,7 +2368,7 @@ try {
         enumerable: d.enumerable,
         get: function () {
           var v = d.get.call(this);
-          return this === document.body ? Math.min(v, H) : v;
+          return this === document.body ? Math.min(v, currentHeight()) : v;
         },
       });
     }
@@ -2356,7 +2384,7 @@ try {
       pw.postMessage = function (msg) {
         try {
           if (msg && msg.type === "resize-request") {
-            msg = { type: "resize-request", payload: { height: H } };
+            msg = { type: "resize-request", payload: { height: currentHeight() } };
           }
         } catch (e) {}
         return origPM.apply(pw, arguments);
@@ -2367,14 +2395,14 @@ try {
   // 4) 再自己直发一条（不经父窗口方法改写，双保险）
   function tellParent() {
     try {
-      parent.postMessage({ type: "resize-request", payload: { height: H } }, "*");
+      parent.postMessage({ type: "resize-request", payload: { height: currentHeight() } }, "*");
     } catch (e) {}
   }
 
   // ── 再报我自己的高度（走 v2 协议那条）──
   function report() {
     try {
-      if (window.__hana) window.__hana.ui.resize({ height: H });
+      if (window.__hana) window.__hana.ui.resize({ height: currentHeight() });
     } catch (e) {
       /* 报不了不影响功能 */
     }
@@ -2385,6 +2413,92 @@ try {
   setTimeout(report, 800);
   setTimeout(report, 2000);
   setTimeout(report, 4000);
+
+  // ② 挂载位补判：没有显式 view 时，等 SDK 起来后按卡片归属定形态。
+  //    流内卡（embeddedSessionId 非空）→ 浓缩；其余（黑板 / 拆窗 / 卡片中心）→ 完整。
+  //    拿不到上下文就保持默认，不阻塞任何东西。
+  if (!viewFromQuery()) {
+    var probeTries = 0;
+    var probeTimer = setInterval(function () {
+      probeTries++;
+      var c = null;
+      try {
+        c = window.__hana && window.__hana.surface && window.__hana.surface.getContext
+          ? window.__hana.surface.getContext()
+          : null;
+      } catch (e) {}
+      if (c) {
+        clearInterval(probeTimer);
+        // 把挂载位事实报回主机侧：卡片里看不见的东西，就写出去让自己看得见。
+        // envelope 是宿主告知的容器约束，其余是这次真实落到的尺寸。
+        try {
+          var appId =
+            (/^\/api\/apps\/([^/]+)\//.exec(location.pathname) || [])[1] || "hanako-audio-player";
+          var env =
+            window.__hana && window.__hana.envelope && window.__hana.envelope.getSnapshot
+              ? window.__hana.envelope.getSnapshot()
+              : null;
+          fetch("/api/apps/" + appId + "/routes/api/_probe/size", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              where: "view-probe",
+              probeKey:
+                (/standalone\.html$/i.test(location.pathname) ? "win" : "card") +
+                ":" + view,
+              view: view,
+              context: {
+                slot: c.slot,
+                cardInstanceId: c.cardInstanceId,
+                embeddedSessionId: c.embeddedSessionId,
+                originSessionId: c.originSessionId,
+              },
+              envelope: env,
+              innerHeight: window.innerHeight,
+              innerWidth: window.innerWidth,
+              bodyScrollHeight: document.body ? document.body.scrollHeight : null,
+              build: window.__HANA_BUILD || null,
+            }),
+          }).catch(function () {});
+        } catch (e) {}
+        if (c.embeddedSessionId && view !== "compact") window.__hanaSetView("compact");
+      } else if (probeTries > 40) {
+        clearInterval(probeTimer); // 约 6 秒还没上下文，保持默认形态
+      }
+    }, 150);
+  }
+
+  // ── 视图切换（浓缩 ⇄ 完整）──
+  //
+  // 同一份页面渲染两个壳，而不是另建 compact.html：
+  // 播放内核就在这份从 v1 搬来的页面里，另起一份就是双实现
+  // —— "对话里是骨架、卡片中心是原版"已经踩过一次。
+  // 切完立刻重报高度，宿主按 flexible 重新分配。
+  function applyViewClass() {
+    var b = document.body;
+    if (!b) return false;
+    b.classList.toggle("view-compact", view === "compact");
+    b.classList.toggle("view-full", view === "full");
+    return true;
+  }
+
+  window.__hanaGetView = function () { return view; };
+
+  window.__hanaSetView = function (next) {
+    if (next !== "compact" && next !== "full") return false;
+    view = next;
+    H = currentHeight();
+    if (!applyViewClass()) document.addEventListener("DOMContentLoaded", applyViewClass);
+    try {
+      window.dispatchEvent(new CustomEvent("hana:view-changed", { detail: { view: view } }));
+    } catch (e) {}
+    report();
+    setTimeout(report, 120);
+    return true;
+  };
+
+  // 初始视图类必须尽早挂上，否则会先按完整版布局闪一下
+  if (!applyViewClass()) document.addEventListener("DOMContentLoaded", applyViewClass);
 })();
 </script>
 <style>
@@ -2525,6 +2639,510 @@ try {
   body.player-popup .np-actions .icon-btn { width: 28px; height: 28px; padding: 4px; }
   body.player-popup .np-actions .icon-btn svg { width: 16px; height: 16px; }
   body.player-popup .lyrics-section { max-height: none; margin-top: 12px; }
+
+  /* ══ 浓缩视图（?view=compact）════════════════════════════
+   *
+   * 对话流里投的就是这个壳：只讲“当前这一首”。
+   * 收起列表/搜索/场景/编排、歌词、可视化，把“正在播放”压成横向一行，
+   * 进度与控制贴底。整卡高度按 HEIGHTS.compact 报给宿主（见上方尺寸脚本）。
+   */
+  /* header 不隐藏，而是**脱出文档流**贴到卡片右上角，只留“展开”一个按钮。
+     这样它不占高度，又保住了唯一的展开入口（在浓缩视图里 popBtn 就是展开）。 */
+  body.view-compact .header {
+    display: block;
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    width: auto;
+    padding: 0;
+    border: 0;
+    background: none;
+    z-index: 5;
+  }
+  body.view-compact .header-left { display: none; }
+  body.view-compact .header-actions { gap: 0; }
+  body.view-compact .header-actions .icon-btn:not(#popBtn) { display: none; }
+  body.view-compact .player-right { display: none !important; }
+  body.view-compact .lyrics-section { display: none; }
+  body.view-compact #visualizer { display: none; }
+  body.view-compact .volume-group { display: none; }
+  body.view-compact #modeBtn { display: none; }
+  body.view-compact .np-actions { display: none; }
+
+  body.view-compact .now-playing-section {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px 6px;
+  }
+  /* 尺寸用 !important 锁死：v1 的 CSS 里 .np-cover 被定义过三次（161 / 721 / 2575），
+     层次混乱，实测报 52px 出来却是 60px。等把 v1 那几层理顺了再撤。 */
+  body.view-compact .np-cover {
+    width: 48px !important;
+    height: 48px !important;
+    border-radius: 12px;
+    font-size: 20px;
+    flex: none;
+    margin: 0;
+  }
+  body.view-compact .np-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+    margin: 0;
+  }
+  body.view-compact .np-name { font-size: 14px; }
+  body.view-compact .np-mode { font-size: 11px; }
+  /* 展开按钮从文档流里拿出来，贴到信息行右侧 ——
+   * 它原本会把 np-info 撑到 76px（拿到实测值之前我以为 52px 够）。 */
+  body.view-compact .np-actions {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    flex-direction: row;
+    gap: 6px;
+    margin: 0;
+  }
+
+  body.view-compact .controls-section { padding: 0 14px 10px; }
+  body.view-compact .time-row { font-size: 10px; }
+  body.view-compact .controls { gap: 10px; }
+  body.view-compact .ctrl-btn { width: 28px; height: 28px; }
+  body.view-compact .ctrl-play { width: 36px; height: 36px; }
+
+  /* 展开按钮只在浓缩视图里出现（由脚本注入） */
+  body.view-full #expandBtn { display: none; }
+
+  /* ══ 配色主题：背景层与选择面板 ══
+   *
+   * 与既有三层各管一事，不重桑：
+   *   data-theme="dark|light"        明暗方向（现有 themeBtn）
+   *   可视化主题 spectrum/waveform    频谱长什么样
+   *   本层                             配色 + 背景
+   * 配色走 applyThemeToCSS（本来就是为 AI 主题写的 CSS 变量写入器），
+   * 背景用一张 fixed 的底层，靠 z-index 让内容浮在上面。
+   */
+  .theme-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: transparent;
+    transition: background .45s ease, opacity .45s ease;
+  }
+  .player-container { position: relative; z-index: 1; }
+
+  .theme-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, .45);
+  }
+  .theme-panel.open { display: flex; }
+  .theme-panel-inner {
+    width: min(420px, 88%);
+    background: var(--card-bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    padding: 14px 16px;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, .4);
+  }
+  .theme-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+  .theme-panel-close {
+    font: inherit;
+    font-size: 11px;
+    color: var(--text-dim);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 10px;
+    cursor: pointer;
+  }
+  .theme-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+    gap: 8px;
+  }
+  .theme-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font: inherit;
+    font-size: 12px;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 9px 10px;
+    cursor: pointer;
+  }
+  .theme-chip.active { border-color: var(--accent); background: var(--accent-soft); }
+  .theme-chip-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    flex: none;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25);
+  }
+  .theme-panel-foot {
+    margin-top: 12px;
+    font-size: 11px;
+    color: var(--text-faint);
+    line-height: 1.6;
+  }
+  .theme-panel-foot code { font-family: var(--font-mono, monospace); font-size: 10px; }
+
+  /* ══════════════════════════════════════════════════════════
+     A 档 · 视觉刻度统一
+     ══════════════════════════════════════════════════════════
+     这一档不动结构，只收三样东西：
+       1. 间距 / 控件 / 圆角 / 字号各自收成一条刻度，不再每种元素一个数；
+       2. 定层级：封面最重 → 歌名 → 状态文字 → 其余退后；
+       3. 清掉硬编码颜色（原来自带 #c48454 / #e0b088），全走变量 ——
+          否则换主题时总有几处不跟随。
+     v1 的老规则一律不动，这里靠“后写的覆盖”收口。
+  */
+  :root {
+    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-6: 24px;
+    --ctl-sm: 28px; --ctl-md: 32px; --ctl-lg: 40px;
+    --r-sm: 8px; --r-md: 12px; --r-lg: 16px;
+    --fs-xs: 11px; --fs-sm: 12px; --fs-md: 13px; --fs-lg: 17px;
+  }
+
+  /* ── Header ── */
+  .header { padding: var(--sp-3) var(--sp-4) var(--sp-2); }
+  .header-icon { width: 24px; height: 24px; border-radius: 7px; }
+  .header-title { font-size: var(--fs-md); letter-spacing: .2px; }
+  .header-actions { gap: var(--sp-1); }
+  .icon-btn { width: var(--ctl-sm); height: var(--ctl-sm); border-radius: var(--r-sm); }
+  .icon-btn svg { width: 15px; height: 15px; stroke-width: 1.9; }
+  .icon-btn:active { transform: scale(.94); }
+
+  /* ── 正在播放：这一档的主角 ── */
+  .now-playing-section { padding: var(--sp-2) var(--sp-4) var(--sp-3); gap: var(--sp-3); }
+  .np-cover {
+    border-radius: var(--r-md);
+    background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+  }
+  .np-name { font-size: var(--fs-lg); font-weight: 600; letter-spacing: .2px; }
+  .np-mode { font-size: var(--fs-sm); margin-top: var(--sp-1); }
+  .np-actions { gap: var(--sp-2); margin-top: var(--sp-2); }
+
+  /* ── 进度 ── */
+  .progress-section { padding: var(--sp-2) var(--sp-4); }
+  .time-row { font-size: var(--fs-xs); color: var(--text-dim); margin-bottom: var(--sp-1); }
+  .progress-bar { height: 4px; border-radius: 999px; }
+  .progress-bar:hover { height: 6px; }
+  .progress-fill { background: var(--accent); box-shadow: none; }
+
+  /* ── 控制：原来靠右对齐 + 左侧 20px 外边距，视觉偏向一侧 ── */
+  .controls {
+    justify-content: center;
+    margin-left: 0;
+    padding: var(--sp-2) var(--sp-4) var(--sp-3);
+    gap: var(--sp-3);
+  }
+  .ctrl-btn { width: var(--ctl-md); height: var(--ctl-md); border-radius: var(--r-sm); }
+  .ctrl-btn svg { width: 16px; height: 16px; }
+  .ctrl-play { width: var(--ctl-lg); height: var(--ctl-lg); background: var(--accent); }
+  .ctrl-play svg { width: 18px; height: 18px; }
+
+  /* ── 歌词区的占位文案（“暂无歌词”）不该占掉一整块高度 ── */
+  .lyrics-section:has(.lyric-line:only-child) { max-height: 40px; }
+  .lyric-body:has(> .lyric-line:only-child) { max-height: 34px; overflow: hidden; }
+
+  /* ══════════════════════════════════════════════════════════
+     B 档 · 宽卡自动分栏
+     ══════════════════════════════════════════════════════════
+     卡壳实测 886px，内容却还是窄屏那套上下堆 —— 两边全空。
+     宽到一定尺寸就该分栏：左边播放区（带分隔线），右边列表区。
+     几何与 .player-popup 那套一致，区别只是**自动**，不必再点按钮。
+     窄卡不改（还是居中上下），紧凑视图也不管（它在外面已经收成一行了）。
+  */
+  @media (min-width: 660px) {
+    body:not(.view-compact) .player-container { flex-direction: row; }
+    body:not(.view-compact) .player-left {
+      width: 300px;
+      flex: 0 0 300px;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+    }
+    body:not(.view-compact) .player-right {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-width: 0;
+    }
+    body:not(.view-compact) .now-playing-section { flex: 1 1 auto; overflow: hidden; }
+    body:not(.view-compact) .np-cover {
+      width: 132px !important;
+      height: 132px !important;
+      border-radius: 50%;
+      font-size: 46px;
+    }
+    body:not(.view-compact) .np-info { align-items: center; }
+    body:not(.view-compact) .controls-section { border-top: 1px solid var(--border); }
+    body:not(.view-compact) .lyrics-section { flex: 1 1 auto; overflow: hidden; }
+    body:not(.view-compact) .lyric-body { max-height: none !important; overflow-y: auto; }
+    /* 没歌词时不要把左栏剩下的高度白占掉（占位只有一行“暂无歌词”） */
+    body:not(.view-compact) .lyrics-section:has(.lyric-line:only-child) {
+      flex: 0 0 auto;
+      max-height: 44px;
+    }
+  }
+
+  /* ══ 手动关掉分栏（点“切换横竖版”）══════════════════════════
+   * 原来那个按钮 toggle 的是 .player-popup，而 B 档的自动分栏在它之后生效，
+   * 两边管同一件事 —— 结果点了像没反应。现在按钮管的是这个类：
+   * 加上就强制堆叠，去掉就回到自动分栏。
+   * 写在 media query 之后 + 用 :not 抬特异性，确保压得住自动分栏。
+   */
+  body.wide-off:not(.view-compact) .player-container { flex-direction: column; }
+  body.wide-off:not(.view-compact) .player-left {
+    width: auto;
+    flex: 0 0 auto;
+    display: contents;
+    border-right: 0;
+  }
+  body.wide-off:not(.view-compact) .player-right { display: contents; }
+  body.wide-off:not(.view-compact) .now-playing-section { flex: 0 0 auto; }
+  body.wide-off:not(.view-compact) .lyrics-section { flex: 0 0 auto; }
+  body.wide-off:not(.view-compact) .np-cover {
+    width: 104px !important;
+    height: 104px !important;
+    border-radius: 50%;
+    font-size: 40px;
+  }
+  body.wide-off:not(.view-compact) .controls-section { border-top: 0; }
+
+  /* ══════════════════════════════════════════════════════════
+     C 档 · 质感
+     ══════════════════════════════════════════════════════════
+     只加不减：光 / 玻璃 / 过渡。不动布局也不动尺寸 ——
+     这一档即使改坏，退回去也只是“素一点”，不会把结构弄倒。
+  */
+
+  /* 1. 正在播放区上方一层主题色柔光，让封面从背景里浮起来 */
+  .now-playing-section {
+    background: radial-gradient(120% 90% at 50% 0%, var(--accent-soft), transparent 72%);
+  }
+
+  /* 2. 封面：外圈柔光加厚一档（原来只有 0 4px 14px） */
+  .np-cover {
+    box-shadow: 0 10px 30px -8px var(--accent-glow),
+                inset 0 0 0 1px rgba(255, 255, 255, .05);
+  }
+
+  /* 3. 控制条与 header：半透明 + 背后模糊，让背景层透出来一点 */
+  .controls-section,
+  .header {
+    background: color-mix(in srgb, var(--bg) 74%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+  /* 紧凑视图里的 header 只是一个悬浮按钮，不能带这块底 */
+  body.view-compact .header {
+    background: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  /* 4. 主题切换时的过渡（背景层本身已有 transition） */
+  body, .player-container, .now-playing-section, .controls-section, .header,
+  .tab-content, .nav-tabs, .lyric-body {
+    transition: background-color .3s ease, border-color .3s ease, color .3s ease;
+  }
+
+  /* 5. 列表项：圆角 + 按下的反馈 */
+  .pl-item {
+    border-radius: var(--r-sm);
+    transition: background .15s ease, transform .12s ease;
+  }
+  .pl-item:active { transform: scale(.995); }
+
+  /* ══════════════════════════════════════════════════════════
+     歌词视觉
+     ══════════════════════════════════════════════════════════
+     --anim-speed / --anim-glow-intensity / --anim-pulse 三个变量
+     一直躺在 :root 里没人用，主题面板写进去也是白写。这里把它们接上，
+     再加一个行内进度（当前行按播放进度从左往右填色）。
+  */
+  .lyric-line {
+    opacity: .55;
+    transition:
+      color calc(.34s / var(--anim-speed, 1)) ease,
+      opacity calc(.34s / var(--anim-speed, 1)) ease,
+      transform calc(.34s / var(--anim-speed, 1)) ease;
+  }
+  .lyric-line.current {
+    opacity: 1;
+    color: var(--lyric-active-color, var(--accent));
+    transform: scale(calc(1 + .025 * var(--anim-pulse, 0)));
+    
+  }
+
+  /* 行内进度：当前行按播放进度从左往右填色（卡拉 OK）。
+     只在支持 background-clip:text 时才把字变透明 ——
+     不支持时字会直接消失，所以必须用 @supports 护住。 */
+  @supports (-webkit-background-clip: text) {
+    .lyric-line.current {
+      background-image: linear-gradient(
+        90deg,
+        var(--lyric-active-color, var(--accent)) 0 calc(var(--lyric-progress, 1) * 100%),
+        var(--text-dim) calc(var(--lyric-progress, 1) * 100%) 100%
+      );
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+  }
+  /* 辉光用 drop-shadow：字透明了 text-shadow 也无用，drop-shadow 认的是渲染结果 */
+  @supports (filter: drop-shadow(0 0 1px #000)) {
+    .lyric-line.current {
+      filter: drop-shadow(0 0 calc(12px * var(--anim-glow-intensity, 0)) var(--accent-glow));
+    }
+  }
+
+  /* ══ 背景动效 ══
+   * 静态渐变像一张贴纸。让它缓慢流动、再叠两团光斑，
+   * 就有了“这个空间是活的”的感觉 —— 不必到 folia 那种全屏 shader 的程度。
+   * 速度受主题的 --anim-speed 控制（霓虹比纸感快）。
+   *
+   * 全部走 CSS，**不碰音频数据**：跨源音频接 AnalyserNode 会被浏览器
+   * 判定为脏源而直接静音，除非音源带 CORS 头。那条路不能走。
+   */
+  .theme-bg {
+    background-size: 200% 200%;
+    animation: theme-drift calc(34s / var(--anim-speed, 1)) ease-in-out infinite;
+  }
+  .theme-bg::before,
+  .theme-bg::after {
+    content: "";
+    position: absolute;
+    width: 42vmax;
+    height: 42vmax;
+    border-radius: 50%;
+    filter: blur(58px);
+    opacity: .28;
+    pointer-events: none;
+    will-change: transform;
+  }
+  .theme-bg::before {
+    top: -14vmax;
+    left: -10vmax;
+    background: var(--accent);
+    animation: theme-float-a calc(42s / var(--anim-speed, 1)) ease-in-out infinite alternate;
+  }
+  .theme-bg::after {
+    right: -12vmax;
+    bottom: -16vmax;
+    background: var(--accent-hover, var(--accent));
+    animation: theme-float-b calc(52s / var(--anim-speed, 1)) ease-in-out infinite alternate;
+  }
+  @keyframes theme-drift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+  @keyframes theme-float-a {
+    from { transform: translate3d(0, 0, 0) scale(1); }
+    to { transform: translate3d(7vmax, 5vmax, 0) scale(1.14); }
+  }
+  @keyframes theme-float-b {
+    from { transform: translate3d(0, 0, 0) scale(1.08); }
+    to { transform: translate3d(-6vmax, -7vmax, 0) scale(.94); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .theme-bg, .theme-bg::before, .theme-bg::after { animation: none; }
+  }
+
+  /* ── 音频反应 ──
+   * --react-level 由前端每帧写入（低频能量 0–1），这里只负责怎么表现。
+   * 没开启时它是 0，一切与从前一样。
+   *
+   * 实测教训：角落那两团 42vmax + blur 58px + opacity .2 的光斑在浅色底上
+   * **根本看不见**（用户原话：“哪里有光”）。所以反应单独给一层居中的大光晕，
+   * 基线压到极低、幅度拉到很高 —— 平时几乎不存在，音乐一来就很明显。 */
+  /* 默认值必须放在 :root。上一版写在 .theme-bg 上，等于把那一支的继承
+   * 切断了 —— 内联写在根上的实时能量根本传不进背景层，
+   * 结果全页只有 now-playing 那一小块真的在反应。 */
+  :root { --react-level: 0; }
+  .theme-bg::before {
+    content: "";
+    position: absolute;
+    inset: -12%;
+    border-radius: 50%;
+    background: radial-gradient(closest-side, var(--accent) 0%, transparent 72%);
+    filter: blur(44px);
+    opacity: calc(.06 + .72 * var(--react-level, 0));
+    pointer-events: none;
+    will-change: opacity;
+  }
+  .theme-bg::after {
+    opacity: calc(.16 + .4 * var(--react-level, 0));
+  }
+  /* ── 音频反应的覆盖面 ──
+   * 上面那两团只管背景中间，看久了像“局部亮了一下”。
+   * 这一层盖满整页，四边光晕跟着低频能量一起起落 —— 整屏一起呼吸。 */
+  .react-edge {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    opacity: var(--react-level, 0);
+    mix-blend-mode: screen;
+    background:
+      radial-gradient(115% 44% at 50% 0%, color-mix(in srgb, var(--accent) 52%, transparent), transparent 68%),
+      radial-gradient(115% 44% at 50% 100%, color-mix(in srgb, var(--accent) 40%, transparent), transparent 68%),
+      radial-gradient(42% 74% at 5% 50%, color-mix(in srgb, var(--accent) 24%, transparent), transparent 72%),
+      radial-gradient(42% 74% at 95% 50%, color-mix(in srgb, var(--accent) 24%, transparent), transparent 72%);
+    will-change: opacity;
+  }
+  @media (prefers-reduced-motion: reduce) { .react-edge { display: none; } }
+
+  /* 正在播放区自己也随能量亮一点 */
+  .now-playing-section {
+    background: radial-gradient(
+      120% 90% at 50% 0%,
+      color-mix(in srgb, var(--accent) calc(6% + 26% * var(--react-level, 0)), transparent),
+      transparent 72%
+    );
+  }
+
+  /* 面板里的开关行 */
+  .theme-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-light);
+  }
+  .theme-toggle-row input[type="range"] {
+    flex: 1;
+    max-width: 150px;
+    accent-color: var(--accent);
+  }
 </style><script>
 (function () {
   // 防线：卡片里不允许开新窗口（包括别的脚本后面又接上的）
@@ -2535,24 +3153,54 @@ try {
     };
   } catch (e) {}
 
-  function install() {
+  function installPop() {
     var btn = document.getElementById("popBtn");
-    if (!btn || btn.__rewired) return false;
+    if (!btn || btn.__rewired) return true;
 
     var fresh = btn.cloneNode(true); // 丢弃原监听（包括那个 window.open）
     fresh.__rewired = true;
-    fresh.title = "切换横竖版";
+    fresh.title = "切换横竖版 / 展开";
     btn.parentNode.replaceChild(fresh, btn);
 
     fresh.addEventListener("click", function () {
-      // 原 UI 的 .player-popup 就是左右分栏（宽版）布局，
-      // 默认的 .player-container 是上下列（窄版）。
-      document.body.classList.toggle("player-popup");
-      try {
-        if (window.__hana) window.__hana.ui.resize({ height: 460 });
-      } catch (e) {}
+      // 浓缩视图里，这个按钮先负责“展开成完整播放器”；
+      // 完整视图里，它切横竖版（.player-popup = 左右分栏）。
+      // 不再在这里报死高度 —— 高度归 __hanaSetView 管。
+      if (window.__hanaGetView && window.__hanaGetView() === "compact") {
+        window.__hanaSetView("full");
+        return;
+      }
+      // 宽卡默认自动分栏（见 B 档 media query）。这里切的是“用户要不要分栏”：
+      // 加 wide-off 就强制堆叠，去掉就回到自动。
+      // （原来 toggle 的 .player-popup 在自动分栏之后已经没有视觉效果，
+      //   点了像没反应 —— 那是个真 bug。）
+      document.body.classList.toggle("wide-off");
     });
     return true;
+  }
+
+  // 浓缩视图的展开入口：原 UI 没有这个按钮，注入一个到 .np-actions
+  function installExpand() {
+    if (document.getElementById("expandBtn")) return true;
+    var host = document.querySelector(".np-actions");
+    if (!host) return false;
+    var b = document.createElement("button");
+    b.className = "icon-btn";
+    b.id = "expandBtn";
+    b.title = "展开完整播放器";
+    b.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      'stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/>' +
+      '<path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>';
+    b.addEventListener("click", function () {
+      if (window.__hanaSetView) window.__hanaSetView("full");
+    });
+    host.appendChild(b);
+    return true;
+  }
+
+  function install() {
+    return installPop() && installExpand();
   }
 
   // 按钮在 body 里，本脚本在 head —— 等它出现
@@ -3722,6 +4370,10 @@ if (typeof module !== 'undefined' && module.exports) {
         var el = document.querySelector(sel);
         return el ? Math.round(el.getBoundingClientRect().height) : null;
       }
+      function boxW(sel) {
+        var el = document.querySelector(sel);
+        return el ? Math.round(el.getBoundingClientRect().width) : null;
+      }
       var env = null;
       try {
         env =
@@ -3733,6 +4385,9 @@ if (typeof module !== 'undefined' && module.exports) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          probeKey:
+            (/standalone\.html$/i.test(location.pathname) ? "win" : "card") +
+            ":" + ((window.__hanaGetView && window.__hanaGetView()) || "?"),
           innerHeight: window.innerHeight,
           docClientHeight: document.documentElement.clientHeight,
           bodyClientHeight: document.body.clientHeight,
@@ -3742,6 +4397,17 @@ if (typeof module !== 'undefined' && module.exports) {
           container: box(".player-container"),
           playerRight: box(".player-right"),
           plBody: box("#plBody"),
+          // ── 布局诊断（主机侧看不到这个窗口，就把事实写出来）──
+          // 注：这里量的是“布局结果”，不是像素——截图我看不到，数字能看。
+          bodyClass: document.body.className,
+          viewportW: window.innerWidth,
+          leftW: boxW(".player-left"),
+          rightW: boxW(".player-right"),
+          lyricsH: box(".lyrics-section"),
+          lyricBodyH: box(".lyric-body"),
+          lyricLineCount: document.querySelectorAll(".lyric-body > *").length,
+          wideOff: document.body.classList.contains("wide-off"),
+          popup: document.body.classList.contains("player-popup"),
           hasHana: !!window.__hana,
           build: window.__HANA_BUILD || null,
           envelope: env,
@@ -3881,6 +4547,21 @@ if (typeof module !== 'undefined' && module.exports) {
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
         if (j && j.build && j.build !== MINE) {
+          // 自限：10 秒内只自动重载一次。
+          // 宿主若对 ui/ 静态资源强缓存，重载后仍是旧页面，
+          // 它会反复拿到新构建号 —— 那就变成无限刷新，比“没自动更新”糟得多。
+          var t = Date.now();
+          var lastTry = 0;
+          try {
+            lastTry = Number(sessionStorage.getItem("hana:build-reload-at") || 0);
+          } catch (e) {}
+          if (t - lastTry < 10000) {
+            console.warn("[hana] 构建号不一致，但刚刚已重载过，停止自动刷新（可能命中了缓存）");
+            return;
+          }
+          try {
+            sessionStorage.setItem("hana:build-reload-at", String(t));
+          } catch (e) {}
           console.log("[hana] 检测到新构建 " + j.build + "（当前 " + MINE + "），重载页面");
           location.reload();
         }
@@ -3905,6 +4586,9 @@ if (typeof module !== 'undefined' && module.exports) {
   <div class="header-actions">
     <button class="icon-btn" id="fontSizeBtn" title="字号设置">
       <svg viewBox="0 0 24 24"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
+    </button>
+    <button class="icon-btn" id="paletteBtn" title="配色主题">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="1.5"/><circle cx="17.5" cy="10.5" r="1.5"/><circle cx="8.5" cy="7.5" r="1.5"/><circle cx="6.5" cy="12.5" r="1.5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.84-.44-1.12-.29-.29-.44-.65-.44-1.13a1.64 1.64 0 011.67-1.67h2c3.05 0 5.56-2.5 5.56-5.55C21.97 6.01 17.46 2 12 2z"/></svg>
     </button>
     <button class="icon-btn" id="aiThemeBtn" title="AI主题">
       <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
@@ -7345,6 +8029,66 @@ function fmt(s) {
   return Math.floor(s/60)+':'+Math.floor(s%60).toString().padStart(2,'0');
 }
 
+// ── 单一播放者 ──
+//
+// 同一个应用会同时有多个实例活着：对话流卡、卡片中心、拆窗窗口……
+// 它们各有自己的 <audio>，于是一首歌能被放好几遍（实测：几张卡 + 几个窗口，
+// 声音叠在一起）。这里用同源共享的 localStorage 当“播放权”：
+// 谁最后按了播放谁持有，其他实例发现自己不是持有者就暂停。
+var _instId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+var PLAY_LOCK = "hana_audio_play_lock";
+function claimPlayLock() {
+  try { localStorage.setItem(PLAY_LOCK, _instId + "|" + Date.now()); } catch (e) {}
+}
+function _lockedByOther() {
+  try {
+    var parts = (localStorage.getItem(PLAY_LOCK) || "").split("|");
+    return parts.length > 1 && parts[0] && parts[0] !== _instId;
+  } catch (e) { return false; }
+}
+function _letOthersWin() {
+  try { if (audio && !audio.paused && _lockedByOther()) audio.pause(); } catch (e) {}
+}
+if (audio && audio.addEventListener) {
+  audio.addEventListener("play", claimPlayLock);      // 播放即抢锁
+  window.addEventListener("storage", function (e) {   // 别人抢走就停
+    if (e.key === PLAY_LOCK) _letOthersWin();
+  });
+  setInterval(_letOthersWin, 2500);                   // storage 事件不一定来，兵底轮询
+}
+
+// ── 紧凑壳启动兜底：认领“刚投进来的那一首”──
+//
+// 工具投卡只往列表里追加，从来没有告诉过卡片“该播哪一首”
+// （v1 时代靠 route 上的 url 参数带过去，v2 把这步丢了）。
+// 结果：卡片出现在对话里，却停在“准备就绪”、歌名还是占位符，像坏了。
+//
+// 这里兜底：等列表就绪后取最后一条（就是刚追加的那首）走一次 load()。
+// audio.play() 仍会被 autoplay 策略拦住 —— 那是平台的事，但至少
+// 歌名/时长/进度都对，用户知道接下来该点什么。
+(function claimLatestForCompact() {
+  if (!(window.__hanaGetView && window.__hanaGetView() === "compact")) return;
+  var tries = 0;
+  var t = setInterval(function () {
+    tries++;
+    try {
+      if (playing) { clearInterval(t); return; }
+      // 等一次服务器同步再认领 —— 否则认到的可能是本地列表里
+      // 随便哪一首的最后一条，而不是刚投进来的那首。
+      // 但也不无限等：6 秒后就用手头这份。
+      if ((_initialSyncDone || tries > 12) && trks.length) {
+        clearInterval(t);
+        // 别人（另一张卡 / 拆窗窗）正在放就不抢 —— 多开几张卡同时出声
+        // 是最糟的体验，而卡片出现的时机本来就是随机的。
+        if (_lockedByOther()) return;
+        load(trks.length - 1);
+        return;
+      }
+    } catch (e) {}
+    if (tries > 20) clearInterval(t); // 约 10 秒还没列表就不管了
+  }, 500);
+})();
+
 function load(i) {
   if (i<0||i>=trks.length) {
     document.getElementById('trackName').textContent='播放器';
@@ -7371,7 +8115,19 @@ function load(i) {
     npCover.innerHTML = '♫';
   }
   updateFavBtn();
-  if(t.url) { audio.src=tok(t.url); audio.load(); audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)}); }
+  if(t.url) {
+        audio.src = tok(t.url);
+    audio.load();
+    audio.play().catch(function (e) {
+      if (e && e.name === "NotAllowedError") {
+        // 宿主没给卡片 autoplay 授权（实测已知），这不是故障，是既定事实。
+        // 给一句人话，别让用户以为播放器坏了。
+        showToast("点一下播放键开始", 2200);
+      } else if (e && e.name !== "AbortError") {
+        console.warn(e);
+      }
+    });
+  }
   // 歌词自动搜索：有 URL 但没有 LRC URL 时自动搜索歌词
   if(t.url && !t.lrcUrl && t.name) {
     var sv = t.searchServer || 'netease';
@@ -8552,10 +9308,25 @@ function doPlaylistImport(){
     ctx.clearRect(0,0,w,h);
     if (audio.paused) { drawSilent(w,h); return; }
 
-    // 全部使用模拟波形 — 避免 createMediaElementSource 的 CORS 静音问题
-    simPhase += 0.04;
     var vol = audio.volume || 1;
     var barW = (w - BAR_GAP * (BAR_COUNT-1)) / BAR_COUNT;
+
+    // 真频谱：音频反应开着时 analyser 每帧都在填同一份数据，
+    // 借过来柱子才真的跟着歌跳（原来那排全是模拟波形，跟音乐无关）。
+    var bins = (window.__reactiveReady && window.__reactiveBins) ? window.__reactiveBins : null;
+    if (bins && bins.length) {
+      var nb = bins.length;
+      for (var k=0; k<BAR_COUNT; k++) {
+        // 对数取样：低频多给几格，否则整排只有左边在动
+        var idx = Math.min(nb - 1, Math.floor(Math.pow(k / BAR_COUNT, 1.7) * nb));
+        var v = (bins[idx] || 0) / 255;
+        drawBar(w,h,barW,k, Math.pow(v, 0.8) * 1.1 * vol);
+      }
+      return;
+    }
+
+    // 没真数据（音频反应没开 / 图没建成）就退回原来的模拟波形
+    simPhase += 0.04;
     for (var i=0; i<BAR_COUNT; i++) {
       var val = pseudoBar(i, simPhase) * vol;
       drawBar(w,h,barW,i, val);
@@ -8654,6 +9425,11 @@ function doPlaylistImport(){
   // 初始渲染占位
   lyricBody.innerHTML='<div class="lyric-line" style="color:var(--text-faint);padding:8px 0">暂无歌词</div>';
 
+  // LRC 的头部元数据行是带时间戳混进来的（"制作人: ..." / "作词 : ..."），
+  // 不收的话就会当成歌词往横幅上推 —— 实测真的看到了"制作人: Mike Dirnt"。
+  // 在解析阶段剔掉，列表和横幅一起干净。
+  var LRC_META = /^(作词|作曲|编曲|制作人|出品|发行|监制|混音|母带|录音|吉他|贝斯|鼓|键盘|和声|企划|统筹|OP|SP|词|曲)\s*[:：]/i;
+
   function parseLrc(raw){
     var lines=raw.split('\n');
     var result=[];
@@ -8662,7 +9438,10 @@ function doPlaylistImport(){
       if(m){
         var ms=parseInt(m[1])*60000+parseInt(m[2])*1000+(m[3]?parseInt(m[3].padEnd(3,'0')):0);
         var txt=m[4].trim();
-        if(txt) result.push({time:ms,text:txt});
+        if(!txt) return;
+        if(LRC_META.test(txt)) return;            // 署名行不是歌词
+        if(/^[【\[]/.test(txt)) return;           // 【】/[] 包起来的通常也是署名
+        result.push({time:ms,text:txt});
       }
     });
     result.sort(function(a,b){return a.time-b.time;});
@@ -8702,6 +9481,40 @@ function doPlaylistImport(){
     if(lines[idx]) lines[idx].scrollIntoView({block:'center',behavior:'smooth'});
   }
 
+  // ── 行内进度：单独走逐帧，不再吊在 timeupdate 上 ──
+  //
+  // 原来进度跟着 timeupdate 走，而它一秒只来四次 —— 那条光扫过去是顿的。
+  // 这里只做一件最轻的事：给当前行写一个 0–1 的进度，不碰 DOM 结构、不滚屏。
+  // 换行仍然由 highlightLrc 负责，两边不重叠。
+  var _kLines = null, _kIdx = -1, _kLen = -1;
+  function updateKaraoke(timeMs) {
+    try {
+      if (!lrcData.length || !lyricOpen || !lyricBody || lyricBody.clientHeight <= 0) return;
+      var idx = 0;
+      for (var i = 0; i < lrcData.length; i++) { if (lrcData[i].time <= timeMs) idx = i; else break; }
+      if (!_kLines || _kIdx !== idx || _kLen !== lrcData.length) {
+        _kLines = lyricBody.querySelectorAll('.lyric-line');
+        _kIdx = idx; _kLen = lrcData.length;
+      }
+      var line = _kLines && _kLines[idx];
+      if (!line) return;
+      var cur = lrcData[idx], nxt = lrcData[idx + 1];
+      var prog = 1;
+      if (cur && nxt && nxt.time > cur.time) {
+        prog = (timeMs - cur.time) / (nxt.time - cur.time);
+        prog = prog < 0 ? 0 : (prog > 1 ? 1 : prog);
+      }
+      line.style.setProperty('--lyric-progress', prog.toFixed(3));
+    } catch (e) {}
+  }
+
+  (function karaokeLoop() {
+    try {
+      if (!audio.paused) updateKaraoke(audio.currentTime * 1000);
+    } catch (e) {}
+    requestAnimationFrame(karaokeLoop);
+  })();
+
   audio.addEventListener('timeupdate',function(){
     if(!lrcData.length||!lyricOpen) return;
     highlightLrc(audio.currentTime*1000);
@@ -8731,6 +9544,39 @@ function doPlaylistImport(){
       }).catch(function(){});
     }
   },800);
+
+  // ── 队列歌词预取 ──
+  //
+  // 现状：切歌之后才开始拉歌词，用户在“暂无歌词”那一行上等一次网络往返。
+  // 这里在当前曲目稳定播放几秒后，悄悄把**下一首**的歌词拉好放进本地缓存，
+  // 切到它时直接命中缓存（缓存本来就是 _saveLrcCache / _cachedLrcByUrl 那套）。
+  //
+  // 三个约束：
+  //   1. 只在播着的时候做（暂停时不该打扰网络）
+  //   2. 同一首只预取一次（_prefetched 去重）
+  //   3. 失败就静默 —— 预取是锦上添花，不影响任何主流程
+  var _prefetchedKey = "";
+  setInterval(function () {
+    try {
+      if (audio.paused) return;
+      var next = trks[idx + 1];
+      if (!next || !next.url) return;
+      var nextLrc = next.lrcUrl || lrcMap[next.url] || "";
+      if (!nextLrc) return;
+      var key = next.url + "|" + nextLrc;
+      if (key === _prefetchedKey) return;
+      _prefetchedKey = key;
+      if (_cachedLrcByUrl(nextLrc)) return;
+      var proxyUrl = API + '/widget/api/music/lrc-proxy?url=' + encodeURIComponent(nextLrc);
+      fetch(proxyUrl)
+        .then(function (r) { return r.text(); })
+        .then(function (raw) {
+          if (!raw || raw.length < 10) return;
+          _saveLrcCache(nextLrc, parseLrc(raw));
+        })
+        .catch(function () {});
+    } catch (e) {}
+  }, 7000);
 })();
 
 var lrcMap = {};
@@ -9186,6 +10032,473 @@ if (window.integration && typeof window.integration.initAll === 'function') {
 parent.postMessage({type:'ready'},'*');
 if (window.ResizeObserver) { new ResizeObserver(notifySize).observe(document.body); }
 setTimeout(notifySize, 300);
+})();
+</script>
+<script>
+// ══ 配色主题（预设 + 自定义入口）══════════════════════════════
+//
+// 这一层只管「配色 + 背景」。明暗方向归 data-theme，频谱形态归
+// spectrum / waveform 那套可视化主题 —— 三层各管一事，不互相顶。
+//
+// 配色复用 applyThemeToCSS()：它本来就是给 AI 主题写的 CSS 变量写入器，
+// 没理由再写第二个。
+//
+// 自定义留的是**数据口子**而不是 UI：往 localStorage 的
+// hana_audio_theme_custom 塞一个数组，元素形状与下面的预设一致，
+// 面板里就会出现。
+(function () {
+  var PRESET_KEY = "hana_audio_theme_preset";
+  var CUSTOM_KEY = "hana_audio_theme_custom";
+
+  var PRESETS = [
+    { id: "amber", name: "暖褐", mode: null,
+      colors: { primary: "#d49a6a", secondary: "#c48454" },
+      background: { kind: "none" },
+      animation: { speed: 1, glowIntensity: 0, pulse: 0 } },
+
+    { id: "midnight", name: "深夜", mode: "dark",
+      colors: { primary: "#6b8cff", secondary: "#4b6ef0", accent: "#9ab4ff" },
+      background: { kind: "gradient", from: "#0c1020", to: "#1b2138", angle: 160,
+        light: { kind: "gradient", from: "#f2f5ff", to: "#e4eaff", angle: 160 } },
+      animation: { speed: 1.1, glowIntensity: 0.35, pulse: 0.2 } },
+
+    { id: "neon", name: "霓虹", mode: "dark",
+      colors: { primary: "#b06bff", secondary: "#ff5fa2", accent: "#ff8fd0" },
+      background: { kind: "gradient", from: "#160c24", to: "#2b1036", angle: 140,
+        light: { kind: "gradient", from: "#faf2ff", to: "#f3e6ff", angle: 140 } },
+      animation: { speed: 1.25, glowIntensity: 0.6, pulse: 0.35 } },
+
+    { id: "paper", name: "纸感", mode: "light",
+      colors: { primary: "#8a7a5c", secondary: "#6f6148" },
+      background: { kind: "solid", color: "#f7f1e4",
+        light: { kind: "solid", color: "#f7f1e4" } },
+      animation: { speed: 0.9, glowIntensity: 0.1, pulse: 0 } },
+
+    { id: "core", name: "原色", mode: "dark",
+      colors: { primary: "#d49a6a", secondary: "#c48454" },
+      background: { kind: "gradient", from: "#101014", to: "#1d1d24", angle: 180,
+        light: { kind: "gradient", from: "#f7f7f9", to: "#ececf0", angle: 180 } },
+      animation: { speed: 1, glowIntensity: 0.15, pulse: 0 } }
+  ];
+
+  function readCustom() {
+    try {
+      var raw = localStorage.getItem(CUSTOM_KEY);
+      var arr = raw ? JSON.parse(raw) : null;
+      if (!Array.isArray(arr)) return [];
+      return arr.filter(function (t) {
+        return t && typeof t === "object" && t.id && t.colors;
+      });
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function allThemes() { return PRESETS.concat(readCustom()); }
+
+  function currentId() {
+    try { return localStorage.getItem(PRESET_KEY) || ""; } catch (e) { return ""; }
+  }
+
+  function ensureBg() {
+    var el = document.getElementById("themeBg");
+    if (!el && document.body) {
+      el = document.createElement("div");
+      el.id = "themeBg";
+      el.className = "theme-bg";
+      document.body.insertBefore(el, document.body.firstChild);
+    }
+    // 音频反应不该只在背景里憋着 —— 单独一层盖在整页上，随能量呼吸。
+    if (!document.getElementById("reactEdge") && document.body) {
+      var re = document.createElement("div");
+      re.id = "reactEdge";
+      re.className = "react-edge";
+      document.body.appendChild(re);
+    }
+    return el;
+  }
+
+  // 同一套主题要管两种明暗：深色背景碰到浅色界面会变成“左浅右深”两块打架，
+  // 所以背景声明里可以带一个 light 变体，按当前 data-theme 选。
+  function currentMode() {
+    return document.documentElement.getAttribute("data-theme") || "dark";
+  }
+
+  function resolveBg(bg) {
+    if (!bg) return null;
+    if (bg.light && currentMode() === "light") return bg.light;
+    return bg;
+  }
+
+  function applyBackground(rawBg) {
+    var el = ensureBg();
+    if (!el) return;
+    var bg = resolveBg(rawBg);
+    if (!bg || !bg.kind || bg.kind === "none") {
+      el.style.backgroundImage = "none";
+      el.style.backgroundColor = "transparent";
+      el.style.opacity = "0";
+      return;
+    }
+    // 用 backgroundImage 而不是 background 简写：简写会把 background-size
+    // 一起重置，而流动渐变需要 200% 的尺寸才能动起来。
+    if (bg.kind === "solid") {
+      el.style.backgroundImage = "none";
+      el.style.backgroundColor = bg.color || "transparent";
+      el.style.backgroundSize = "";
+    } else if (bg.kind === "gradient") {
+      el.style.backgroundColor = "transparent";
+      el.style.backgroundImage =
+        "linear-gradient(" + (bg.angle == null ? 160 : bg.angle) + "deg," +
+        (bg.from || "#000") + "," + (bg.to || "#111") + ")";
+      el.style.backgroundSize = "200% 200%";
+    } else if (bg.kind === "image" && bg.url) {
+      el.style.backgroundColor = "transparent";
+      el.style.backgroundImage = 'url("' + bg.url + '")';
+      el.style.backgroundSize = "cover";
+      el.style.backgroundPosition = "center";
+    }
+    el.style.opacity = bg.opacity == null ? "1" : String(bg.opacity);
+  }
+
+  // ══ 音频反应（低频能量驱动背景）══════════════════════════
+  //
+  // 前提已实测：音源走同源跳板（/music/go/:id）→ 302 到 CDN，
+  // 带 crossOrigin="anonymous" 能加载成功（loadedmetadata），说明 CDN 的响应
+  // 带 CORS 头 —— 没这一步，接上分析节点会被浏览器直接静音。
+  //
+  // 三条必须守住的边界：
+  //   1. crossOrigin 只在“下一首”生效，不打断当前播放（改了要重新加载）
+  //   2. 没加载成功就绝不建链（建了等于把声音送进不响的管子）
+  //   3. AudioContext 不是 running 就关掉放弃（无手势时它必然是 suspended）
+  var REACTIVE_KEY = "hana_audio_reactive";
+  var REACTIVE_GAIN_KEY = "hana_audio_reactive_gain";
+  var reactive = { actx: null, analyser: null, data: null, raf: 0, gain: 2.4 };
+
+  function reactiveGain() {
+    try {
+      var v = parseFloat(localStorage.getItem(REACTIVE_GAIN_KEY));
+      return isFinite(v) && v > 0 ? v : 2.4;
+    } catch (e) { return 2.4; }
+  }
+
+  function reactiveWanted() {
+    try { return localStorage.getItem(REACTIVE_KEY) === "1"; } catch (e) { return false; }
+  }
+
+  function setReactiveWanted(v) {
+    try { localStorage.setItem(REACTIVE_KEY, v ? "1" : "0"); } catch (e) {}
+    applyCorsMode();
+  }
+
+  function applyCorsMode() {
+    var a = document.getElementById("audio");
+    if (!a) return;
+    try { a.crossOrigin = reactiveWanted() ? "anonymous" : null; } catch (e) {}
+  }
+
+  // 诊断上报：音频反应看不见效果，就把每个分叉的原因写出来。
+  // 主机侧看不到这个 iframe 的 console，写出去才有人看得见。
+  function postReactive(payload) {
+    try {
+      var m = /^\/api\/apps\/([^/]+)\//.exec(location.pathname);
+      var base = "/api/apps/" + (m ? m[1] : "hanako-audio-player") + "/routes";
+      fetch(base + "/api/_probe/size", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.assign({ where: "reactive", probeKey: "reactive" }, payload)),
+      }).catch(function () {});
+    } catch (e) {}
+  }
+
+  function buildAudioGraph() {
+    if (reactive.actx) return true;
+    if (!reactiveWanted()) { postReactive({ stage: "off" }); return false; }
+    var a = document.getElementById("audio");
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!a) { postReactive({ stage: "no-audio-el" }); return false; }
+    if (!AC) { postReactive({ stage: "no-audiocontext" }); return false; }
+
+    function attach(actx) {
+      if (actx.state !== "running") return false;
+      var srcNode = actx.createMediaElementSource(a);
+      var an = actx.createAnalyser();
+      an.fftSize = 128;
+      an.smoothingTimeConstant = 0.82;
+      srcNode.connect(an);
+      an.connect(actx.destination);
+      reactive.actx = actx;
+      reactive.analyser = an;
+      reactive.data = new Uint8Array(an.frequencyBinCount);
+      startReactiveLoop();
+      postReactive({ stage: "attached", state: actx.state });
+      return true;
+    }
+
+    try {
+      var actx = new AC();
+      postReactive({ stage: "created", state: actx.state, crossOrigin: String(a.crossOrigin) });
+      if (actx.state === "running") return attach(actx);
+      // new AudioContext() 即使有手势，初始也常常是 suspended，必须显式 resume。
+      actx.resume().then(function () {
+        postReactive({ stage: "resume-ok", state: actx.state });
+        if (!attach(actx)) { try { actx.close(); } catch (e) {} }
+      }).catch(function (err) {
+        postReactive({ stage: "resume-fail", err: String((err && err.message) || err) });
+        try { actx.close(); } catch (e) {}
+      });
+    } catch (e) {
+      postReactive({ stage: "throw", err: String((e && e.message) || e) });
+    }
+    return false;
+  }
+
+  function startReactiveLoop() {
+    if (reactive.raf) return;
+    var root = document.documentElement;
+    var smooth = 0;
+    (function tick() {
+      reactive.raf = requestAnimationFrame(tick);
+      var an = reactive.analyser, data = reactive.data;
+      if (!an || !data) return;
+      try {
+        an.getByteFrequencyData(data);
+        // 只取低频那段（前 1/4）：鼓点与贝斯，肉眼最容易“看到节拍”
+        var n = Math.max(1, Math.floor(data.length / 4));
+        var sum = 0;
+        for (var i = 0; i < n; i++) sum += data[i];
+        smooth = smooth * 0.86 + (sum / n / 255) * 0.14; // 平滑，免得一格一格跳
+        // 台面上的低频能量本来就不大（归一化后常在 0.1–0.3），
+        // 直接拿去做透明度就是“有也看不出来”。增益可调，存在 reactive.gain。
+        var gain = smooth * (reactive.gain || 2.4);
+        if (gain > 1) gain = 1;
+        root.style.setProperty("--react-level", gain.toFixed(3));
+        // 顺手把频谱摊给可视化用 —— 那边原来画的是模拟波形。
+        // 零拷贝：就是同一个 buffer，analyser 每帧都在填它。
+        window.__reactiveBins = data;
+        window.__reactiveReady = true;
+      } catch (e) {}
+    })();
+  }
+
+  function wireReactive() {
+    var a = document.getElementById("audio");
+    if (!a) return;
+    reactive.gain = reactiveGain();
+    applyCorsMode();
+    // 播放事件里试建链 —— 那时有用户手势，AudioContext 才可能 running
+    a.addEventListener("play", function () { setTimeout(buildAudioGraph, 0); });
+    // 加载失败：多半是这个音源没有 CORS 头 —— 撤回 CORS 模式，别让它播不了
+    a.addEventListener("error", function () {
+      if (reactiveWanted() && a.crossOrigin) {
+        console.warn("[audio-reactive] 音源不支持 CORS，已撤回开关");
+        try { a.crossOrigin = null; } catch (e) {}
+        setReactiveWanted(false);
+      }
+    });
+  }
+
+  function applyPreset(t) {
+    if (!t) return false;
+    try { localStorage.setItem(PRESET_KEY, t.id); } catch (e) {}
+    // 顺序要紧：applyTheme 被 patchApplyTheme 包过，会清掉行内的主题变量，
+    // 所以必须**先**定明暗方向，**再**写配色与背景，否则刚写上的会被清掉。
+    if (t.mode && typeof window.applyTheme === "function") {
+      window.applyTheme(t.mode);
+    }
+    if (typeof window.applyThemeToCSS === "function") {
+      window.applyThemeToCSS({ colors: t.colors || {}, animation: t.animation });
+    } else {
+      console.warn("[theme] applyThemeToCSS 不可用，只应用背景");
+    }
+    applyBackground(t.background);
+    return true;
+  }
+
+  function renderPanel() {
+    var grid = document.getElementById("themeGrid");
+    if (!grid) return;
+    var rt = document.getElementById("reactiveToggle");
+    if (rt) rt.textContent = reactiveWanted() ? "开" : "关";
+    var rg = document.getElementById("reactiveGain");
+    if (rg) rg.value = String(reactive.gain || 2.4);
+    var cur = currentId();
+    grid.innerHTML = "";
+    allThemes().forEach(function (t) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "theme-chip" + (t.id === cur ? " active" : "");
+      var dot = document.createElement("span");
+      dot.className = "theme-chip-dot";
+      dot.style.background = (t.colors && t.colors.primary) || "#888";
+      var nm = document.createElement("span");
+      nm.textContent = t.name || t.id;
+      b.appendChild(dot);
+      b.appendChild(nm);
+      b.addEventListener("click", function () {
+        applyPreset(t);
+        renderPanel();
+      });
+      grid.appendChild(b);
+    });
+  }
+
+  function ensurePanel() {
+    var p = document.getElementById("themePanel");
+    if (p) return p;
+    p = document.createElement("div");
+    p.id = "themePanel";
+    p.className = "theme-panel";
+    p.innerHTML =
+      '<div class="theme-panel-inner">' +
+      '<div class="theme-panel-head"><span>配色主题</span>' +
+      '<button type="button" class="theme-panel-close">关闭</button></div>' +
+      '<div class="theme-grid" id="themeGrid"></div>' +
+      '<div class="theme-panel-foot">配色与背景跟着主题走；明暗方向仍由右上角那个太阳/月亮管。' +
+      '<br>自定义：往 <code>hana_audio_theme_custom</code> 写一个数组（元素形状同预设）即会出现在这里。</div>' +
+      '<div class="theme-toggle-row"><span>音频反应（背景随低频能量亮起）</span>' +
+      '<button type="button" class="theme-panel-close" id="reactiveToggle">关</button></div>' +
+      '<div class="theme-toggle-row"><span>强度</span>' +
+      '<input type="range" id="reactiveGain" min="0.5" max="6" step="0.1" value="2.4"></div>' +
+      '</div>';
+    document.body.appendChild(p);
+    // 滑杆拖的是 input 事件，不是 click —— 得单独接一根
+    p.addEventListener("input", function (e) {
+      if (e.target && e.target.id === "reactiveGain") {
+        var v = parseFloat(e.target.value);
+        if (isFinite(v) && v > 0) {
+          reactive.gain = v;
+          try { localStorage.setItem(REACTIVE_GAIN_KEY, String(v)); } catch (err) {}
+        }
+      }
+    });
+    p.addEventListener("click", function (e) {
+      if (e.target && e.target.id === "reactiveToggle") {
+        var next = !reactiveWanted();
+        setReactiveWanted(next);
+        e.target.textContent = next ? "开" : "关";
+        e.target.title = next ? "下一首开始生效" : "";
+        return;
+      }
+      if (e.target === p ||
+          (e.target && e.target.classList && e.target.classList.contains("theme-panel-close"))) {
+        p.classList.remove("open");
+      }
+    });
+    return p;
+  }
+
+  function boot() {
+    ensureBg();
+
+    // 明暗一变，背景要跟着换 —— 否则深色背景配浅色界面，左右两块直接打架。
+    // 包一层而不是改 applyTheme 本体：那份代码被另一个补丁包过（清行内变量），
+    // 两层都往后调原函数，就不怕先后。
+    (function wrapApplyTheme() {
+      if (typeof window.applyTheme !== "function" || window.applyTheme.__bgWrapped) return;
+      var orig = window.applyTheme;
+      window.applyTheme = function () {
+        var r = orig.apply(this, arguments);
+        try {
+          var cur = allThemes().filter(function (x) { return x.id === currentId(); })[0];
+          if (cur) applyBackground(cur.background);
+        } catch (e) {}
+        return r;
+      };
+      window.applyTheme.__bgWrapped = true;
+    })();
+
+    var btn = document.getElementById("paletteBtn");
+    if (btn) {
+      btn.addEventListener("click", function () {
+        var p = ensurePanel();
+        renderPanel();
+        p.classList.add("open");
+      });
+    }
+    var saved = currentId();
+    var t = allThemes().filter(function (x) { return x.id === saved; })[0];
+    if (t) applyPreset(t);
+
+    // popBtn 的图标/提示跟着视图走（紧凑=展开，完整=横竖版）
+    function syncPop() {
+      var b = document.getElementById("popBtn");
+      if (!b) return;
+      var compact = window.__hanaGetView && window.__hanaGetView() === "compact";
+      b.title = compact ? "展开完整播放器" : "切换横竖版";
+      b.innerHTML = compact
+        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>'
+        : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 00-2 2v3"/><path d="M16 3h3a2 2 0 012 2v3"/><path d="M8 21H5a2 2 0 01-2-2v-3"/><path d="M16 21h3a2 2 0 002-2v-3"/></svg>';
+    }
+    window.addEventListener("hana:view-changed", syncPop);
+    setTimeout(syncPop, 600);
+    setTimeout(syncPop, 1800);
+
+    // ── 横幅按钮 → 在这里执行 ──
+    // 横幅上的按钮点了只通知应用（notify-plugin），后端把命令落下来，
+    // 这里轮询取走代执行。跨两道 RPC，约 1.5 秒延迟。
+    var apiBase = (function () {
+      var m = /^\/api\/apps\/([^/]+)\//.exec(location.pathname);
+      return "/api/apps/" + (m ? m[1] : "hanako-audio-player") + "/routes";
+    })();
+    // （横幅按钮已撤：宿主的应用总线实测收不到 banner 事件。
+    //   详见 lib/register-routes.js 顶部的说明。）
+
+    // ── CORS 体检：音频直链能不能接 Web Audio ──
+    //
+    // “跟着声音动”的前提是能读到音频数据（AnalyserNode），而跨源音频
+    // 一旦接上分析节点就会被浏览器直接静音 —— 除非那个源自己带 CORS 头。
+    //
+    // 判定方式很直接：浏览器对跨源 fetch **强制**检查 CORS 头。
+    //   fetch 成功 → 有头，可以接；失败 → 没头，接上就是静音。
+    // 拿当前正在播的地址去验，结果写回探针，主机侧读。
+    function postCors(payload) {
+      try {
+        fetch(apiBase + "/api/_probe/size", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(Object.assign({ where: "cors-check", probeKey: "cors" }, payload)),
+        }).catch(function () {});
+      } catch (e) {}
+    }
+    // 音频元素版体检：临时元素 + crossOrigin 加载。
+    //
+    // 只有这条路能反映真实情况 —— 之前那个 fetch 版测的是跳板地址
+    // （同源 /music/go/:id，内部 302 到 CDN），它失败可能只是缺访问票，
+    // 跟“音源有没有 CORS 头”是两回事。
+    var _corsChecked = "";
+    setInterval(function () {
+      try {
+        var a = document.getElementById("audio");
+        var src = a && (a.currentSrc || a.src);
+        if (!src || src === _corsChecked) return;
+        _corsChecked = src;
+        var sameOrigin = src.indexOf(location.origin) === 0 || src.indexOf("http") !== 0;
+        var probe = new Audio();
+        probe.crossOrigin = "anonymous";
+        probe.preload = "metadata";
+        var done = false;
+        var finish = function (ok, note) {
+          if (done) return;
+          done = true;
+          try { probe.removeAttribute("src"); probe.load(); } catch (e) {}
+          postCors({ mode: "audio-element", src: src.slice(0, 180), sameOrigin: sameOrigin, corsOk: ok, note: note });
+        };
+        probe.onloadedmetadata = function () { finish(true, "loadedmetadata"); };
+        probe.onerror = function () { finish(false, "error"); };
+        setTimeout(function () { finish(false, "timeout"); }, 15000);
+        probe.src = src;
+      } catch (e) {}
+    }, 12000);
+
+    wireReactive();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
 })();
 </script>
 </body>

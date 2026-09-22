@@ -128,6 +128,13 @@ export function makePlayTool(ctx, state) {
         // 不是早期那套 40 行骨架。两者曾经并存过一阵，投递时挂的是骨架，
         // 导致“卡片中心看到原版、对话里却是骨架”。
         //
+        // ?view=compact 是后来加的：对话流里只要一张**浓缩单曲卡**，
+        // 不要整页播放器。同一份页面渲染两个壳（同一个播放内核），
+        // 不用另起 compact.html —— 那会重演上面那种双实现。
+        // 卡片中心 / 拆窗走 manifest 里声明的 /index.html（完整壳，无参数）。
+        // 页面自己也会按挂载位兜底判一次（流内卡 → 浓缩），所以这条 query
+        // 即使漏了也不会回到整页形态。
+        //
         // aspectRatio 故意不写。理由有两条：
         //   1) 这个字段在前端要求是**字符串**（Nn() 里 e.split(":")），
         //      而注册表那边要数字——两端契约不同，写错任一侧都会出错；
@@ -138,7 +145,7 @@ export function makePlayTool(ctx, state) {
             type: "iframe",
             pluginId: appId,
             channel: "app",
-            route: "/index.html",
+            route: "/index.html?view=compact",
             title: name,
           },
         },
