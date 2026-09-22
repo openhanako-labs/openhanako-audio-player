@@ -144,6 +144,35 @@ body {
   color: var(--text);
 }
 .header-actions { display:flex; gap:4px; }
+
+/* ── 实例徽章 ──
+ * 一摧长得一样的播放器窗口摆着时，谁在响看不出来。
+ * 这个徽章给出两个事实：我是谁（短码），以及此刻是不是我在出声。 */
+.inst-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 7px; border-radius: 999px;
+  font-size: 10px; letter-spacing: .06em; line-height: 1.7;
+  color: var(--text-faint);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+  transition: color .2s, background .2s, border-color .2s;
+  white-space: nowrap;
+}
+.inst-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-faint);
+  transition: background .2s, box-shadow .2s;
+}
+.inst-badge.live {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+}
+.inst-badge.live .inst-dot {
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+}
+body.view-compact .inst-code { display: none; }
 .icon-btn {
   background:none; border:none; color:var(--text-dim); cursor:pointer;
   width:26px; height:26px; border-radius:6px;
@@ -2301,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "0922128000";
+  window.__HANA_BUILD = "0922210000";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -7920,6 +7949,8 @@ if (document.readyState === 'loading') {
 })();
 
 const API = "/api/apps/hanako-audio-player/routes";
+
+
 const TOKEN = "";
 const HAS_NETEASE_COOKIE = false;
 const HAS_TENCENT_COOKIE = false;
@@ -8029,6 +8060,34 @@ function fmt(s) {
   return Math.floor(s/60)+':'+Math.floor(s%60).toString().padStart(2,'0');
 }
 
+// ── 自动认领：同一首只做一次 ──
+//
+// 这两个变量是同一个教训的产物：
+//   1. 卡片会因为构建号变化（或宿主刷新）自刷，而认领写在初始化里，
+//      于是“刷一次就自动播放一次”——用户什么都没动，歌自己响了；
+//   2. 播放权也得在这里取，否则投卡看上去没什么反应。
+// 所以：认领动作只对“没自动播过的那一首”做一次，之后重载就只挂谱不出声。
+var AUTOPLAY_KEY = "hana_audio_autoplayed";
+function autoplayOnce(i) {
+  var t = trks[i];
+  var url = t && t.url ? t.url : "";
+  var already = false;
+  try { already = url && localStorage.getItem(AUTOPLAY_KEY) === url; } catch (e) {}
+  if (already) {
+    // 自刷 / 重开：只把曲目挂上（歌名、时长、歌词都还在），不自作主张出声。
+    try {
+      if (url) {
+        audio.src = tok(url);
+        audio.load();
+      }
+    } catch (e) {}
+    return;
+  }
+  try { if (url) localStorage.setItem(AUTOPLAY_KEY, url); } catch (e) {}
+  claimPlayLock();
+  load(i);
+}
+
 // ── 单一播放者 ──
 //
 // 同一个应用会同时有多个实例活着：对话流卡、卡片中心、拆窗窗口……
@@ -8040,22 +8099,78 @@ var PLAY_LOCK = "hana_audio_play_lock";
 function claimPlayLock() {
   try { localStorage.setItem(PLAY_LOCK, _instId + "|" + Date.now()); } catch (e) {}
 }
+// “全局暂停”：用户按停时写进去，别的实例也会读到并停下来。
+//
+// 不加这个会出现很难解释的现象：我明明按了暂停，声音还在 ——
+// 因为响的是另一个实例，而暂停只发生在本地。
+var PAUSE_SENTINEL = "__paused__";
+function broadcastPause() {
+  try { localStorage.setItem(PLAY_LOCK, PAUSE_SENTINEL + "|" + Date.now()); } catch (e) {}
+}
+function _lockOwner() {
+  try { return (localStorage.getItem(PLAY_LOCK) || "").split("|")[0] || ""; } catch (e) { return ""; }
+}
+function _globallyPaused() {
+  return _lockOwner() === PAUSE_SENTINEL;
+}
 function _lockedByOther() {
   try {
     var parts = (localStorage.getItem(PLAY_LOCK) || "").split("|");
     return parts.length > 1 && parts[0] && parts[0] !== _instId;
   } catch (e) { return false; }
 }
+var yielding = false;   // 正在被动让位（不是用户按的暂停）
 function _letOthersWin() {
-  try { if (audio && !audio.paused && _lockedByOther()) audio.pause(); } catch (e) {}
+  try {
+    if (!audio || audio.paused) return;
+    // 别人抢了锁，或者有人广播了“全局暂停” —— 两种都要让位
+    if (_globallyPaused() || _lockedByOther()) {
+      yielding = true;
+      audio.pause();
+      setTimeout(function () { yielding = false; }, 250);
+    }
+  } catch (e) {}
 }
 if (audio && audio.addEventListener) {
   audio.addEventListener("play", claimPlayLock);      // 播放即抢锁
-  window.addEventListener("storage", function (e) {   // 别人抢走就停
+  // 按停时广播出去：暂停是全局意图，不是本实例的私事。
+  audio.addEventListener("pause", function () {
+    if (yielding) return;      // 自己是因为让位才停的，别再广播一遍（否则互相叫停）
+    if (audio.ended) return;   // 自然放完也不算“用户叫停”
+    broadcastPause();
+  });
+  window.addEventListener("storage", function (e) {   // 别人动锁就重新判断
     if (e.key === PLAY_LOCK) _letOthersWin();
   });
-  setInterval(_letOthersWin, 2500);                   // storage 事件不一定来，兵底轮询
+  setInterval(_letOthersWin, 1200);                   // storage 事件不一定来，兵底轮询
 }
+
+// ── 实例徽章 ──
+//
+// 一摧长得一样的播放器窗口摆着时，谁在响看不出来（用户为此两次问到
+// “不知道关哪个”）。这个徽章给出两个事实：我是谁（短码），以及此刻
+// 是不是我在出声（亮点 + 主题色）。一眼就能认出该留哪个。
+(function instanceBadge() {
+  var host = document.querySelector(".header-actions");
+  if (!host || !_instId) return;
+  var el = document.createElement("div");
+  el.className = "inst-badge";
+  el.id = "instBadge";
+  el.innerHTML = '<span class="inst-dot"></span><span class="inst-code"></span>';
+  host.insertBefore(el, host.firstChild);
+  var codeEl = el.querySelector(".inst-code");
+  codeEl.textContent = String(_instId).slice(0, 4).toUpperCase();
+  function render() {
+    try {
+      var live = audio && !audio.paused && !_lockedByOther() && !_globallyPaused();
+      el.classList.toggle("live", !!live);
+      el.title = (live ? "这个实例正在出声" : "这个实例没有出声") +
+        "（" + String(_instId).slice(0, 6) + "）";
+    } catch (e) {}
+  }
+  setInterval(render, 900);
+  render();
+})();
 
 // ── 紧凑壳启动兜底：认领“刚投进来的那一首”──
 //
@@ -8078,10 +8193,11 @@ if (audio && audio.addEventListener) {
       // 但也不无限等：6 秒后就用手头这份。
       if ((_initialSyncDone || tries > 12) && trks.length) {
         clearInterval(t);
-        // 别人（另一张卡 / 拆窗窗）正在放就不抢 —— 多开几张卡同时出声
-        // 是最糟的体验，而卡片出现的时机本来就是随机的。
-        if (_lockedByOther()) return;
-        load(trks.length - 1);
+        // 卡片刚出现在对话里 = 用户要听这首。所以这里主动取一次播放权，
+        // 而不是把机会让给别的实例 —— 否则投卡看上去像没反应。
+        // （保证同一时刻仍然只有一个实例出声，由锁来管。）
+        claimPlayLock();
+        autoplayOnce(trks.length - 1);
         return;
       }
     } catch (e) {}
@@ -8116,17 +8232,24 @@ function load(i) {
   }
   updateFavBtn();
   if(t.url) {
-        audio.src = tok(t.url);
+    audio.src = tok(t.url);
     audio.load();
-    audio.play().catch(function (e) {
-      if (e && e.name === "NotAllowedError") {
-        // 宿主没给卡片 autoplay 授权（实测已知），这不是故障，是既定事实。
-        // 给一句人话，别让用户以为播放器坏了。
-        showToast("点一下播放键开始", 2200);
-      } else if (e && e.name !== "AbortError") {
-        console.warn(e);
-      }
-    });
+    // 别处正在放就只挂曲目、不出声。这条区分很重要：
+    //   抢播放权  —— 会让两张卡叠着重放，不该抢
+    //   显示曲目  —— 歌名 / 时长 / 歌词都靠它，不显示的话卡就像坏了
+    // 上一版把两件事写在一起，结果新卡停在“准备就绪”、横幅也一并没了。
+    if (_lockedByOther()) {
+      showToast("已在别处播放，这里只显示", 2000);
+    } else {
+      audio.play().catch(function (e) {
+        if (e && e.name === "NotAllowedError") {
+          // 宿主没给卡片 autoplay 授权（实测已知），这不是故障，是既定事实。
+          showToast("点一下播放键开始", 2200);
+        } else if (e && e.name !== "AbortError") {
+          console.warn(e);
+        }
+      });
+    }
   }
   // 歌词自动搜索：有 URL 但没有 LRC URL 时自动搜索歌词
   if(t.url && !t.lrcUrl && t.name) {
@@ -9425,10 +9548,22 @@ function doPlaylistImport(){
   // 初始渲染占位
   lyricBody.innerHTML='<div class="lyric-line" style="color:var(--text-faint);padding:8px 0">暂无歌词</div>';
 
-  // LRC 的头部元数据行是带时间戳混进来的（"制作人: ..." / "作词 : ..."），
-  // 不收的话就会当成歌词往横幅上推 —— 实测真的看到了"制作人: Mike Dirnt"。
-  // 在解析阶段剔掉，列表和横幅一起干净。
-  var LRC_META = /^(作词|作曲|编曲|制作人|出品|发行|监制|混音|母带|录音|吉他|贝斯|鼓|键盘|和声|企划|统筹|OP|SP|词|曲)\s*[:：]/i;
+  // LRC 的头部元数据行是带时间戳混进来的，不收的话就会当成歌词往横幅上推。
+  //
+  // 已经补过两次词表了（"出品 Produced by :"、"演唱 Vocal :"），教训是：
+  // 黑名单追不上真实字幕的写法。所以判据不是“名单里有它”，而是
+  // **这行的形状像不像一条署名**：
+  //   · 以常见的署名词开头（中英对照都算）
+  //   · 且冒号出现在很靠前的位置（真正的歌词不会在第二三个字就冒号）
+  //   · 或整行就是 【xx】/ [xx] 包起来的署名
+  var CREDIT_HEAD = /^(作词|作曲|编曲|制作人|出品|发行|监制|混音|母带|录音|吉他|贝斯|鼓|键盘|和声|和音|合声|配唱|演唱|演奏|朗诵|旁白|企划|统筹|语势|后期|美术|设计|策划|封面|翻译|校对|特别感谢|Assistant|Producer|Composer|Lyricist|Arranger|Mixing|Mastering|Vocal|Guitar|Bass|Drums|Piano|Strings|OP|SP|词|曲)/i;
+
+  function looksLikeCredit(txt) {
+    if (/^[【\[]/.test(txt)) return true;              // 【】/[] 包起来的通常也是署名
+    if (!CREDIT_HEAD.test(txt)) return false;
+    // 冒号必须出现在前 24 个字内；真歌词很少在开头就冒号
+    return /[:：]/.test(txt.slice(0, 24));
+  }
 
   function parseLrc(raw){
     var lines=raw.split('\n');
@@ -9439,8 +9574,7 @@ function doPlaylistImport(){
         var ms=parseInt(m[1])*60000+parseInt(m[2])*1000+(m[3]?parseInt(m[3].padEnd(3,'0')):0);
         var txt=m[4].trim();
         if(!txt) return;
-        if(LRC_META.test(txt)) return;            // 署名行不是歌词
-        if(/^[【\[]/.test(txt)) return;           // 【】/[] 包起来的通常也是署名
+        if(looksLikeCredit(txt)) return;          // 署名行不是歌词
         result.push({time:ms,text:txt});
       }
     });
