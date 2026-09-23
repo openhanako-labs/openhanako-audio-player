@@ -112,6 +112,11 @@ export function makePlayTool(ctx, state) {
       const sessionPath = typeof context?.sessionPath === "string" ? context.sessionPath : "";
       if (sessionPath) state.setBannerSession(sessionPath);
 
+      // 每个会话只投一次播放卡：同一会话反复播歌不再堆卡。
+      // 关掉卡后想再看播放器，从卡片中心打开即可（manifest 里已声明）。
+      const alreadyDelivered = sessionPath ? await state.hasDeliveredCard(sessionPath) : false;
+      if (sessionPath && !alreadyDelivered) state.markDeliveredCard(sessionPath);
+
       return {
         content: [{ type: "text", text: `🎵 ${name}` }],
 
@@ -140,15 +145,17 @@ export function makePlayTool(ctx, state) {
         //      而注册表那边要数字——两端契约不同，写错任一侧都会出错；
         //   2) 省略时“这一层什么都不做”，由内容自己决定高度，
         //      这也是没把握时的正确选择。需要固定比例时再补 "W:H" 形式的字符串。
-        details: {
-          card: {
-            type: "iframe",
-            pluginId: appId,
-            channel: "app",
-            route: "/index.html?view=compact",
-            title: name,
+        ...(alreadyDelivered ? {} : {
+          details: {
+            card: {
+              type: "iframe",
+              pluginId: appId,
+              channel: "app",
+              route: "/index.html?view=compact",
+              title: name,
+            },
           },
-        },
+        }),
       };
     },
   };
