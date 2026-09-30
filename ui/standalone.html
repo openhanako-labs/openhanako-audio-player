@@ -2669,44 +2669,73 @@ try {
   body.player-popup .np-actions .icon-btn svg { width: 16px; height: 16px; }
   body.player-popup .lyrics-section { max-height: none; margin-top: 12px; }
 
-  /* ══ 歌词模式（头部 lyricModeBtn 开关）════════════════════
+  /* ══ 歌词模式 = PV 演出（头部 lyricModeBtn 开关）══════════════
    *
-   * 只留歌词：藏右栏（列表/搜索/场景/编排）、封面和曲名旁的按钮，
-   * 歌词区吃掉播放区的全部剩余高度，行距和字号放大，当前行再抬一档。
-   * 底部控制条保留 —— 模式再纯，暂停键还是得够得着。
+   * 不是阅读模式的放大版。滚动列表退到幕后（visibility:hidden，
+   * 藏形不藏身 —— 卡拉 OK 逐帧和高亮逻辑还吊在它身上，display:none
+   * 会让 lyricBody.clientHeight=0、那套循环全停）；台前一次只唱一行：
+   * 上一行淡作残影，当前行居中大字、随低频呼吸，下一行压暗垫底。
    *
-   * 全部规则带 :not(.view-compact)：浓缩卡片有自己的“一行当前曲目”版式，
-   * 歌词模式的状态是持久的，不能让 Compact 卡片被它误伤。
-   * 浓缩视图里本来也只有 popBtn 可见，进不去这个模式。 */
+   * 呼吸吃音频反应回路已算好的 --react-level（低频能量 0~1）。
+   * 反应开关没开或音源没 CORS 时它是 0 —— 字不动，无副作用。
+   *
+   * 全部规则带 :not(.view-compact)：浓缩卡片保持原样。 */
   body.lyrics-mode:not(.view-compact) .player-right { display: none !important; }
   body.lyrics-mode:not(.view-compact) .np-cover { display: none; }
   body.lyrics-mode:not(.view-compact) .np-actions { display: none; }
   body.lyrics-mode:not(.view-compact) .now-playing-section {
-    flex: 1; min-height: 0; padding-bottom: 4px;
+    flex: 1; min-height: 0; padding-bottom: 4px; position: relative;
   }
   body.lyrics-mode:not(.view-compact) .lyrics-section {
-    flex: 1; display: flex; min-height: 0;
-    width: 100%; max-height: none !important; margin-top: 6px;
+    position: absolute; inset: 0; visibility: hidden; pointer-events: none;
   }
-  body.lyrics-mode:not(.view-compact) .lyric-body {
-    max-height: none !important; overflow-y: auto;
-    flex: 1; padding: 5vh 10% 8vh;
-    scrollbar-width: none;
-  }
-  body.lyrics-mode:not(.view-compact) .lyric-body::-webkit-scrollbar { display: none; }
-  body.lyrics-mode:not(.view-compact) .lyric-line {
-    font-size: 15px; line-height: 2.2;
-    transition: font-size .25s, color .25s;
-  }
-  body.lyrics-mode:not(.view-compact) .lyric-line.current {
-    font-size: 21px; font-weight: 700;
-  }
-  body.lyrics-mode:not(.view-compact) .lyric-line.chorus.current {
-    text-shadow: 0 0 14px var(--accent-glow);
-  }
+  body.lyrics-mode:not(.view-compact) .pv-stage { display: flex; }
   /* 宽版（popup）下左栏占满整宽 */
   body.player-popup.lyrics-mode:not(.view-compact) .player-left {
     width: auto; flex: 1; border-right: none;
+  }
+
+  .pv-stage {
+    display: none;
+    flex: 1; min-height: 0; width: 100%;
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 2.4vh; padding: 0 9%; text-align: center;
+  }
+  .pv-line { max-width: 100%; min-height: 1.4em; }
+  .pv-ghost, .pv-next {
+    font-size: 13px; line-height: 1.7;
+    color: var(--text-faint);
+  }
+  .pv-ghost { opacity: .5; }
+  .pv-next { opacity: .35; }
+  .pv-current {
+    font-size: clamp(22px, 5vh, 34px);
+    font-weight: 700; line-height: 1.5;
+    color: var(--lyric-active-color, var(--accent));
+    transform: scale(calc(1 + var(--react-level, 0) * .05));
+    transition: transform .12s linear;
+  }
+  .pv-current.chorus {
+    filter: drop-shadow(0 0 16px var(--accent-glow));
+  }
+  /* 换行入场：位移 + 模糊收束。JS 每换一行给当前行的 .pv-text 重触发一次 .pv-in */
+  .pv-text.pv-in { animation: pv-in .45s cubic-bezier(.2, .9, .25, 1); }
+  @keyframes pv-in {
+    from { opacity: 0; transform: translateY(14px) scale(.96); filter: blur(6px); }
+    to   { opacity: 1; transform: none; filter: blur(0); }
+  }
+  /* 行内卡拉 OK：和列表同一套 --lyric-progress 变量 */
+  @supports (-webkit-background-clip: text) {
+    .pv-current .pv-text {
+      background-image: linear-gradient(
+        90deg,
+        var(--lyric-active-color, var(--accent)) 0 calc(var(--lyric-progress, 1) * 100%),
+        var(--text-dim) calc(var(--lyric-progress, 1) * 100%) 100%
+      );
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
   }
 
   /* ══ 浓缩视图（?view=compact）════════════════════════════
@@ -4694,6 +4723,12 @@ if (typeof module !== 'undefined' && module.exports) {
   </div>
   <div class="lyrics-section">
     <div class="lyric-body open" id="lyricBody"></div>
+  </div>
+  <!-- PV 舞台：歌词模式下台前的一次一行 -->
+  <div class="pv-stage" id="pvStage">
+    <div class="pv-line pv-ghost" id="pvGhost"><span class="pv-text"></span></div>
+    <div class="pv-line pv-current" id="pvCurrent"><span class="pv-text"></span></div>
+    <div class="pv-line pv-next" id="pvNext"><span class="pv-text"></span></div>
   </div>
 </div>
 
@@ -9661,9 +9696,45 @@ function doPlaylistImport(){
     Object.keys(countMap).forEach(function(k) { if (countMap[k] >= 2) chorusSet.add(k); });
     return chorusSet;
   }
+  // ── PV 舞台 ──
+  // 歌词模式的台前：一次一行。列表退居幕后当数据源，这里只做呈现。
+  var pvStage=document.getElementById('pvStage');
+  var pvGhost=document.getElementById('pvGhost');
+  var pvCur=document.getElementById('pvCurrent');
+  var pvNext=document.getElementById('pvNext');
+  var chorusSetGlobal=new Set();
+  var _pvIdx=-1;
+  function _pvSet(el,txt,chorus){
+    if(!el) return;
+    el.querySelector('.pv-text').textContent=txt||'';
+    el.classList.toggle('chorus',!!chorus);
+  }
+  function _pvReplay(el){
+    if(!el) return;
+    var t=el.querySelector('.pv-text');
+    t.classList.remove('pv-in');
+    void t.offsetWidth;   // 强制回流，重触发入场动画
+    t.classList.add('pv-in');
+  }
+  function pvClear(){
+    _pvIdx=-1;
+    _pvSet(pvGhost,''); _pvSet(pvCur,''); _pvSet(pvNext,'');
+  }
+  function pvSync(idx){
+    if(!pvStage || idx===_pvIdx) return;
+    _pvIdx=idx;
+    var prev=lrcData[idx-1], cur=lrcData[idx], next=lrcData[idx+1];
+    _pvSet(pvGhost, prev?prev.text:'', false);
+    _pvSet(pvCur, cur?cur.text:'', cur&&chorusSetGlobal.has(cur.text.trim().toLowerCase()));
+    _pvSet(pvNext, next?next.text:'', false);
+    _pvReplay(pvCur);
+  }
+
   function renderLrc(){
-    if(!lrcData.length){ lyricBody.innerHTML='<div class="lyric-line" style="color:var(--text-faint);padding:8px 0">暂无歌词</div>'; return; }
+    if(!lrcData.length){ lyricBody.innerHTML='<div class="lyric-line" style="color:var(--text-faint);padding:8px 0">暂无歌词</div>'; chorusSetGlobal=new Set(); pvClear(); _pvSet(pvCur,'暂无歌词'); return; }
     var chorusSet = detectChorus(lrcData);
+    chorusSetGlobal = chorusSet;
+    _pvIdx = -1;   // 新词表生效，下一拍 highlightLrc 会让 PV 重唱首行
     lyricBody.innerHTML=lrcData.map(function(l,i){
       var isChorus = chorusSet.has(l.text.trim().toLowerCase());
       var cls = isChorus ? 'lyric-line chorus' : 'lyric-line';
@@ -9684,6 +9755,7 @@ function doPlaylistImport(){
         el.style.animation = '';
       }
     });
+    pvSync(idx);
     if(lines[idx]) lines[idx].scrollIntoView({block:'center',behavior:'smooth'});
   }
 
@@ -9711,6 +9783,7 @@ function doPlaylistImport(){
         prog = prog < 0 ? 0 : (prog > 1 ? 1 : prog);
       }
       line.style.setProperty('--lyric-progress', prog.toFixed(3));
+      if(pvCur) pvCur.style.setProperty('--lyric-progress', prog.toFixed(3));
     } catch (e) {}
   }
 
