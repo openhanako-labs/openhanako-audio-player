@@ -39,7 +39,7 @@
         "description": "播放当前曲目、查看队列与歌词。",
         "route": "/index.html",
         "face": {
-          "image": "face.png"
+          "image": "face-portrait.png"
         },
         "cardForm": "flush",
         "titlebar": "solid",
