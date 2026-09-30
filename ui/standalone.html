@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "0930211426";
+  window.__HANA_BUILD = "0930212635";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -9728,13 +9728,14 @@ function doPlaylistImport(){
   //   · 以常见的署名词开头（中英对照都算）
   //   · 且冒号出现在很靠前的位置（真正的歌词不会在第二三个字就冒号）
   //   · 或整行就是 【xx】/ [xx] 包起来的署名
-  var CREDIT_HEAD = /^(作词|作曲|编曲|制作人|出品|发行|监制|混音|母带|录音|吉他|贝斯|鼓|键盘|和声|和音|合声|配唱|演唱|演奏|朗诵|旁白|企划|统筹|语势|后期|美术|设计|策划|封面|翻译|校对|特别感谢|Assistant|Producer|Composer|Lyricist|Arranger|Mixing|Mastering|Vocal|Guitar|Bass|Drums|Piano|Strings|OP|SP|词|曲)/i;
+  var CREDIT_HEAD = /^(作词|作曲|编曲|制作人|出品|发行|监制|混音|母带|录音|吉他|贝斯|鼓|键盘|和声|和音|合声|配唱|演唱|演奏|朗诵|旁白|企划|统筹|语势|后期|美术|设计|策划|封面|翻译|校对|特别感谢|助理|工程|工程师|Assistant|Producer|Composer|Lyricist|Arranger|Mixing|Mastering|Engineer|Studio|Vocal|Guitar|Bass|Drums|Piano|Strings|OP|SP|词|曲)/i;
 
   function looksLikeCredit(txt) {
     if (/^[【\[]/.test(txt)) return true;              // 【】/[] 包起来的通常也是署名
     if (!CREDIT_HEAD.test(txt)) return false;
-    // 冒号必须出现在前 24 个字内；真歌词很少在开头就冒号
-    return /[:：]/.test(txt.slice(0, 24));
+    // 冒号必须出现在前 34 个字内；真歌词很少在开头就冒号
+    // （TTML 的英文署名行如 "Assistant Mastering Engineer : …"，冒号在 28 字处，24 的窗口不够）
+    return /[:：]/.test(txt.slice(0, 34));
   }
 
   function parseLrc(raw){
