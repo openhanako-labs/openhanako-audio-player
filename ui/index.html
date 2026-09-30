@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "0930183949";
+  window.__HANA_BUILD = "0930185126";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -2760,6 +2760,26 @@ try {
       background-clip: text;
       color: transparent;
     }
+    /* 逐字（TTML）：行级扫光让位，每字按自己的 --wp 扫亮 */
+    .pv-line[data-d="0"].has-words { background-image: none; }
+    .pv-line[data-d="0"] .pv-w {
+      background-image: linear-gradient(
+        90deg,
+        var(--lyric-active-color, var(--accent)) 0 calc(var(--wp, 0) * 100%),
+        var(--text-dim) calc(var(--wp, 0) * 100%) 100%
+      );
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+  }
+  /* TTML 译文行：主行下面的小字 */
+  .pv-tran {
+    margin-top: .35em;
+    font-size: .62em;
+    font-weight: 400;
+    color: var(--text-dim);
+    opacity: .85;
   }
 
   /* ══ 浓缩视图（?view=compact）════════════════════════════
@@ -9711,6 +9731,56 @@ function doPlaylistImport(){
     return result;
   }
 
+  // ── TTML（逐字）解析 ──
+  // AMLL DB 的 TTML：每行 <p begin end>，行内每个字一个 <span begin end>，
+  // 译文在 role=x-translation 的 span 里，背景声部 role=x-bg（嵌套 span，要跳过）。
+  function _ttmlTime(s){
+    if(!s) return 0;
+    s=String(s).trim();
+    var m=s.match(/^(?:(\d+):)?(\d{1,2}):(\d{2}(?:\.\d+)?)$/);
+    if(m) return Math.round(((+m[1]||0)*3600+(+m[2])*60+(+m[3]))*1000);
+    m=s.match(/^([\d.]+)ms$/); if(m) return Math.round(parseFloat(m[1]));
+    m=s.match(/^([\d.]+)s$/); if(m) return Math.round(parseFloat(m[1])*1000);
+    return 0;
+  }
+  function _roleOf(el){
+    if(!el||!el.getAttribute) return '';
+    return el.getAttribute('ttml:role')||el.getAttribute('role')||'';
+  }
+  function parseTtml(raw){
+    if(typeof DOMParser==='undefined') return null;
+    var doc=new DOMParser().parseFromString(raw,'text/xml');
+    if(doc.getElementsByTagName('parsererror').length) return null;
+    var ps=doc.getElementsByTagName('p');
+    var lines=[];
+    for(var i=0;i<ps.length;i++){
+      var p=ps[i];
+      var begin=_ttmlTime(p.getAttribute('begin'));
+      var spans=p.getElementsByTagName('span');
+      var words=[], tran='', main='';
+      for(var j=0;j<spans.length;j++){
+        var sp=spans[j];
+        var role=_roleOf(sp), parentRole=_roleOf(sp.parentNode);
+        if(role==='x-translation'){ tran=(sp.textContent||'').trim(); continue; }
+        if(role==='x-bg'||parentRole==='x-bg') continue;   // 背景声部不进主文本
+        if(role==='x-roman') continue;
+        var wt=sp.textContent||'';
+        if(!wt) continue;
+        main+=wt;
+        if(sp.getAttribute('begin')){
+          var wb=_ttmlTime(sp.getAttribute('begin')), we=_ttmlTime(sp.getAttribute('end'));
+          words.push({time:wb, dur:Math.max(80,we-wb), text:wt});
+        }
+      }
+      main=main.trim();
+      if(!main) continue;
+      if(looksLikeCredit(main)) continue;
+      lines.push({time:begin, text:main, tran:tran, words:words.length?words:null});
+    }
+    lines.sort(function(a,b){return a.time-b.time;});
+    return lines.length?lines:null;
+  }
+
   // 副歌检测
   function detectChorus(data) {
     var countMap = {}, chorusSet = new Set();
@@ -9737,8 +9807,17 @@ function doPlaylistImport(){
     }
     var html='';
     for(var i=0;i<lrcData.length;i++){
-      var isCh=chorusSetGlobal.has(lrcData[i].text.trim().toLowerCase());
-      html+='<div class="pv-line'+(isCh?' chorus':'')+'" data-d="3">'+esc(lrcData[i].text)+'</div>';
+      var l=lrcData[i];
+      var isCh=chorusSetGlobal.has(l.text.trim().toLowerCase());
+      var cls='pv-line'+(isCh?' chorus':'')+(l.words?' has-words':'');
+      var inner='';
+      if(l.words){
+        for(var k=0;k<l.words.length;k++) inner+='<span class="pv-w">'+esc(l.words[k].text)+'</span>';
+      } else {
+        inner=esc(l.text);
+      }
+      if(l.tran) inner+='<div class="pv-tran">'+esc(l.tran)+'</div>';
+      html+='<div class="'+cls+'" data-d="3">'+inner+'</div>';
     }
     pvTrack.innerHTML=html;
     _pvLineEls=pvTrack.querySelectorAll('.pv-line');
@@ -9818,7 +9897,21 @@ function doPlaylistImport(){
         prog = prog < 0 ? 0 : (prog > 1 ? 1 : prog);
       }
       line.style.setProperty('--lyric-progress', prog.toFixed(3));
-      if(_pvLineEls[idx]) _pvLineEls[idx].style.setProperty('--lyric-progress', prog.toFixed(3));
+      var pel=_pvLineEls[idx];
+      if(pel){
+        var wl=lrcData[idx] && lrcData[idx].words;
+        if(wl && wl.length){
+          // 逐字：每个字按自己的 begin/dur 扫亮
+          var ws=pel.querySelectorAll('.pv-w');
+          for(var wi=0; wi<wl.length && wi<ws.length; wi++){
+            var wp2=(timeMs-wl[wi].time)/wl[wi].dur;
+            wp2=wp2<0?0:(wp2>1?1:wp2);
+            ws[wi].style.setProperty('--wp', wp2.toFixed(3));
+          }
+        } else {
+          pel.style.setProperty('--lyric-progress', prog.toFixed(3));
+        }
+      }
     } catch (e) {}
   }
 
@@ -9834,29 +9927,60 @@ function doPlaylistImport(){
     highlightLrc(audio.currentTime*1000);
   });
 
+  // 逐字歌词源：从 meting 播放地址里抠 server+id，映射到 AMLL DB 的平台
+  function _wordSourceOf(t){
+    var u=String((t&&t.url)||'');
+    var mi=/[?&]id=([^&]+)/.exec(u);
+    if(!mi) return null;
+    var ms=/[?&]server=([^&]+)/.exec(u);
+    var sv=ms?ms[1]:(t.searchServer||'');
+    var pf= sv==='netease'?'ncm': sv==='tencent'?'qq': null;
+    if(!pf) return null;
+    return {platform:pf, id:decodeURIComponent(mi[1])};
+  }
+
   var _lastLrcKey='';
+  function _loadLineLrc(lrcUrl){
+    if(!lrcUrl) return;
+    var cached=_cachedLrcByUrl(lrcUrl);
+    if(cached){ lrcData=cached; renderLrc(); return; }
+    var proxyUrl=API+'/widget/api/music/lrc-proxy?url='+encodeURIComponent(lrcUrl);
+    fetch(proxyUrl).then(function(r){return r.text();}).then(function(raw){
+      if(!raw||raw.length<10) return;
+      var parsed=parseLrc(raw);
+      _saveLrcCache(lrcUrl, parsed);
+      lrcData=parsed;
+      renderLrc();
+    }).catch(function(){});
+  }
   setInterval(function(){
     var t=trks[idx];
     if(!t||!t.url) return;
     var lrcUrl=t.lrcUrl||lrcMap[t.url]||'';
     var lrcKey=t.url+'|'+lrcUrl;
-    if(lrcUrl && lrcKey!==_lastLrcKey){
-      _lastLrcKey=lrcKey;
-      var cached=_cachedLrcByUrl(lrcUrl);
-      if(cached){
-        lrcData=cached;
-        renderLrc();
-        return;
-      }
-      var proxyUrl=API+'/widget/api/music/lrc-proxy?url='+encodeURIComponent(lrcUrl);
-      fetch(proxyUrl).then(function(r){return r.text();}).then(function(raw){
-        if(!raw||raw.length<10) return;
-        var parsed=parseLrc(raw);
-        _saveLrcCache(lrcUrl, parsed);
-        lrcData=parsed;
-        renderLrc();
-      }).catch(function(){});
+    if(lrcKey===_lastLrcKey) return;
+    _lastLrcKey=lrcKey;
+    // 先试逐字（TTML）：拿到手行级/字级都有了，拿不到再退 LRC
+    var wp=_wordSourceOf(t);
+    if(wp){
+      var wkey='ttml:'+wp.platform+':'+wp.id;
+      var wc=_cachedLrcByUrl(wkey);
+      if(wc){ lrcData=wc; renderLrc(); return; }
+      fetch(API+'/widget/api/music/ttml?platform='+wp.platform+'&id='+encodeURIComponent(wp.id))
+        .then(function(r){ return r.ok?r.text():null; })
+        .then(function(raw){
+          var parsed=raw?parseTtml(raw):null;
+          if(parsed){
+            _saveLrcCache(wkey, parsed);
+            lrcData=parsed;
+            renderLrc();
+          } else {
+            _loadLineLrc(lrcUrl);
+          }
+        }).catch(function(){ _loadLineLrc(lrcUrl); });
+      return;
     }
+    _loadLineLrc(lrcUrl);
   },800);
 
   // ── 队列歌词预取 ──
