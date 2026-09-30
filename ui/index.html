@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "0930171719";
+  window.__HANA_BUILD = "0930175229";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -2699,6 +2699,9 @@ try {
     }
   }
 
+  /* 实例徽章：多开窗口时标识“谁在出声”。用户认定为噪音，摘掉。 */
+  .inst-badge { display: none !important; }
+
   /* ── 头部防挤 ──
    * 窄宽度下标题“播放器”会竖着挤成三行，还顶着徽章和七个按钮。
    * 标题不许换行、让 header-left 可收缩；再窄就直接把标题文字收掉（图标还在）。
@@ -2734,11 +2737,23 @@ try {
   .pv-current.chorus {
     filter: drop-shadow(0 0 16px var(--accent-glow));
   }
-  /* 换行入场：位移 + 模糊收束。JS 每换一行给当前行的 .pv-text 重触发一次 .pv-in */
-  .pv-text.pv-in { animation: pv-in .45s cubic-bezier(.2, .9, .25, 1); }
+  /* 换行入场：当前行位移+模糊收束；残影/预告只挪位置，不带透明度（避免动画结束弹回原透明度）。 */
+  .pv-text.pv-in { animation: pv-in .45s cubic-bezier(.2, .9, .25, 1), pv-breathe 3.6s ease-in-out .5s infinite; }
+  .pv-text.pv-in-soft { animation: pv-soft .5s ease; }
   @keyframes pv-in {
-    from { opacity: 0; transform: translateY(14px) scale(.96); filter: blur(6px); }
+    from { opacity: 0; transform: translateY(22px) scale(.94); filter: blur(8px); }
     to   { opacity: 1; transform: none; filter: blur(0); }
+  }
+  @keyframes pv-soft {
+    from { transform: translateY(10px); }
+    to   { transform: none; }
+  }
+  /* 待机呼吸：不靠音频数据（在线流多半没有 CORS，--react-level 拿不到），
+     纯 CSS 慢呼吸保底；有 --react-level 时外层 div 的缩放叠加在上面，两层不冲突 */
+  .pv-current .pv-text { animation: pv-breathe 3.6s ease-in-out infinite; }
+  @keyframes pv-breathe {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.022); }
   }
   /* 行内卡拉 OK：和列表同一套 --lyric-progress 变量 */
   @supports (-webkit-background-clip: text) {
@@ -9732,6 +9747,13 @@ function doPlaylistImport(){
     void t.offsetWidth;   // 强制回流，重触发入场动画
     t.classList.add('pv-in');
   }
+  function _pvReplaySoft(el){
+    if(!el) return;
+    var t=el.querySelector('.pv-text');
+    t.classList.remove('pv-in-soft');
+    void t.offsetWidth;
+    t.classList.add('pv-in-soft');
+  }
   function pvClear(){
     _pvIdx=-1;
     _pvSet(pvGhost,''); _pvSet(pvCur,''); _pvSet(pvNext,'');
@@ -9744,6 +9766,8 @@ function doPlaylistImport(){
     _pvSet(pvCur, cur?cur.text:'', cur&&chorusSetGlobal.has(cur.text.trim().toLowerCase()));
     _pvSet(pvNext, next?next.text:'', false);
     _pvReplay(pvCur);
+    _pvReplaySoft(pvGhost);
+    _pvReplaySoft(pvNext);
   }
   _pvSet(pvCur,'暂无歌词');   // 初始占位：renderLrc 只在有曲目后才会跑
 
