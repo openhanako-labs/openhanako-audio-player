@@ -2690,9 +2690,13 @@ try {
     position: absolute; inset: 0; visibility: hidden; pointer-events: none;
   }
   body.lyrics-mode:not(.view-compact) .pv-stage { display: flex; }
-  /* 宽版（popup）下左栏占满整宽 */
-  body.player-popup.lyrics-mode:not(.view-compact) .player-left {
-    width: auto; flex: 1; border-right: none;
+  /* 宽版（≥660px 自动分栏）下左栏占满整宽。
+     注意分栏不走 .player-popup 类（那是旧机制），是 media query 驱动的，
+     所以这里也必须写在 media query 里；wide-off（用户手动关分栏）时不动。 */
+  @media (min-width: 660px) {
+    body.lyrics-mode:not(.view-compact):not(.wide-off) .player-left {
+      width: auto; flex: 1 1 auto; border-right: none;
+    }
   }
 
   .pv-stage {
@@ -9729,6 +9733,7 @@ function doPlaylistImport(){
     _pvSet(pvNext, next?next.text:'', false);
     _pvReplay(pvCur);
   }
+  _pvSet(pvCur,'暂无歌词');   // 初始占位：renderLrc 只在有曲目后才会跑
 
   function renderLrc(){
     if(!lrcData.length){ lyricBody.innerHTML='<div class="lyric-line" style="color:var(--text-faint);padding:8px 0">暂无歌词</div>'; chorusSetGlobal=new Set(); pvClear(); _pvSet(pvCur,'暂无歌词'); return; }
