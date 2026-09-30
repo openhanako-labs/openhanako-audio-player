@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "0922210000";
+  window.__HANA_BUILD = "0930171719";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -2698,6 +2698,18 @@ try {
       width: auto; flex: 1 1 auto; border-right: none;
     }
   }
+
+  /* ── 头部防挤 ──
+   * 窄宽度下标题“播放器”会竖着挤成三行，还顶着徽章和七个按钮。
+   * 标题不许换行、让 header-left 可收缩；再窄就直接把标题文字收掉（图标还在）。
+   * 歌词模式下标题也是冗余信息，一并收。 */
+  .header { gap: 8px; }
+  .header-left { min-width: 0; overflow: hidden; flex-shrink: 1; }
+  .header-title { white-space: nowrap; }
+  @media (max-width: 560px) {
+    body:not(.view-compact) .header-title { display: none; }
+  }
+  body.lyrics-mode:not(.view-compact) .header-title { display: none; }
 
   .pv-stage {
     display: none;
