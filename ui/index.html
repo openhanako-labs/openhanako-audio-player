@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1001180751";
+  window.__HANA_BUILD = "1001182044";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -3417,6 +3417,15 @@ body:not(.view-compact) .pv-stage { order:4; }
 .gs-break { flex-basis:100%; height:0; }
 /* 行内组胶囊 */
 .jz-gpill { font-size:8.5px; font-family:monospace; padding:1px 6px; border:1px solid var(--border); border-radius:3px; color:var(--text-faint); flex-shrink:0; }
+
+
+/* ===== 主 UI 修正 ===== */
+.mode-caps { flex-shrink:0; }
+.mode-caps .mc { white-space:nowrap; padding:4px 12px; }
+/* PV/歌词模式下撤销唱盘机纵排，让舞台铺满 */
+body.lyrics-mode:not(.view-compact) .now-playing-section { align-items:stretch !important; text-align:left !important; }
+body.lyrics-mode:not(.view-compact) .np-info { display:none !important; }
+body.lyrics-mode:not(.view-compact) .pv-stage { flex:1 !important; width:100% !important; }
 
 </style><script>
 (function () {
@@ -9242,6 +9251,73 @@ document.querySelectorAll('.group-tab').forEach(function(btn) {
   });
 });
 
+// ── 自建分组 tab（主 IIFE 内，直接访问 trks/currentGroup/renderPL/showGroupPicker） ──
+(function(){
+    var CKEY='hanako_audio_custom_groups';
+    var FIXED=['本地音乐','在线音乐','TTS/语音','电台流','默认','我的喜欢'];
+    function loadG(){try{return JSON.parse(localStorage.getItem(CKEY))||[]}catch(e){return[]}}
+    function saveG(l){try{localStorage.setItem(CKEY,JSON.stringify(l))}catch(e){}}
+    function knownGroups(){
+      var l=loadG().slice(),seen={};l.forEach(function(g){seen[g]=1});
+      trks.forEach(function(t){var g=t&&t.group;if(g&&FIXED.indexOf(g)<0&&!seen[g]){seen[g]=1;l.push(g)}});
+      return l;
+    }
+    function injectPills(){
+      var plBody=document.getElementById('plBody');
+      if(!plBody)return;
+      plBody.querySelectorAll('.pl-group-body').forEach(function(body){
+        var g=body.getAttribute('data-group')||'';
+        if(!g)return;
+        body.querySelectorAll('.pl-item').forEach(function(item){
+          if(item.querySelector('.jz-gpill'))return;
+          var name=item.querySelector('.pl-name');
+          if(!name)return;
+          var pill=document.createElement('span');
+          pill.className='jz-gpill';pill.textContent=g;
+          name.after(pill);
+        });
+      });
+    }
+    function renderTabs(){
+      var box=document.getElementById('customGroupTabs');if(!box)return;
+      box.innerHTML='';
+      knownGroups().forEach(function(g){
+        var b=document.createElement('button');
+        b.className='group-tab'+(currentGroup===g?' active':'');
+        b.textContent=g;b.title='点击过滤 · 右键删除';
+        b.onclick=function(){
+          document.querySelectorAll('.group-tab').forEach(function(x){x.classList.remove('active')});
+          b.classList.add('active');
+          currentGroup=g;
+          renderPL();
+        };
+        b.oncontextmenu=function(e){
+          e.preventDefault();
+          if(!confirm('删除分组「'+g+'」？组内曲目归入「默认」。'))return;
+          trks.forEach(function(t){if(t.group===g)t.group='默认'});
+          saveG(loadG().filter(function(x){return x!==g}));
+          if(currentGroup==='' || currentGroup===g){currentGroup='all'}
+          saveTrks();renderPL();
+        };
+        box.appendChild(b);
+      });
+    }
+    var addBtn=document.getElementById('groupAddBtn');
+    if(addBtn)addBtn.onclick=function(){
+      showGroupPicker(function(g){
+        if(g){var l=loadG();if(l.indexOf(g)<0){l.push(g);saveG(l)}}
+        renderTabs();
+      });
+    };
+    var _rpl=renderPL;
+    renderPL=function(){
+      _rpl.apply(this,arguments);
+      renderTabs();
+      injectPills();
+    };
+    renderTabs();
+  })();
+
 // 修改 renderPL 函数以支持分组过滤
 var originalRenderPL = renderPL;
 renderPL = function() {
@@ -10786,7 +10862,8 @@ setTimeout(notifySize, 300);
   var PRESETS = [
     { id: "goldnight", name: "金夜", mode: "dark",
       colors: { primary: "#D4AF37", secondary: "#B39A62", accent: "#F3E7C4" },
-      background: { kind: "gradient", from: "#0A0907", to: "#17130C", angle: 160 },
+      background: { kind: "gradient", from: "#0A0907", to: "#17130C", angle: 160,
+        light: { kind: "gradient", from: "#F6EEDC", to: "#EDE0C2", angle: 160 } },
       animation: { speed: 1, glowIntensity: 0.25, pulse: 0.1 } },
     { id: "amber", name: "暖褐", mode: null,
       colors: { primary: "#d49a6a", secondary: "#c48454" },
@@ -11440,72 +11517,7 @@ _jzObserver.observe(document.body,{attributes:true,attributeFilter:['class']});
 </script>
 
 
-<script>
-/* ===== 自建分组 tab（持久化 + 过滤 + 新建 + 右键删除） ===== */
-(function(){
-'use strict';
-if(typeof trks==='undefined'||typeof renderPL!=='function')return;
-var CKEY='hanako_audio_custom_groups';
-var FIXED=['本地音乐','在线音乐','TTS/语音','电台流','默认','我的喜欢'];
-function loadG(){try{return JSON.parse(localStorage.getItem(CKEY))||[]}catch(e){return[]}}
-function saveG(l){try{localStorage.setItem(CKEY,JSON.stringify(l))}catch(e){}}
-function knownGroups(){
-  var l=loadG().slice(),seen={};l.forEach(function(g){seen[g]=1});
-  trks.forEach(function(t){var g=t&&t.group;if(g&&FIXED.indexOf(g)<0&&!seen[g]){seen[g]=1;l.push(g)}});
-  return l;
-}
-function renderTabs(){
-  var box=document.getElementById('customGroupTabs');if(!box)return;
-  box.innerHTML='';
-  knownGroups().forEach(function(g){
-    var b=document.createElement('button');
-    b.className='group-tab'+(currentGroup===g?' active':'');
-    b.textContent=g;b.title='点击过滤 · 右键删除';
-    b.onclick=function(){
-      document.querySelectorAll('.group-tab').forEach(function(x){x.classList.remove('active')});
-      b.classList.add('active');
-      currentGroup=g;
-      renderPL();
-    };
-    b.oncontextmenu=function(e){
-      e.preventDefault();
-      if(!confirm('删除分组「'+g+'」？组内曲目归入「默认」。'))return;
-      trks.forEach(function(t){if(t.group===g)t.group='默认'});
-      saveG(loadG().filter(function(x){return x!==g}));
-      if(currentGroup===g){currentGroup='all'}
-      saveTrks();renderPL();renderTabs();
-    };
-    box.appendChild(b);
-  });
-}
-var addBtn=document.getElementById('groupAddBtn');
-if(addBtn){addBtn.onclick=function(){
-  if(typeof showGroupPicker==='function'){
-    showGroupPicker(function(g){
-      if(g){var l=loadG();if(l.indexOf(g)<0){l.push(g);saveG(l)}}
-      renderTabs();
-    });
-  }
-}}
-if(typeof showGroupPicker==='function'&&!showGroupPicker._jzWrapped){
-  var _o=showGroupPicker;
-  window.showGroupPicker=function(cb){
-    _o(function(g){
-      if(g){var l=loadG();if(l.indexOf(g)<0){l.push(g);saveG(l)}}
-      renderTabs();
-      if(cb)cb(g);
-    });
-  };
-  window.showGroupPicker._jzWrapped=1;
-}
-if(typeof renderPL==='function'&&!window.renderPL._grpWrapped){
-  var _r=window.renderPL;
-  window.renderPL=function(){ _r.apply(this,arguments); renderTabs(); };
-  window.renderPL._grpWrapped=1;
-}
-renderTabs();
-})();
-</script>
+
 
 
 <script>
