@@ -1,85 +1,65 @@
-# 音频播放器 (hanako-audio-player)
+# Hana Audio Player
 
-Hana 的音频播放应用 —— 本地音乐与在线音乐播放、歌词横幅、播放凭证。
-
-从 v1 插件迁移到 **v2 App 架构**（`manifestVersion: 2`）。
+Hana 的音频播放器 App：本地音乐与在线音乐播放，歌词驱动的双模式视觉舞台。
 
 ## 功能
 
-| 功能 | 说明 |
-|---|---|
-| **在线音乐** | 经 Meting 节点搜索/播放，302 直链，不经后端代理 |
-| **本地音乐** | 导入本机文件（`ctx.resources` 读取，复制进 `media/`） |
-| **播放列表** | 持久化到 `app-data/`，支持分组 / 收藏 / 搜索 |
-| **歌词横幅** | 播放时把当前歌词行推到会话输入框上方（`ctx.inputBanner`） |
-| **播放凭证** | 配置 cookie 后可取高音质音频（网易云 / QQ 音乐） |
-| **三套主题** | default / spectrum / waveform（内联在 `ui/index.html`） |
-| **横竖版** | 卡片右上角 ⇆ 切换 |
+**播放**
+- 本地文件 / 文件夹扫描导入（mp3 / wav / ogg / flac / m4a，Range 流式播放，拖进度条不卡）
+- 在线搜索与直链播放（网易云 / QQ / 酷狗，meting 公共节点，多节点自动降级）
+- 粘贴链接直接导入：**歌单**（整张）和**单曲**都支持
+- 播放列表分组：固定来源分组 + 自建分组（持久化，可右键移动 / 重命名 / 删除）
+
+**歌词**
+- 自动匹配：播放即按曲名搜索歌词，五源回退
+- 逐字歌词：TTML（AMLL 歌词数据库）优先，行级 LRC 兜底
+- **离线歌词库**：匹配过的歌词自动落盘（app-data/lyrics/），离线也能出词
+- 歌词横幅：当前行实时推到会话输入框上方
+
+**视觉舞台**（顶栏三模式胶囊切换）
+- **标准**——黑胶唱盘（播放旋转 / 暂停即停）+ 队列
+- **PV**——文字 PV 舞台：[JIZURA](https://github.com/852wa/JIZURA) 式随机排版引擎，21 种构图每行抽签（中央 / 竖排 / 斜带 / 円環 / 星散 / 連行…），🎲 骰子或 R 键一键重摇（おまかせ）。逐字扫光用 [folia](https://github.com/chthollyphile/folia-major) 的 MonetGlow 包络公式（smoothstep 升起→驻留→衰减），帧级同步音频（rAF 驱动，不走 4Hz 的 timeupdate）。封面取色背景、全局漂浮粒子、前后行参与排版
+- **歌词**——AMLL 式滚动窗：当前行居中放大，焦外虚化，逐字高亮
+
+**主题**
+- 配色面板内置多套预设（含金夜 / 暗夜纯黑），PV 风格可独立于主题切换
 
 ## 安装
 
-1. 把本目录（或解压后的 zip）放进 `<HANA_HOME>/apps/`。
-   **目录名必须一字不差等于 `manifest.id`（`hanako-audio-player`）。**
-2. 打开 Market → Installed → App，批准该应用。
-3. 之后改代码在详情页 Reload 即可（改 `tools/` 或 `index.js` 需重启宿主）。
+1. 把本仓库目录放进 `<HANA_HOME>/apps/hanako-audio-player`（目录名须与 `manifest.id` 一致）
+2. Hana → Market → Installed → 批准该应用
+3. 之后改代码只需在详情页 Reload
 
 最低 Hana 版本：`0.946.2`。
 
-## 播放凭证（高音质）
+## 可选：完整音源
 
-在 `app-data/hanako-audio-player/cookies.env` 里填登录 cookie：
+在 `app-data/hanako-audio-player/cookies.env` 里配置网易云 / 腾讯的登录 cookie，可向 full-url 端点换完整音频（没有则回退试听版）：
 
 ```
 NETEASE_COOKIE=MUSIC_U=xxx; __csrf=xxx; ...
 TENCENT_COOKIE=uin=xxx; qqmusic_key=xxx; ...
 ```
 
-- **不填也能用** —— 走试听版，`full-url` 端点自动回退。
-- 文件格式：每行 `KEY=VALUE`，`#` 开头是注释。
-- 登录态失效时，播放器会 toast 提示。
-
-## 目录结构
+## 开发
 
 ```
-manifest.json          应用清单（v2）
-index.js               入口：apply(ctx)
-lib/
-  state.js             播放队列 + 会话粘性
-  meting.js            Meting 节点搜索 / 歌词
-  cookies.js           播放凭证读取
-  register-tools.js    工具注册
-  register-routes.js   后端路由
-tools/
-  play.js              audio_play：入队 + 投递播放卡
-  list-music.js        audio_list_music：读播放列表
-ui/
-  index.html           主卡（自包含：CSS/JS/主题全内联）
-  standalone.html      拆窗版（同内容，body class 不同）
-  sdk.js               卡片侧 SDK
-  face.png             卡片封面
-  _build.json          构建标记（看门狗自刷新用）
-assets/icon.svg        应用图标
+tools/inject-*.mjs   功能注入脚本（可重复执行，断言锚点命中恰好 1 次）
+tools/fix-*.mjs      修复脚本
+tools/bump-build.mjs 构建号三处同步（_build.json + index.html + standalone.html）
 ```
 
-## 工具接口
+**两条铁律**：
+- `ui/index.html` 与 `ui/standalone.html` 是内容相同的双副本——改动必须同步，改完跑 `bump-build.mjs`
+- 主 script 是一整个大 IIFE——需要访问内部变量的代码必须注入到 IIFE 内部（以现有代码为锚点），独立 script 块只能做纯 DOM/CSS 操作
 
-| 工具 | 说明 |
-|---|---|
-| `audio_play` | 播放音频。`source` 传本地路径或在线 URL |
-| `audio_list_music` | 列播放列表，支持 `keyword` / `group` / `limit` |
+## 致谢
 
-## 实现要点
+- [JIZURA](https://github.com/852wa/JIZURA)（852話）——文字 PV 排版引擎的灵感与部件语义
+- [folia-major](https://github.com/chthollyphile/folia-major)——Monet 动效公式（光晕包络 / 逐字插值 / 色调衰减）
+- [AMLL TTML DB](https://github.com/Steve-xmh/amll-ttml-db)——逐字歌词数据库
+- Meting 公共节点——搜索 / 歌词 / 直链
 
-- **在线播放不代理**：Meting 节点 302 到 CDN 直链，前端 `<audio>` 直接播，
-  绕开 v2 的响应体上限（`ctx.network.fetch` 默认 5 MiB）。
-- **卡片鉴权**：v2 的 app 路由全部要求凭据。iframe URL 带 `appSurfaceSession`，
-  但 `<audio src>` / `<img src>` / ESM import 是浏览器自发请求、不带票 —— 
-  `ui/index.html` 里注入了补票 shim 处理这三种情况。
-- **会话粘性**：卡片拿不到 `sessionPath`（宿主只给 `appId/slot/cardInstanceId`），
-  所以经 `ctx.bus.subscribe` 的回调第二参数自动捕获，并持久化。
-- **自刷新**：`ui/_build.json` + 页面轮询，构建标记变化时自动 reload，
-  改 UI 不必重启宿主。
+## License
 
-## 许可证
-
-见 `LICENSE`。商用授权见 `COMMERCIAL-LICENSE.md`。
+MIT

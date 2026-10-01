@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "0922210000";
+  window.__HANA_BUILD = "1001195950";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -2668,6 +2668,142 @@ try {
   body.player-popup .np-actions .icon-btn { width: 28px; height: 28px; padding: 4px; }
   body.player-popup .np-actions .icon-btn svg { width: 16px; height: 16px; }
   body.player-popup .lyrics-section { max-height: none; margin-top: 12px; }
+
+  /* ══ 歌词模式 = PV 演出（头部 lyricModeBtn 开关）══════════════
+   *
+   * 不是阅读模式的放大版。滚动列表退到幕后（visibility:hidden，
+   * 藏形不藏身 —— 卡拉 OK 逐帧和高亮逻辑还吊在它身上，display:none
+   * 会让 lyricBody.clientHeight=0、那套循环全停）；台前一次只唱一行：
+   * 上一行淡作残影，当前行居中大字、随低频呼吸，下一行压暗垫底。
+   *
+   * 呼吸吃音频反应回路已算好的 --react-level（低频能量 0~1）。
+   * 反应开关没开或音源没 CORS 时它是 0 —— 字不动，无副作用。
+   *
+   * 全部规则带 :not(.view-compact)：浓缩卡片保持原样。 */
+  body.lyrics-mode:not(.view-compact) .player-right { display: none !important; }
+  body.lyrics-mode:not(.view-compact) .np-cover { display: none; }
+  body.lyrics-mode:not(.view-compact) .np-actions { display: none; }
+  body.lyrics-mode:not(.view-compact) .now-playing-section {
+    flex: 1; min-height: 0; padding-bottom: 4px; position: relative;
+  }
+  body.lyrics-mode:not(.view-compact) .lyrics-section {
+    position: absolute; inset: 0; visibility: hidden; pointer-events: none;
+  }
+  body.lyrics-mode:not(.view-compact) .pv-stage { display: flex; }
+  /* 宽版（≥660px 自动分栏）下左栏占满整宽。
+     注意分栏不走 .player-popup 类（那是旧机制），是 media query 驱动的，
+     所以这里也必须写在 media query 里；wide-off（用户手动关分栏）时不动。 */
+  @media (min-width: 660px) {
+    body.lyrics-mode:not(.view-compact):not(.wide-off) .player-left {
+      width: auto; flex: 1 1 auto; border-right: none;
+    }
+  }
+
+  /* 实例徽章：多开窗口时标识“谁在出声”。用户认定为噪音，摘掉。 */
+  .inst-badge { display: none !important; }
+
+  /* ── 头部防挤 ──
+   * 窄宽度下标题“播放器”会竖着挤成三行，还顶着徽章和七个按钮。
+   * 标题不许换行、让 header-left 可收缩；再窄就直接把标题文字收掉（图标还在）。
+   * 歌词模式下标题也是冗余信息，一并收。 */
+  .header { gap: 8px; }
+  .header-left { min-width: 0; overflow: hidden; flex-shrink: 1; }
+  .header-title { white-space: nowrap; }
+  @media (max-width: 560px) {
+    body:not(.view-compact) .header-title { display: none; }
+  }
+  body.lyrics-mode:not(.view-compact) .header-title { display: none; }
+
+  .pv-stage {
+    display: none;
+    position: relative;
+    flex: 1; min-height: 0; width: 100%;
+    overflow: hidden;
+    /* 音频反应开着时，整个舞台随低频轻微呼吸（拿不到数据就是 0，不动） */
+    transform: scale(calc(1 + var(--react-level, 0) * .03));
+    transition: transform .12s linear;
+    /* AMLL 式上下渐隐：轨道两端淡没 */
+    -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 13%, #000 87%, transparent 100%);
+    mask-image: linear-gradient(180deg, transparent 0, #000 13%, #000 87%, transparent 100%);
+  }
+  /* 封面背景（folia Monet 层）：封面铺满、高糊、慢漂移 + 可读性罩层。
+     罩层用主题 --bg，明暗主题下文字都可读；漂移走 transform，合成器白干。 */
+  .pv-bg {
+    position: absolute; inset: -6%;
+    background-size: cover; background-position: center;
+    filter: blur(52px) saturate(1.15);
+    opacity: .5;
+    animation: pv-bg-drift 46s ease-in-out infinite alternate;
+    will-change: transform;
+  }
+  .pv-bg::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(120deg,
+      color-mix(in srgb, var(--bg) 60%, transparent) 0%,
+      color-mix(in srgb, var(--bg) 78%, transparent) 55%,
+      color-mix(in srgb, var(--bg) 88%, transparent) 100%);
+  }
+  @keyframes pv-bg-drift {
+    0%   { transform: scale(1.08) translate(0, 0); }
+    50%  { transform: scale(1.14) translate(-1.6%, 1.2%); }
+    100% { transform: scale(1.08) translate(1.4%, -1.2%); }
+  }
+  .pv-track {
+    position: absolute; left: 0; right: 0; top: 0;
+    z-index: 1;
+    /* folia/AMLL 排版：歌词轨左对齐，不是居中 */
+    text-align: left;
+    transition: transform .58s cubic-bezier(.22, .9, .3, 1);
+    will-change: transform;
+  }
+  /* 每行的明暗/模糊/缩放由 JS 按 folia 的 resolveMonetTone 公式逐行写入，
+     CSS 只留结构和过渡——数值不在样式表里写死。
+     过去行比未来行更暗（不对称衰减），非当前行带缩放收缩。 */
+  .pv-line {
+    padding: .45em 8%;
+    font-size: 24px; line-height: 1.55;
+    color: var(--text-dim);
+    opacity: .3; filter: blur(1.1px);
+    transform-origin: left center;
+    transition: opacity .45s ease, filter .45s ease, transform .45s cubic-bezier(.22, .9, .3, 1);
+  }
+  .pv-line[data-d="0"] {
+    font-weight: 700;
+    color: var(--lyric-active-color, var(--accent));
+  }
+  /* 行内卡拉 OK：和列表同一套 --lyric-progress 变量 */
+  @supports (-webkit-background-clip: text) {
+    .pv-line[data-d="0"] {
+      background-image: linear-gradient(
+        90deg,
+        var(--lyric-active-color, var(--accent)) 0 calc(var(--lyric-progress, 1) * 100% - 6%),
+        var(--text-dim) calc(var(--lyric-progress, 1) * 100% + 6%)
+      );
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    /* 逐字（TTML）：行级扫光让位，每字按自己的 --wp 扫亮（软边） */
+    .pv-line[data-d="0"].has-words { background-image: none; }
+    .pv-line[data-d="0"] .pv-w {
+      background-image: linear-gradient(
+        90deg,
+        var(--lyric-active-color, var(--accent)) 0 calc(var(--wp, 0) * 100% - 5%),
+        var(--text-dim) calc(var(--wp, 0) * 100% + 5%)
+      );
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+  }
+  /* TTML 译文行：主行下面的小字 */
+  .pv-tran {
+    margin-top: .35em;
+    font-size: .62em;
+    font-weight: 400;
+    color: var(--text-dim);
+    opacity: .85;
+  }
 
   /* ══ 浓缩视图（?view=compact）════════════════════════════
    *
@@ -3172,6 +3308,176 @@ try {
     max-width: 150px;
     accent-color: var(--accent);
   }
+
+/* ===== JIZURA 歌词模式 ===== */
+body.jizura-mode:not(.view-compact) .pv-stage{ display:flex; }
+body.jizura-mode:not(.view-compact) .pv-track{ transform:none !important; }
+.jizura-dice{ position:absolute; top:10px; right:12px; z-index:30; width:32px; height:32px; border-radius:50%; border:1px solid var(--jz-acc,#D4AF37); background:rgba(0,0,0,.35); color:var(--jz-acc,#D4AF37); font-size:15px; cursor:pointer; display:grid; place-items:center; transition:transform .4s cubic-bezier(.34,1.56,.64,1); backdrop-filter:blur(4px); }
+.jizura-dice:hover{ transform:rotate(120deg) scale(1.1); }
+.jizura-dice:active{ transform:rotate(360deg) scale(.92); }
+.jizura-tag{ position:absolute; top:10px; left:12px; z-index:30; font-family:monospace; font-size:9px; letter-spacing:.12em; color:var(--jz-fg,#F3E7C4); opacity:.55; }
+.jizura-ghost{ position:absolute; font-size:12px; opacity:.25; filter:blur(.6px); letter-spacing:.05em; color:var(--jz-fg,#F3E7C4); }
+.jizura-ghost.up{ top:12%; left:50%; transform:translateX(-50%); }
+.jizura-ghost.dn{ bottom:12%; left:50%; transform:translateX(-50%); }
+.jz-line{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:36px; opacity:0; transition:opacity .45s ease; }
+.jz-line.show{ opacity:1; }
+.jz-w{ display:inline-block; white-space:pre; animation:jzWin .5s cubic-bezier(.22,1,.36,1) both; }
+@keyframes jzWin{ 0%{opacity:0;transform:translateY(.5em)} 100%{opacity:1;transform:none} }
+/* 12 基础 */
+.jz-center{ flex-direction:column; text-align:center; } .jz-center .cur{ font-size:34px; font-weight:800; letter-spacing:.06em; }
+.jz-mix{ text-align:center; line-height:1.15; } .jz-mix .big{ font-size:44px; font-weight:900; } .jz-mix .sm{ font-size:15px; opacity:.65; margin:0 10px; }
+.jz-tategaki{ writing-mode:vertical-rl; flex-direction:row; } .jz-tategaki .cur{ font-size:28px; font-weight:700; letter-spacing:.35em; max-height:300px; }
+.jz-band{ flex-direction:column; } .jz-band .bandrow{ background:var(--jz-acc); color:var(--jz-bg); font-size:24px; font-weight:800; padding:8px 28px; transform:rotate(-2deg); letter-spacing:.08em; box-shadow:0 4px 24px rgba(0,0,0,.25); }
+.jz-tile{ display:grid; grid-template-columns:repeat(3,1fr); gap:4px 14px; align-content:center; justify-items:center; width:100%; } .jz-tile .jz-w{ font-size:26px; font-weight:800; }
+.jz-scatter{ width:100%; height:100%; position:relative; } .jz-scatter .jz-w{ position:absolute; font-size:24px; font-weight:700; }
+.jz-ring svg{ width:100%; height:100%; }
+.jz-wave{ width:100%; display:flex; justify-content:center; align-items:flex-end; gap:2px; } .jz-wave .jz-w{ font-size:30px; font-weight:800; }
+.jz-break{ flex-direction:column; text-align:center; } .jz-break .cur{ font-size:52px; font-weight:900; letter-spacing:.02em; transform:scaleX(1.12); } .jz-break .sub2{ font-size:11px; font-family:monospace; letter-spacing:.3em; margin-top:10px; opacity:.6; }
+.jz-label{ flex-direction:column; } .jz-label .tagbox{ border:2px solid currentColor; padding:10px 22px; font-size:26px; font-weight:800; letter-spacing:.1em; position:relative; background:var(--jz-bg); }
+.jz-label .tagbox::before{ content:'No.'attr(data-n); position:absolute; top:-9px; left:10px; background:var(--jz-acc); color:var(--jz-bg); font-size:9px; font-family:monospace; padding:1px 6px; letter-spacing:.15em; }
+.jz-type{ font-family:'Consolas',monospace; font-size:22px; font-weight:700; letter-spacing:.04em; }
+.jz-type .caret{ display:inline-block; width:.6em; height:1.1em; background:var(--jz-acc); vertical-align:-0.15em; margin-left:2px; animation:jzBlink 1s steps(1) infinite; }
+@keyframes jzBlink{ 50%{opacity:0} }
+.jz-caption{ flex-direction:column; justify-content:flex-end; align-items:flex-start; padding:44px; }
+.jz-caption .capbar{ background:var(--jz-bg); border:1px solid currentColor; font-size:20px; font-weight:700; padding:8px 18px; box-shadow:4px 4px 0 var(--jz-acc); }
+/* 7 补齐 */
+.jz-diag{ overflow:hidden; }
+.jz-diag .bd{ position:absolute; width:200%; left:-50%; top:50%; background:var(--jz-acc); height:74px; transform:translateY(-50%) rotate(-14deg); opacity:.9; }
+.jz-diag .bd2{ height:14px; background:var(--jz-fg); opacity:.15; transform:translateY(-50%) rotate(-14deg) translateY(-92px); }
+.jz-diag .dt{ position:relative; z-index:2; color:var(--jz-bg); font-weight:800; font-size:30px; letter-spacing:.1em; transform:rotate(-14deg); }
+.jz-circle .disc{ position:absolute; width:230px; height:230px; border-radius:50%; background:radial-gradient(circle at 40% 35%,var(--jz-acc),transparent 140%); box-shadow:0 0 60px color-mix(in srgb,var(--jz-acc) 40%,transparent); }
+.jz-circle .ct{ position:relative; z-index:2; color:var(--jz-bg); font-weight:800; font-size:19px; text-align:center; width:170px; line-height:1.4; }
+.jz-stack .sk{ font-size:38px; font-weight:900; letter-spacing:.04em; white-space:nowrap; text-shadow:0 6px 0 color-mix(in srgb,var(--jz-fg) 70%,transparent),0 12px 0 color-mix(in srgb,var(--jz-fg) 45%,transparent),0 18px 0 color-mix(in srgb,var(--jz-fg) 25%,transparent),0 24px 0 color-mix(in srgb,var(--jz-fg) 12%,transparent); }
+.jz-pill .pd{ position:absolute; width:88px; height:30px; border-radius:20px; border:1.5px solid var(--jz-acc); opacity:.5; }
+.jz-pill .pt2{ top:16%; left:50%; margin-left:-44px; } .jz-pill .pb2{ bottom:16%; left:50%; margin-left:-44px; }
+.jz-pill .pl{ background:linear-gradient(135deg,var(--jz-acc),color-mix(in srgb,var(--jz-acc) 55%,#000)); color:var(--jz-bg); font-weight:800; font-size:26px; letter-spacing:.08em; padding:14px 34px; border-radius:34px; position:relative; z-index:2; box-shadow:0 6px 30px color-mix(in srgb,var(--jz-acc) 35%,transparent); }
+.jz-cond .cd{ font-size:44px; letter-spacing:.14em; transform:scaleX(.48) scaleY(1.22); font-weight:800; white-space:nowrap; text-shadow:0 0 24px color-mix(in srgb,var(--jz-acc) 35%,transparent); }
+.jz-title{ flex-direction:column; }
+.jz-title .tt{ font-size:64px; font-weight:900; letter-spacing:.22em; color:var(--jz-acc); text-shadow:0 0 40px color-mix(in srgb,var(--jz-acc) 45%,transparent); padding-left:.22em; }
+.jz-title .sb{ font-size:12px; letter-spacing:.4em; color:var(--jz-fg); opacity:.6; margin-top:16px; font-family:monospace; }
+.jz-inter-c{ flex-direction:column; }
+.jz-inter-c .dg{ position:absolute; inset:0; opacity:.3; background-image:radial-gradient(color-mix(in srgb,var(--jz-acc) 45%,transparent) 1.5px,transparent 2px); background-size:26px 26px; }
+.jz-inter-c .ct2{ position:relative; z-index:2; font-size:52px; letter-spacing:.1em; font-family:monospace; color:var(--jz-acc); font-weight:700; font-variant-numeric:tabular-nums; }
+.jz-inter-r svg{ position:absolute; inset:0; width:100%; height:100%; }
+.jz-inter-r circle{ fill:none; stroke:var(--jz-acc); stroke-width:.8; transform-origin:center; transform-box:fill-box; animation:jzBr 3.2s ease-in-out infinite; }
+.jz-inter-r circle:nth-child(2){ animation-delay:.7s; } .jz-inter-r circle:nth-child(3){ animation-delay:1.4s; } .jz-inter-r circle:nth-child(4){ animation-delay:2.1s; }
+@keyframes jzBr{ 0%,100%{transform:scale(.85);opacity:.12} 50%{transform:scale(1.1);opacity:.7} }
+.jz-inter-r .nt{ position:relative; z-index:2; font-size:34px; color:var(--jz-acc); }
+
+
+/* ===== 黑胶封面（主 UI 对齐设计稿） ===== */
+body:not(.view-compact) .np-cover {
+  border-radius: 50% !important;
+  position: relative;
+  box-shadow: 0 0 0 5px var(--card-bg, #141210), 0 0 0 6px var(--border), 0 12px 32px rgba(0,0,0,.45) !important;
+}
+body:not(.view-compact) .np-cover::before {
+  content: '';
+  position: absolute; inset: 0; border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, rgba(0,0,0,.14) 0deg 2deg, transparent 2deg 5deg);
+  pointer-events: none;
+}
+body:not(.view-compact) .np-cover::after {
+  content: '';
+  position: absolute; inset: 41%; border-radius: 50%;
+  background: var(--card-bg, #141210);
+  box-shadow: inset 0 0 0 2px var(--border);
+  pointer-events: none;
+}
+body:not(.view-compact) .np-cover.spinning {
+  animation: vinylSpin 14s linear infinite;
+}
+@keyframes vinylSpin { to { transform: rotate(360deg); } }
+/* 封面图在黑胶里保持圆形 */
+body:not(.view-compact) .np-cover img { border-radius: 50%; }
+
+
+/* JIZURA 默认跟随 App 主题：内联没设 --jz-* 时走 App 变量 */
+.pv-stage { --jz-bg: var(--card-bg); --jz-fg: var(--text); --jz-acc: var(--accent); }
+
+
+/* ===== 主 UI 对齐设计稿 ===== */
+/* 顶栏三模式胶囊 */
+.mode-caps { display:flex; border:1px solid var(--accent); border-radius:20px; overflow:hidden; margin-left:auto; margin-right:8px; }
+.mode-caps .mc { padding:4px 14px; font-size:11px; cursor:pointer; user-select:none; opacity:.55; transition:all .2s; color:var(--text); background:transparent; border:none; font-family:inherit; }
+.mode-caps .mc + .mc { border-left:1px solid var(--accent); }
+.mode-caps .mc.on { opacity:1; font-weight:700; background:var(--accent); color:var(--card-bg); }
+/* 原歌词模式图标按钮由胶囊接管 */
+body:not(.view-compact) #lyricModeBtn { display:none; }
+/* 左栏纵排居中（设计稿唱盘机） */
+body:not(.view-compact) .now-playing-section { display:flex; flex-direction:column; align-items:center; text-align:center; }
+body:not(.view-compact) .np-cover { order:1; width:clamp(110px, 30vh, 180px) !important; height:clamp(110px, 30vh, 180px) !important; margin:10px 0 10px !important; font-size:56px !important; flex-shrink:0; }
+body:not(.view-compact) .np-info { order:2; display:flex; flex-direction:column; align-items:center; }
+body:not(.view-compact) .np-actions { justify-content:center; }
+body:not(.view-compact) .lyrics-section { order:3; width:100%; }
+body:not(.view-compact) .pv-stage { order:4; }
+/* 分组双排：来源一排、自建一排 */
+.group-selector { flex-wrap:wrap; row-gap:6px; align-items:center; }
+.gs-label { font-size:9px; font-family:monospace; color:var(--text-faint); letter-spacing:.1em; margin-right:2px; }
+.gs-break { flex-basis:100%; height:0; }
+/* 行内组胶囊 */
+.jz-gpill { font-size:8.5px; font-family:monospace; padding:1px 6px; border:1px solid var(--border); border-radius:3px; color:var(--text-faint); flex-shrink:0; }
+
+
+/* ===== 主 UI 修正 ===== */
+.mode-caps { flex-shrink:0; }
+.mode-caps .mc { white-space:nowrap; padding:4px 12px; }
+/* PV/歌词模式下撤销唱盘机纵排，让舞台铺满 */
+body.lyrics-mode:not(.view-compact) .now-playing-section { align-items:stretch !important; text-align:left !important; }
+body.lyrics-mode:not(.view-compact) .np-info { display:none !important; }
+body.lyrics-mode:not(.view-compact) .pv-stage { flex:1 !important; width:100% !important; }
+
+
+/* JIZURA 元素只在歌词模式显示 */
+body:not(.jizura-mode) .jizura-dice,
+body:not(.jizura-mode) .jizura-style-bar,
+body:not(.jizura-mode) .jizura-tag,
+body:not(.jizura-mode) .jizura-ghost { display:none !important; }
+
+
+/* ===== JIZURA 舞台塌缩修复 ===== */
+/* pvTrack 在 folia 里靠内容撑高，JIZURA 的行是 absolute 不撑高 → 铺满舞台 */
+body.jizura-mode:not(.view-compact) .pv-track { position:absolute !important; inset:0 !important; height:auto !important; transform:none !important; }
+/* JIZURA 模式不要封面糊开背景，用风格底色 */
+body.jizura-mode:not(.view-compact) .pv-bg { display:none; }
+body.jizura-mode:not(.view-compact) .pv-stage { background:var(--jz-bg) !important; color:var(--jz-fg); }
+
+
+/* 明暗切换按钮下线（主题由配色面板统一管理） */
+#themeBtn { display:none !important; }
+
+
+/* 右键菜单背景：--card 变量不存在导致透明，改用 --card-bg */
+.pl-ctx-menu { background: var(--card-bg) !important; }
+
+
+/* ===== 布局溢出修复 ===== */
+/* 标准模式纵排：歌词区不再吃掉整个剩余空间 */
+body:not(.view-compact):not(.lyrics-mode) .now-playing-section .lyrics-section { flex:0 1 auto; max-height:22%; overflow-y:auto; }
+/* header 保险：任何情况下完整视图的顶栏都在文档流且可点 */
+body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
+/* ===== cadenza「星散」排版 ===== */
+.jz-cad{ width:100%; height:100%; position:relative; }
+.jz-cad .jz-w{ position:absolute; font-weight:800; letter-spacing:.02em; }
+.jz-cad .deco{ position:absolute; pointer-events:none; opacity:.35; animation:jzDrift 9s ease-in-out infinite alternate; }
+@keyframes jzDrift{ 0%{ transform:translate(0,0) rotate(0deg);} 100%{ transform:translate(10px,-14px) rotate(18deg);} }
+
+
+/* ===== JIZURA 氛围层 ===== */
+.jz-particles{ position:absolute; inset:0; pointer-events:none; overflow:hidden; z-index:1; }
+.jz-particles i{ position:absolute; border-radius:50%; background:var(--jz-acc); opacity:0; animation:jzFloat linear infinite; }
+.jz-particles i.sq{ border-radius:1px; background:none; border:1px solid var(--jz-acc); }
+@keyframes jzFloat{ 0%{ transform:translateY(30px) rotate(0deg); opacity:0 } 15%{ opacity:.28 } 80%{ opacity:.22 } 100%{ transform:translateY(-70px) rotate(160deg); opacity:0 } }
+/* 前后行 ghost 清晰化（参与排版，不再只是模糊影子） */
+.jizura-ghost{ opacity:.5; filter:none; font-size:13px; }
+/* 連行布局 */
+.jz-ren{ flex-direction:column; gap:14px; text-align:center; }
+.jz-ren .prev,.jz-ren .next{ font-size:15px; opacity:.5; letter-spacing:.06em; }
+.jz-ren .cur{ font-size:34px; font-weight:800; letter-spacing:.05em; }
+.jz-ren .rule{ width:56px; height:2px; background:var(--jz-acc); margin:2px auto; opacity:.7; }
+/* pill 装饰胶囊里的小字 */
+.jz-pill .pd{ display:flex; align-items:center; justify-content:center; font-size:9px; color:var(--jz-fg); opacity:.65; width:auto; min-width:88px; padding:0 12px; white-space:nowrap; }
+
 </style><script>
 (function () {
   // 防线：卡片里不允许开新窗口（包括别的脚本后面又接上的）
@@ -4610,7 +4916,7 @@ if (typeof module !== 'undefined' && module.exports) {
 <div class="header">
   <div class="header-left">
     <div class="header-icon">♫</div>
-    <span class="header-title">播放器</span>
+    <span class="header-title">HANA PLAYER</span>
   </div>
   <div class="header-actions">
     <button class="icon-btn" id="fontSizeBtn" title="字号设置">
@@ -4624,6 +4930,9 @@ if (typeof module !== 'undefined' && module.exports) {
     </button>
     <button class="icon-btn" id="themeBtn" title="切换主题">
       <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+    </button>
+    <button class="icon-btn" id="lyricModeBtn" title="歌词模式">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="6" x2="19" y2="6"/><line x1="5" y1="12" x2="15" y2="12"/><line x1="5" y1="18" x2="17" y2="18"/></svg>
     </button>
     <button class="icon-btn" id="popBtn" title="弹出窗口">
       <svg viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
@@ -4652,6 +4961,8 @@ if (typeof module !== 'undefined' && module.exports) {
   <div class="lyrics-section">
     <div class="lyric-body open" id="lyricBody"></div>
   </div>
+  <!-- PV 舞台：folia 式滚动窗 —— 整条歌词轨道，当前行滑到中心，焦外虚化 -->
+  <div class="pv-stage" id="pvStage"><div class="pv-bg" id="pvBg"></div><div class="pv-track" id="pvTrack"></div></div>
 </div>
 
 <!-- Controls Section -->
@@ -4729,6 +5040,8 @@ if (typeof module !== 'undefined' && module.exports) {
     <button class="group-tab" data-group="online">在线音乐</button>
     <button class="group-tab" data-group="radio">电台流</button>
     <button class="group-tab" data-group="favorites">我的喜欢</button>
+    <span id="customGroupTabs" style="display:contents"></span>
+    <button class="group-tab" id="groupAddBtn" title="新建分组" style="border-style:dashed;opacity:.7">+</button>
   </div>
   <div class="pl-body open" id="plBody"></div>
 </div>
@@ -4770,12 +5083,14 @@ if (typeof module !== 'undefined' && module.exports) {
       <button class="platform-btn active" data-server="netease">网易云</button>
       <button class="platform-btn" data-server="tencent">QQ音乐</button>
       <button class="platform-btn" data-server="kugou">酷狗</button>
-      <button class="platform-btn" data-server="kuwo">酷我</button>
-      <button class="platform-btn" data-server="baidu">百度</button>
     </div>
     <div class="playlist-import">
       <input type="text" class="import-input" id="playlistInput" placeholder="粘贴歌单 ID 或链接…">
       <button class="import-btn" id="playlistGo">导入歌单</button>
+    </div>
+    <div class="playlist-import">
+      <input type="text" class="import-input" id="songInput" placeholder="粘贴单曲链接…">
+      <button class="import-btn" id="songGo">导入单曲</button>
     </div>
     <div class="local-import">
       <div class="local-import-title">📁 本地音乐导入</div>
@@ -8259,7 +8574,19 @@ function load(i) {
       .then(function(res){
         if(res.ok && res.results && res.results.length) {
           for(var j=0;j<res.results.length;j++){
-            if(res.results[j].lrc) { t.lrcUrl=res.results[j].lrc; saveTrks(); break; }
+            if(res.results[j].lrc) {
+              t.lrcUrl=res.results[j].lrc;
+              saveTrks();
+              // 歌词落盘：拉到原文后写入离线歌词库
+              (function(name, url){
+                fetch(API+'/widget/api/music/lrc-proxy?url='+encodeURIComponent(url)).then(function(r){return r.text();}).then(function(raw){
+                  if(raw && raw.length>=10){
+                    fetch(API+'/widget/api/lrc/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,lrc:raw})}).catch(function(){});
+                  }
+                }).catch(function(){});
+              })(t.name, t.lrcUrl);
+              break;
+            }
           }
         }
       }).catch(function(){});
@@ -8975,6 +9302,73 @@ document.querySelectorAll('.group-tab').forEach(function(btn) {
   });
 });
 
+// ── 自建分组 tab（主 IIFE 内，直接访问 trks/currentGroup/renderPL/showGroupPicker） ──
+(function(){
+    var CKEY='hanako_audio_custom_groups';
+    var FIXED=['本地音乐','在线音乐','TTS/语音','电台流','默认','我的喜欢'];
+    function loadG(){try{return JSON.parse(localStorage.getItem(CKEY))||[]}catch(e){return[]}}
+    function saveG(l){try{localStorage.setItem(CKEY,JSON.stringify(l))}catch(e){}}
+    function knownGroups(){
+      var l=loadG().slice(),seen={};l.forEach(function(g){seen[g]=1});
+      trks.forEach(function(t){var g=t&&t.group;if(g&&FIXED.indexOf(g)<0&&!seen[g]){seen[g]=1;l.push(g)}});
+      return l;
+    }
+    function injectPills(){
+      var plBody=document.getElementById('plBody');
+      if(!plBody)return;
+      plBody.querySelectorAll('.pl-group-body').forEach(function(body){
+        var g=body.getAttribute('data-group')||'';
+        if(!g)return;
+        body.querySelectorAll('.pl-item').forEach(function(item){
+          if(item.querySelector('.jz-gpill'))return;
+          var name=item.querySelector('.pl-name');
+          if(!name)return;
+          var pill=document.createElement('span');
+          pill.className='jz-gpill';pill.textContent=g;
+          name.after(pill);
+        });
+      });
+    }
+    function renderTabs(){
+      var box=document.getElementById('customGroupTabs');if(!box)return;
+      box.innerHTML='';
+      knownGroups().forEach(function(g){
+        var b=document.createElement('button');
+        b.className='group-tab'+(currentGroup===g?' active':'');
+        b.textContent=g;b.title='点击过滤 · 右键删除';
+        b.onclick=function(){
+          document.querySelectorAll('.group-tab').forEach(function(x){x.classList.remove('active')});
+          b.classList.add('active');
+          currentGroup=g;
+          renderPL();
+        };
+        b.oncontextmenu=function(e){
+          e.preventDefault();
+          if(!confirm('删除分组「'+g+'」？组内曲目归入「默认」。'))return;
+          trks.forEach(function(t){if(t.group===g)t.group='默认'});
+          saveG(loadG().filter(function(x){return x!==g}));
+          if(currentGroup==='' || currentGroup===g){currentGroup='all'}
+          saveTrks();renderPL();
+        };
+        box.appendChild(b);
+      });
+    }
+    var addBtn=document.getElementById('groupAddBtn');
+    if(addBtn)addBtn.onclick=function(){
+      showGroupPicker(function(g){
+        if(g){var l=loadG();if(l.indexOf(g)<0){l.push(g);saveG(l)}}
+        renderTabs();
+      });
+    };
+    var _rpl=renderPL;
+    renderPL=function(){
+      _rpl.apply(this,arguments);
+      renderTabs();
+      injectPills();
+    };
+    renderTabs();
+  })();
+
 // 修改 renderPL 函数以支持分组过滤
 var originalRenderPL = renderPL;
 renderPL = function() {
@@ -8995,7 +9389,7 @@ renderPL = function() {
       'favorites': '我的喜欢'
     };
     
-    var targetGroup = groupMap[currentGroup];
+    var targetGroup = groupMap[currentGroup] || currentGroup;
     if (targetGroup) {
       groupHeaders.forEach(function(header) {
         var groupName = header.querySelector('.pl-group-name').textContent;
@@ -9289,6 +9683,33 @@ document.getElementById('musicResults').addEventListener('click', function(e){
 document.getElementById('playlistGo').addEventListener('click', doPlaylistImport);
 document.getElementById('playlistInput').addEventListener('keydown', function(e){ if(e.key==='Enter') doPlaylistImport(); });
 
+document.getElementById('songGo').addEventListener('click', doSongImport);
+document.getElementById('songInput').addEventListener('keydown', function(e){ if(e.key==='Enter') doSongImport(); });
+
+function doSongImport(){
+  var raw=document.getElementById('songInput').value.trim();
+  if(!raw) return;
+  var sv=document.getElementById('musicServer').value;
+  var el=document.getElementById('musicResults');
+  el.innerHTML='<div class="music-loading">获取单曲中…</div>';
+  fetch(API+'/widget/api/music/song?id='+encodeURIComponent(raw)+'&server='+sv).then(function(r){return r.json();}).then(function(res){
+    if(!res.ok||!res.track||!res.track.url){ el.innerHTML='<div class="music-empty">无法获取该单曲</div>'; return; }
+    var t=res.track;
+    // 去重：已在队列则只提示
+    var exists=trks.some(function(x){return x.url===t.url;});
+    if(exists){ el.innerHTML='<div class="music-empty">已在队列中</div>'; return; }
+    showGroupPicker(function(groupName){
+      if(!groupName){ el.innerHTML='<div class="music-empty">已取消（未选分组）</div>'; return; }
+      trks.push({ name:(t.title||'未命名')+(t.author?(' - '+t.author):''), url:t.url, pic:t.pic||'', lrcUrl:t.lrc||'', mode:'在线', dur:0, group:groupName });
+      saveTrks(); renderPL();
+      el.innerHTML='<div class="music-empty">已加入「'+groupName+'】：'+(t.title||'')+'</div>';
+      document.getElementById('songInput').value='';
+    });
+    el.innerHTML='<div class="music-empty">已加入队列：'+(t.title||'')+'</div>';
+    document.getElementById('songInput').value='';
+  }).catch(function(){ el.innerHTML='<div class="music-empty">获取失败</div>'; });
+}
+
 function doPlaylistImport(){
   var raw=document.getElementById('playlistInput').value.trim();
   if(!raw) return;
@@ -9509,6 +9930,73 @@ function doPlaylistImport(){
   });
   }
 
+  // ── 歌词模式 ──
+  // 开关状态持久化在 localStorage。
+  // 进模式时强制 lyricOpen=true：卡拉 OK 逐帧和 timeupdate 高亮
+  // 都守在 lyricOpen 上，面板关着进模式会得到一面不动的歌词墙。
+  (function(){
+    var btn=document.getElementById('lyricModeBtn');
+    if(!btn) return;
+    var KEY='hanako_audio_lyrics_mode';
+    function openPanel(){
+      lyricOpen=true;
+      lyricBody.classList.add('open');
+      if(lyricToggle) lyricToggle.classList.add('open');
+    }
+    function apply(on){
+      document.body.classList.toggle('lyrics-mode',on);
+      btn.style.color=on?'var(--accent)':'';
+      btn.title=on?'退出歌词模式':'歌词模式';
+      try{ localStorage.setItem(KEY,on?'1':'0'); }catch(e){}
+      // 进模式时舞台从 display:none 出来，中心偏移要在布局落地后重算
+      if(on) requestAnimationFrame(function(){ requestAnimationFrame(function(){ pvCenter(_pvIdx>=0?_pvIdx:0); }); });
+    }
+    btn.addEventListener('click',function(){
+      // 三档循环：标准 → PV(lyrics-mode) → 歌词(jizura-mode) → 标准
+      var hasLyr=document.body.classList.contains('lyrics-mode');
+      var hasJiz=document.body.classList.contains('jizura-mode');
+      if(!hasLyr){
+        // 标准 → PV
+        openPanel();
+        apply(true);
+      }else if(hasLyr && !hasJiz){
+        // PV → 歌词
+        document.body.classList.add('jizura-mode');
+        btn.style.color='var(--accent)';
+        btn.title='退出歌词模式';
+        renderPv();
+      }else{
+        // 歌词 → 标准
+        document.body.classList.remove('jizura-mode');
+        renderPv();
+        apply(false);
+      }
+      updateBtnIcon();
+    });
+    function updateBtnIcon(){
+      var hasLyr=document.body.classList.contains('lyrics-mode');
+      var hasJiz=document.body.classList.contains('jizura-mode');
+      if(hasJiz){
+        btn.style.color='var(--accent)';
+        btn.title='PV 模式（文字PV）— 点击退出';
+      }else if(hasLyr){
+        btn.style.color='var(--accent)';
+        btn.title='歌词模式 — 点击进 PV';
+      }else{
+        btn.style.color='';
+        btn.title='歌词模式';
+      }
+    }
+    try{
+      var saved=localStorage.getItem(KEY);
+      // 只恢复标准/PV，不自动进 JIZURA（jizura-mode 不持久化）
+      if(saved==='1'){ openPanel(); apply(true); }
+      // 清掉可能残留的 jizura-mode
+      document.body.classList.remove('jizura-mode');
+      updateBtnIcon();
+    }catch(e){}
+  })();
+
   // ── 歌词结构化数据缓存 ──
   var LRC_CACHE_KEY='hanako_audio_lrc_parsed_cache';
   var LRC_CACHE_MAX=30;
@@ -9556,13 +10044,14 @@ function doPlaylistImport(){
   //   · 以常见的署名词开头（中英对照都算）
   //   · 且冒号出现在很靠前的位置（真正的歌词不会在第二三个字就冒号）
   //   · 或整行就是 【xx】/ [xx] 包起来的署名
-  var CREDIT_HEAD = /^(作词|作曲|编曲|制作人|出品|发行|监制|混音|母带|录音|吉他|贝斯|鼓|键盘|和声|和音|合声|配唱|演唱|演奏|朗诵|旁白|企划|统筹|语势|后期|美术|设计|策划|封面|翻译|校对|特别感谢|Assistant|Producer|Composer|Lyricist|Arranger|Mixing|Mastering|Vocal|Guitar|Bass|Drums|Piano|Strings|OP|SP|词|曲)/i;
+  var CREDIT_HEAD = /^(作词|作曲|编曲|制作人|出品|发行|监制|混音|母带|录音|吉他|贝斯|鼓|键盘|和声|和音|合声|配唱|演唱|演奏|朗诵|旁白|企划|统筹|语势|后期|美术|设计|策划|封面|翻译|校对|特别感谢|助理|工程|工程师|Assistant|Producer|Composer|Lyricist|Arranger|Mixing|Mastering|Engineer|Studio|Vocal|Guitar|Bass|Drums|Piano|Strings|OP|SP|词|曲|Recording|Scoring|谱务|乐器|独奏|Violin|Cello|Saxophone|Trumpet|Trombone|Harmonica|Keyboard|Synthesizer|Program|Programming|Editing|Chorus|Backing|Percussion|Viola|Flute|Oboe|Clarinet|Harp|Organ|Accordion|Lute|二胡|琵琶|古筝|笛|箫|唢呐|扬琴|柳琴|阮|埙|编钟)/i;
 
   function looksLikeCredit(txt) {
     if (/^[【\[]/.test(txt)) return true;              // 【】/[] 包起来的通常也是署名
     if (!CREDIT_HEAD.test(txt)) return false;
-    // 冒号必须出现在前 24 个字内；真歌词很少在开头就冒号
-    return /[:：]/.test(txt.slice(0, 24));
+    // 冒号必须出现在前 34 个字内；真歌词很少在开头就冒号
+    // （TTML 的英文署名行如 "Assistant Mastering Engineer : …"，冒号在 28 字处，24 的窗口不够）
+    return /[:：]/.test(txt.slice(0, 34));
   }
 
   function parseLrc(raw){
@@ -9582,6 +10071,56 @@ function doPlaylistImport(){
     return result;
   }
 
+  // ── TTML（逐字）解析 ──
+  // AMLL DB 的 TTML：每行 <p begin end>，行内每个字一个 <span begin end>，
+  // 译文在 role=x-translation 的 span 里，背景声部 role=x-bg（嵌套 span，要跳过）。
+  function _ttmlTime(s){
+    if(!s) return 0;
+    s=String(s).trim();
+    var m=s.match(/^(?:(\d+):)?(\d{1,2}):(\d{2}(?:\.\d+)?)$/);
+    if(m) return Math.round(((+m[1]||0)*3600+(+m[2])*60+(+m[3]))*1000);
+    m=s.match(/^([\d.]+)ms$/); if(m) return Math.round(parseFloat(m[1]));
+    m=s.match(/^([\d.]+)s$/); if(m) return Math.round(parseFloat(m[1])*1000);
+    return 0;
+  }
+  function _roleOf(el){
+    if(!el||!el.getAttribute) return '';
+    return el.getAttribute('ttml:role')||el.getAttribute('role')||'';
+  }
+  function parseTtml(raw){
+    if(typeof DOMParser==='undefined') return null;
+    var doc=new DOMParser().parseFromString(raw,'text/xml');
+    if(doc.getElementsByTagName('parsererror').length) return null;
+    var ps=doc.getElementsByTagName('p');
+    var lines=[];
+    for(var i=0;i<ps.length;i++){
+      var p=ps[i];
+      var begin=_ttmlTime(p.getAttribute('begin'));
+      var spans=p.getElementsByTagName('span');
+      var words=[], tran='', main='';
+      for(var j=0;j<spans.length;j++){
+        var sp=spans[j];
+        var role=_roleOf(sp), parentRole=_roleOf(sp.parentNode);
+        if(role==='x-translation'){ tran=(sp.textContent||'').trim(); continue; }
+        if(role==='x-bg'||parentRole==='x-bg') continue;   // 背景声部不进主文本
+        if(role==='x-roman') continue;
+        var wt=sp.textContent||'';
+        if(!wt) continue;
+        main+=wt;
+        if(sp.getAttribute('begin')){
+          var wb=_ttmlTime(sp.getAttribute('begin')), we=_ttmlTime(sp.getAttribute('end'));
+          words.push({time:wb, dur:Math.max(80,we-wb), text:wt});
+        }
+      }
+      main=main.trim();
+      if(!main) continue;
+      if(looksLikeCredit(main)) continue;
+      lines.push({time:begin, end:_ttmlTime(p.getAttribute('end'))||0, text:main, tran:tran, words:words.length?words:null});
+    }
+    lines.sort(function(a,b){return a.time-b.time;});
+    return lines.length?lines:null;
+  }
+
   // 副歌检测
   function detectChorus(data) {
     var countMap = {}, chorusSet = new Set();
@@ -9589,9 +10128,102 @@ function doPlaylistImport(){
     Object.keys(countMap).forEach(function(k) { if (countMap[k] >= 2) chorusSet.add(k); });
     return chorusSet;
   }
+  // ── PV 舞台（folia 式滚动窗）──
+  // 列表退居幕后当数据源；台前是一整条歌词轨道，换行 = 轨道平滑滑动，
+  // 当前行滑到视觉中心，距离越远越暗越糊（焦外虚化）。
+  var pvStage=document.getElementById('pvStage');
+  var pvTrack=document.getElementById('pvTrack');
+  var chorusSetGlobal=new Set();
+  var _pvIdx=-1;
+  var _pvLineEls=[];
+  function renderPv(){
+    if(document.body.classList.contains('jizura-mode')){
+      window._jizuraLrcData=lrcData;
+      if(window.renderJizuraInit)window.renderJizuraInit();
+      return;
+    }
+    if(!pvTrack) return;
+    if(!lrcData.length){
+      pvTrack.innerHTML='<div class="pv-line" data-d="0" style="opacity:.4">暂无歌词</div>';
+      _pvLineEls=pvTrack.querySelectorAll('.pv-line');
+      _pvIdx=-1;
+      pvCenter(0);
+      return;
+    }
+    var html='';
+    for(var i=0;i<lrcData.length;i++){
+      var l=lrcData[i];
+      var isCh=chorusSetGlobal.has(l.text.trim().toLowerCase());
+      var cls='pv-line'+(isCh?' chorus':'')+(l.words?' has-words':'');
+      var inner='';
+      if(l.words){
+        for(var k=0;k<l.words.length;k++) inner+='<span class="pv-w">'+esc(l.words[k].text)+'</span>';
+      } else {
+        inner=esc(l.text);
+      }
+      if(l.tran) inner+='<div class="pv-tran">'+esc(l.tran)+'</div>';
+      html+='<div class="'+cls+'" data-d="3">'+inner+'</div>';
+    }
+    pvTrack.innerHTML=html;
+    _pvLineEls=pvTrack.querySelectorAll('.pv-line');
+    _pvIdx=-1;
+  }
+  function pvCenter(idx){
+    if(!pvStage||!pvTrack||!_pvLineEls.length) return;
+    var el=_pvLineEls[idx];
+    if(!el) return;
+    // 当前行中心对齐舞台中心。scale 是 transform 不影响 offsetTop，量出来就是稳的
+    var y=pvStage.clientHeight/2-(el.offsetTop+el.offsetHeight/2);
+    pvTrack.style.transform='translateY('+y.toFixed(1)+'px)';
+  }
+  // 逐行色调：移植 folia resolveMonetTone——过去行比未来行更暗，
+  // 非当前行随距离收缩（scale）+ 加糊（blur），当前行 scale 1.3 清晰。
+  function _pvTone(waiting, dist){
+    if(dist===0) return {alpha:1, scale:1.3, blur:0};
+    var d=Math.max(dist,1);
+    return {
+      alpha: waiting ? Math.max(.36,.72-(d-1)*.18) : Math.max(.28,.52-(d-1)*.12),
+      scale: Math.max(.68*1.3, 1.3*.72*Math.pow(.9,d-1)),
+      blur:  waiting ? (d===1?.7:1.8+(d-2)*.8) : 1.1+(d-1)*.7
+    };
+  }
+  // 光晕包络：移植 folia resolveMonetGlow——smoothstep 升起 → 峰值驻留 → 行尾后消退
+  function _pvGlow(t,start,end,lineEnd){
+    if(t<=start) return 0;
+    var rise=Math.max(1,end-start)*1.18, peak=start+rise;
+    var tail=Math.max(lineEnd,end+1050);
+    if(t<=peak){ var p=Math.min(1,Math.max(0,(t-start)/rise)); return p*p*(3-2*p); }
+    var r=1-Math.min(1,Math.max(0,(t-peak)/Math.max(180,tail-peak)));
+    return Math.max(0, r*r*(3-2*r));
+  }
+  function pvSync(idx){
+    if(document.body.classList.contains('jizura-mode')){
+      window._jizuraLrcData=lrcData;
+      if(window.renderJizuraLine)window.renderJizuraLine(idx);
+      return;
+    }
+    if(!pvStage || !_pvLineEls.length || idx===_pvIdx) return;
+    _pvIdx=idx;
+    for(var i=0;i<_pvLineEls.length;i++){
+      var d=Math.abs(i-idx);
+      _pvLineEls[i].setAttribute('data-d', d>3?'3':String(d));
+      var tone=_pvTone(i>idx, d);
+      var st=_pvLineEls[i].style;
+      st.opacity=tone.alpha.toFixed(3);
+      st.transform='scale('+tone.scale.toFixed(3)+')';
+      st.filter=tone.blur>0?('blur('+tone.blur.toFixed(1)+'px)'):'none';
+    }
+    pvCenter(idx);
+  }
+  window.addEventListener('resize',function(){ if(_pvIdx>=0) pvCenter(_pvIdx); });
+  renderPv();   // 初始占位（暂无歌词）
+
   function renderLrc(){
-    if(!lrcData.length){ lyricBody.innerHTML='<div class="lyric-line" style="color:var(--text-faint);padding:8px 0">暂无歌词</div>'; return; }
+    if(!lrcData.length){ lyricBody.innerHTML='<div class="lyric-line" style="color:var(--text-faint);padding:8px 0">暂无歌词</div>'; chorusSetGlobal=new Set(); renderPv(); return; }
     var chorusSet = detectChorus(lrcData);
+    chorusSetGlobal = chorusSet;
+    renderPv();
+    _pvIdx = -1;   // 新词表生效，下一拍 highlightLrc 会让 PV 重唱首行
     lyricBody.innerHTML=lrcData.map(function(l,i){
       var isChorus = chorusSet.has(l.text.trim().toLowerCase());
       var cls = isChorus ? 'lyric-line chorus' : 'lyric-line';
@@ -9612,6 +10244,7 @@ function doPlaylistImport(){
         el.style.animation = '';
       }
     });
+    pvSync(idx);
     if(lines[idx]) lines[idx].scrollIntoView({block:'center',behavior:'smooth'});
   }
 
@@ -9639,44 +10272,141 @@ function doPlaylistImport(){
         prog = prog < 0 ? 0 : (prog > 1 ? 1 : prog);
       }
       line.style.setProperty('--lyric-progress', prog.toFixed(3));
+      var pel=_pvLineEls[idx];
+      if(pel){
+        var wl=lrcData[idx] && lrcData[idx].words;
+        if(wl && wl.length){
+          // 逐字：每个字按自己的 begin/dur 扫亮
+          var ws=pel.querySelectorAll('.pv-w');
+          for(var wi=0; wi<wl.length && wi<ws.length; wi++){
+            var wp2=(timeMs-wl[wi].time)/wl[wi].dur;
+            wp2=wp2<0?0:(wp2>1?1:wp2);
+            ws[wi].style.setProperty('--wp', wp2.toFixed(3));
+          }
+        } else {
+          pel.style.setProperty('--lyric-progress', prog.toFixed(3));
+        }
+        // 光晕包络（folia resolveMonetGlow）：唱到峰值最亮，行尾驻留后消退。
+        // drop-shadow 认渲染结果，字透明了也能发光（text-shadow 对透明字无用）。
+        var gStart=cur.time, gEnd=cur.end||(nxt?nxt.time:cur.time+3000);
+        var gLineEnd=nxt?nxt.time:gEnd+3000;
+        var gi=_pvGlow(timeMs,gStart,gEnd,gLineEnd);
+        if(gi>0.01){
+          var fp=15*1.3;   // 基准字号×当前行缩放，近似足够
+          var isCh=pel.classList.contains('chorus');
+          var rr1=Math.round(fp*(isCh?0.45:0.28)), rr2=Math.round(fp*(isCh?0.9:0.65));
+          var ga=Math.round(Math.min(1,gi*(isCh?1:0.88))*100);
+          pel.style.filter='drop-shadow(0 0 '+rr1+'px color-mix(in srgb, var(--accent-glow) '+ga+'%, transparent)) drop-shadow(0 0 '+rr2+'px color-mix(in srgb, var(--accent-glow) '+ga+'%, transparent))';
+        } else {
+          pel.style.filter='none';
+        }
+      }
     } catch (e) {}
   }
 
   (function karaokeLoop() {
     try {
-      if (!audio.paused) updateKaraoke(audio.currentTime * 1000);
+      if (!audio.paused) {
+        var _t = audio.currentTime * 1000;
+        updateKaraoke(_t);
+        // 行切换也走帧循环（原来挂 timeupdate，只有 ~4Hz，行入场最多慢 250ms）
+        // highlightLrc 幂等：行没变时 pvSync 里 idx===_pvIdx 直接返回，重复调零成本
+        if (lrcData.length && lyricOpen) highlightLrc(_t);
+      }
     } catch (e) {}
     requestAnimationFrame(karaokeLoop);
   })();
 
-  audio.addEventListener('timeupdate',function(){
-    if(!lrcData.length||!lyricOpen) return;
-    highlightLrc(audio.currentTime*1000);
-  });
+  // 逐字歌词源：从 meting 播放地址里抠 server+id，映射到 AMLL DB 的平台
+  function _wordSourceOf(t){
+    var u=String((t&&t.url)||'');
+    var mi=/[?&]id=([^&]+)/.exec(u);
+    if(!mi) return null;
+    var ms=/[?&]server=([^&]+)/.exec(u);
+    var sv=ms?ms[1]:(t.searchServer||'');
+    var pf= sv==='netease'?'ncm': sv==='tencent'?'qq': null;
+    if(!pf) return null;
+    return {platform:pf, id:decodeURIComponent(mi[1])};
+  }
 
   var _lastLrcKey='';
+  function _loadLineLrc(lrcUrl, trackName){
+    if(!lrcUrl && !trackName) return;
+    var cached=_cachedLrcByUrl(lrcUrl);
+    if(cached){ lrcData=cached; renderLrc(); return; }
+    // 先读盘（离线歌词库）
+    if(trackName){
+      fetch(API+'/widget/api/lrc/load?name='+encodeURIComponent(trackName)).then(function(r){
+        if(r.ok) return r.json();
+        throw new Error('not on disk');
+      }).then(function(res){
+        if(res.ok && res.lrc){
+          var parsed=parseLrc(res.lrc);
+          _saveLrcCache(lrcUrl, parsed);
+          lrcData=parsed;
+          renderLrc();
+        }else{
+          throw new Error('no lrc');
+        }
+      }).catch(function(){
+        // 读盘失败 → 走网络
+        var proxyUrl=API+'/widget/api/music/lrc-proxy?url='+encodeURIComponent(lrcUrl);
+        fetch(proxyUrl).then(function(r){return r.text();}).then(function(raw){
+          if(!raw||raw.length<10) return;
+          var parsed=parseLrc(raw);
+          _saveLrcCache(lrcUrl, parsed);
+          lrcData=parsed;
+          renderLrc();
+          // 网络拉到后落盘
+          fetch(API+'/widget/api/lrc/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:trackName,lrc:raw})}).catch(function(){});
+        }).catch(function(){});
+      });
+      return;
+    }
+    // 无 trackName（兼容旧调用）→ 直接走网络
+    var proxyUrl=API+'/widget/api/music/lrc-proxy?url='+encodeURIComponent(lrcUrl);
+    fetch(proxyUrl).then(function(r){return r.text();}).then(function(raw){
+      if(!raw||raw.length<10) return;
+      var parsed=parseLrc(raw);
+      _saveLrcCache(lrcUrl, parsed);
+      lrcData=parsed;
+      renderLrc();
+    }).catch(function(){});
+  }
   setInterval(function(){
     var t=trks[idx];
     if(!t||!t.url) return;
     var lrcUrl=t.lrcUrl||lrcMap[t.url]||'';
     var lrcKey=t.url+'|'+lrcUrl;
-    if(lrcUrl && lrcKey!==_lastLrcKey){
-      _lastLrcKey=lrcKey;
-      var cached=_cachedLrcByUrl(lrcUrl);
-      if(cached){
-        lrcData=cached;
-        renderLrc();
-        return;
-      }
-      var proxyUrl=API+'/widget/api/music/lrc-proxy?url='+encodeURIComponent(lrcUrl);
-      fetch(proxyUrl).then(function(r){return r.text();}).then(function(raw){
-        if(!raw||raw.length<10) return;
-        var parsed=parseLrc(raw);
-        _saveLrcCache(lrcUrl, parsed);
-        lrcData=parsed;
-        renderLrc();
-      }).catch(function(){});
+    if(lrcKey===_lastLrcKey) return;
+    _lastLrcKey=lrcKey;
+    // PV 封面背景（folia Monet 层）：有封面就铺，没有就撤
+    try{
+      var bg=document.getElementById('pvBg');
+      if(bg) bg.style.backgroundImage=t.pic?('url("'+String(t.pic).replace(/"/g,'')+'")'):'';
+      window._jzCover=t.pic||'';
+    }catch(e){}
+    // 先试逐字（TTML）：拿到手行级/字级都有了，拿不到再退 LRC
+    var wp=_wordSourceOf(t);
+    if(wp){
+      var wkey='ttml:'+wp.platform+':'+wp.id;
+      var wc=_cachedLrcByUrl(wkey);
+      if(wc){ lrcData=wc; renderLrc(); return; }
+      fetch(API+'/widget/api/music/ttml?platform='+wp.platform+'&id='+encodeURIComponent(wp.id))
+        .then(function(r){ return r.ok?r.text():null; })
+        .then(function(raw){
+          var parsed=raw?parseTtml(raw):null;
+          if(parsed){
+            _saveLrcCache(wkey, parsed);
+            lrcData=parsed;
+            renderLrc();
+          } else {
+            _loadLineLrc(lrcUrl, t.name);
+          }
+        }).catch(function(){ _loadLineLrc(lrcUrl, t.name); });
+      return;
     }
+    _loadLineLrc(lrcUrl, t.name);
   },800);
 
   // ── 队列歌词预取 ──
@@ -10185,6 +10915,16 @@ setTimeout(notifySize, 300);
   var CUSTOM_KEY = "hana_audio_theme_custom";
 
   var PRESETS = [
+    { id: "goldnight", name: "金夜", mode: "dark",
+      colors: { primary: "#D4AF37", secondary: "#B39A62", accent: "#F3E7C4" },
+      background: { kind: "gradient", from: "#0A0907", to: "#17130C", angle: 160,
+        light: { kind: "gradient", from: "#F6EEDC", to: "#EDE0C2", angle: 160 } },
+      animation: { speed: 1, glowIntensity: 0.25, pulse: 0.1 } },
+    { id: "pitchblack", name: "暗夜", mode: "dark",
+      colors: { primary: "#E8E8EC", secondary: "#8E8E96", accent: "#FFFFFF" },
+      background: { kind: "solid", color: "#050505",
+        light: { kind: "solid", color: "#F4F4F6" } },
+      animation: { speed: 1, glowIntensity: 0.15, pulse: 0 } },
     { id: "amber", name: "暖褐", mode: null,
       colors: { primary: "#d49a6a", secondary: "#c48454" },
       background: { kind: "none" },
@@ -10635,5 +11375,405 @@ setTimeout(notifySize, 300);
   }
 })();
 </script>
+
+<script>
+/* ===== JIZURA 歌词模式 ===== */
+(function(){
+'use strict';
+var JZ_STYLES=[
+ {id:'auto',nm:'自动'},
+ {id:'gold',nm:'金夜',bg:'#0A0907',fg:'#F3E7C4',sub:'#B39A62',acc:'#D4AF37'},
+ {id:'ocean',nm:'深海',bg:'#031A2E',fg:'#E4FAFF',sub:'#7FB2C8',acc:'#1FD2E6'},
+ {id:'sakura',nm:'夜樱',bg:'#26091B',fg:'#FCE8F0',sub:'#D69DB6',acc:'#FF86B0'},
+ {id:'vapor',nm:'蒸汽',bg:'#3A2A6E',fg:'#FFFFFF',sub:'#D6C8FF',acc:'#FF8FD8'},
+ {id:'synth80',nm:'合成80s',bg:'#0B0414',fg:'#FF4FD8',sub:'#A98BFF',acc:'#22E6FF'},
+ {id:'newsprint',nm:'新闻',bg:'#E6E5E0',fg:'#111111',sub:'#4E4E4C',acc:'#D8141B',light:1},
+ {id:'kraft',nm:'牛皮纸',bg:'#C49A6C',fg:'#1A1410',sub:'#46301E',acc:'#B8361B',light:1},
+ {id:'sumi',nm:'墨与朱',bg:'#EFE5CF',fg:'#16130F',sub:'#5E574C',acc:'#B83A22',light:1}
+];
+var JZ_PARTS=[
+ {id:'center',nm:'中央'},{id:'mix',nm:'大小ミックス'},{id:'tategaki',nm:'縦書き'},{id:'band',nm:'流れる帯'},
+ {id:'tile',nm:'敷き詰め'},{id:'scatter',nm:'散らし'},{id:'ring',nm:'円環'},{id:'wave',nm:'波の軌跡'},
+ {id:'break',nm:'画面突き抜け'},{id:'label',nm:'ラベル貼り'},{id:'type',nm:'タイプ'},{id:'caption',nm:'注釈'},
+ {id:'diag',nm:'斜め帯'},{id:'circle',nm:'円窓'},{id:'stack',nm:'残像スタック'},{id:'pill',nm:'カプセル'},
+ {id:'cond',nm:'縦長圧縮'},{id:'cad',nm:'星散'},{id:'ren',nm:'連行'},{id:'title',nm:'タイトル',sp:1},{id:'interlude',nm:'間奏',sp:1}
+];
+var _jzSeed=Math.floor(Math.random()*1e9),_jzLastLayout='',_jzLastIdx=-1,_jzStyle=JZ_STYLES[0];
+function _jzR(a){_jzSeed=(_jzSeed*1664525+1013904223)>>>0;return(_jzSeed/4294967296)*a}
+function _jzPick(a){return a[Math.floor(_jzR(a.length))]}
+function _jzFits(p,txt){var n=[...txt].length;
+ var latin=/[a-zA-Z]{3,}/.test(txt);
+ if(p==='tategaki')return !latin&&n>=3&&n<=16;
+ if(p==='cond')return !latin&&n<=10;
+ if(p==='tile')return !latin&&n>=6;
+ if(p==='ring')return n>=3&&n<=16;
+ if(p==='band'||p==='break')return n<=20;
+ if(p==='diag'||p==='pill')return n<=14;
+ if(p==='circle'||p==='cond')return n<=10;
+ if(p==='stack')return n<=12;
+ return true}
+function _jzTokens(txt){
+ if(/[a-zA-Z]{2,}/.test(txt)){
+  // 拉丁文按词切（保留空格不断词），中日韩逐字
+  return txt.split(/(\s+)/).filter(function(s){return s.length});
+ }
+ return [...txt];
+}
+function _jzSpans(txt){return _jzTokens(txt).map(function(c,i){return'<span class="jz-w" style="animation-delay:'+(i*45)+'ms">'+(c===' '?'\u00A0':c)+'</span>'}).join('')}
+window._jzApplyStyle=function _jzApplyStyle(s){
+ _jzStyle=s;
+ if(s&&s.id==='auto'){
+  var st0=document.getElementById('pvStage');
+  if(st0){st0.style.removeProperty('--jz-bg');st0.style.removeProperty('--jz-fg');st0.style.removeProperty('--jz-acc');st0.style.background='';st0.style.color='';}
+  _jzAmbient(window._jzCover);
+  return;
+ }
+ var st=document.getElementById('pvStage');
+ if(!st)return;
+ st.style.setProperty('--jz-bg',s.bg);st.style.setProperty('--jz-fg',s.fg);st.style.setProperty('--jz-acc',s.acc);
+ st.style.background=s.bg;st.style.color=s.fg;
+}
+function _jzRender(txt,idx){
+ var pvTrack=document.getElementById('pvTrack');
+ if(!pvTrack)return;
+ var pool=JZ_PARTS.filter(function(x){return !x.sp&&_jzFits(x.id,txt)});
+ var p=_jzPick(pool);if(pool.length>1){var g=0;while(p.id===_jzLastLayout&&g++<8)p=_jzPick(pool)}
+ _jzLastLayout=p.id;
+ var tag=document.querySelector('.jizura-tag');
+ if(tag)tag.textContent='LAYOUT · '+p.nm;
+ var html='';
+ switch(p.id){
+  case 'center':html='<div class="jz-line jz-center show"><div class="cur">'+_jzSpans(txt)+'</div></div>';break;
+  case 'mix':var out='';_jzTokens(txt).forEach(function(c,i){out+='<span class="jz-w '+(i%3===1?'sm':'big')+'" style="animation-delay:'+(i*50)+'ms">'+(c===' '?'\u00A0':c)+'</span>'});html='<div class="jz-line jz-mix show"><div>'+out+'</div></div>';break;
+  case 'tategaki':html='<div class="jz-line jz-tategaki show"><div class="cur">'+_jzSpans(txt)+'</div></div>';break;
+  case 'band':html='<div class="jz-line jz-band show"><div class="bandrow">'+_jzSpans(txt)+'</div></div>';break;
+  case 'tile':var out='';_jzTokens(txt).forEach(function(c,i){out+='<span class="jz-w" style="animation-delay:'+(i*35)+'ms;font-size:'+(20+((i*7)%3)*8)+'px">'+(c===' '?'\u00A0':c)+'</span>'});html='<div class="jz-line jz-tile show">'+out+'</div>';break;
+  case 'scatter':var out='';_jzTokens(txt).forEach(function(c,i){var x=8+_jzR(78),y=12+_jzR(70),r=(_jzR(30)-15).toFixed(0),s=(18+_jzR(22)).toFixed(0);out+='<span class="jz-w" style="left:'+x+'%;top:'+y+'%;font-size:'+s+'px;transform:rotate('+r+'deg);animation-delay:'+(i*55)+'ms">'+(c===' '?'\u00A0':c)+'</span>'});html='<div class="jz-line jz-scatter show">'+out+'</div>';break;
+  case 'ring':var ch=_jzTokens(txt).filter(function(s){return s!==' '}),Rr=130,t='';ch.forEach(function(c,i){var a=(i/ch.length)*Math.PI*2-Math.PI/2;var x=(200+Math.cos(a)*Rr).toFixed(1),y=(150+Math.sin(a)*Rr).toFixed(1),rot=(a*180/Math.PI+90).toFixed(0);t+='<text x="'+x+'" y="'+y+'" fill="var(--jz-fg)" font-size="30" font-weight="800" text-anchor="middle" transform="rotate('+rot+' '+x+' '+y+')"><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="'+(i*0.05)+'s" fill="freeze"/>'+c+'</text>'});html='<div class="jz-line jz-ring show"><svg viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet">'+t+'<circle cx="200" cy="150" r="4" fill="var(--jz-acc)"/></svg></div>';break;
+  case 'wave':var out='';_jzTokens(txt).forEach(function(c,i){var dy=Math.sin(i/1.6)*26;out+='<span class="jz-w" style="transform:translateY('+dy.toFixed(0)+'px);animation-delay:'+(i*45)+'ms">'+(c===' '?'\u00A0':c)+'</span>'});html='<div class="jz-line jz-wave show">'+out+'</div>';break;
+  case 'break':html='<div class="jz-line jz-break show"><div class="cur">'+_jzSpans(txt)+'</div><div class="sub2">TRACK '+String((idx||0)+1).padStart(2,'0')+' — PUNCH THROUGH</div></div>';break;
+  case 'label':html='<div class="jz-line jz-label show"><div class="tagbox" data-n="'+String((idx||0)+1).padStart(2,'0')+'">'+_jzSpans(txt)+'</div></div>';break;
+  case 'type':html='<div class="jz-line jz-type show"><div>&gt; '+_jzSpans(txt)+'<span class="caret"></span></div></div>';break;
+  case 'caption':html='<div class="jz-line jz-caption show"><div class="capbar">'+_jzSpans(txt)+'</div></div>';break;
+  case 'diag':html='<div class="jz-line jz-diag show"><div class="bd"></div><div class="bd bd2"></div><div class="dt">'+_jzSpans(txt)+'</div></div>';break;
+  case 'circle':html='<div class="jz-line jz-circle show"><div class="disc"></div><div class="ct">'+_jzSpans(txt)+'</div></div>';break;
+  case 'stack':html='<div class="jz-line jz-stack show"><div class="sk">'+_jzSpans(txt)+'</div></div>';break;
+  case 'pill':{
+   var _lrc=window._jizuraLrcData||[], _pv=(idx>0&&_lrc[idx-1])?_lrc[idx-1].text:'', _nx=(idx<_lrc.length-1&&_lrc[idx+1])?_lrc[idx+1].text:'';
+   html='<div class="jz-line jz-pill show"><div class="pd pt2">'+_pv+'</div><div class="pd pb2">'+_nx+'</div><div class="pl">'+_jzSpans(txt)+'</div></div>';break;
+  }
+  case 'ren':{
+   var _lrc2=window._jizuraLrcData||[], _p2=(idx>0&&_lrc2[idx-1])?_lrc2[idx-1].text:'', _n2=(idx<_lrc2.length-1&&_lrc2[idx+1])?_lrc2[idx+1].text:'';
+   html='<div class="jz-line jz-ren show"><div class="prev">'+_p2+'</div><div class="rule"></div><div class="cur">'+_jzSpans(txt)+'</div><div class="rule"></div><div class="next">'+_n2+'</div></div>';break;
+  }
+  case 'cond':html='<div class="jz-line jz-cond show"><div class="cd">'+_jzSpans(txt)+'</div></div>';break;
+  case 'cad':{
+   // cadenza 风：词/字种子散落 + 微旋转 + 漂浮几何；当前词发光交给扫光循环
+   var toks=_jzTokens(txt), out='';
+   var seedBase=txt.length*7+(idx||0)*13;
+   function cr(o){var x=Math.sin(seedBase+o)*10000;return x-Math.floor(x)}
+   var glyphs=['◇','✕','△','+','□'];
+   for(var d=0;d<4;d++){
+    out+='<span class="deco" style="left:'+(8+cr(d+40)*84).toFixed(1)+'%;top:'+(10+cr(d+50)*76).toFixed(1)+'%;font-size:'+(10+cr(d+60)*16).toFixed(0)+'px;animation-delay:'+(d*1.7).toFixed(1)+'s;color:var(--jz-acc)">'+glyphs[Math.floor(cr(d+70)*glyphs.length)]+'</span>';
+   }
+   toks.forEach(function(c,i){
+    var x=6+cr(i*3)*82, y=14+cr(i*3+1)*64, r=(cr(i*3+2)-0.5)*24, s=(22+cr(i*3+4)*22).toFixed(0);
+    out+='<span class="jz-w" style="left:'+x.toFixed(1)+'%;top:'+y.toFixed(1)+'%;font-size:'+s+'px;transform:rotate('+r.toFixed(1)+'deg);animation-delay:'+(i*60)+'ms">'+(c===' '?'':c)+'</span>';
+   });
+   html='<div class="jz-line jz-cad show">'+out+'</div>';break;
+  }
+ }
+ pvTrack.innerHTML=html;
+ /* 前后行 ghost */
+ var lrc=window._jizuraLrcData||[];
+ var gUp=document.querySelector('.jizura-ghost.up'),gDn=document.querySelector('.jizura-ghost.dn');
+ if(gUp)gUp.textContent=(idx>0&&lrc[idx-1])?lrc[idx-1].text:'';
+ if(gDn)gDn.textContent=(idx<lrc.length-1&&lrc[idx+1])?lrc[idx+1].text:'';
+}
+/* 对外接口 */
+window.renderJizuraInit=function(){
+ var pvStage=document.getElementById('pvStage');
+ if(!pvStage)return;
+ _jzApplyStyle(_jzStyle);
+ /* 注入骰子和标签（只注一次） */
+ if(!pvStage.querySelector('.jizura-dice')){
+  var dice=document.createElement('button');
+  dice.className='jizura-dice';dice.textContent='🎲';dice.title='おまかせ（R）';
+  dice.onclick=function(e){e.stopPropagation();_jzOmakase()};
+  pvStage.appendChild(dice);
+  var tag=document.createElement('div');
+  tag.className='jizura-tag';tag.textContent='LAYOUT · —';
+  pvStage.appendChild(tag);
+  var gUp=document.createElement('div');gUp.className='jizura-ghost up';pvStage.appendChild(gUp);
+  var gDn=document.createElement('div');gDn.className='jizura-ghost dn';pvStage.appendChild(gDn);
+  /* 全局粒子层 */
+  var pl=document.createElement('div');pl.className='jz-particles';
+  for(var pi=0;pi<14;pi++){
+   var sp=document.createElement('i');
+   var sz=(2+Math.random()*4).toFixed(1);
+   sp.style.width=sz+'px';sp.style.height=sz+'px';
+   sp.style.left=(Math.random()*96).toFixed(1)+'%';
+   sp.style.top=(10+Math.random()*80).toFixed(1)+'%';
+   sp.style.animationDuration=(7+Math.random()*9).toFixed(1)+'s';
+   sp.style.animationDelay=(-Math.random()*10).toFixed(1)+'s';
+   if(Math.random()<0.3)sp.className='sq';
+   pl.appendChild(sp);
+  }
+  pvStage.appendChild(pl);
+ }
+ /* 封面取色（auto 风格时背景匹配封面主色） */
+ _jzAmbient(window._jzCover);
+ var lrc=window._jizuraLrcData||[];
+ if(!lrc.length){
+  var pvTrack=document.getElementById('pvTrack');
+  if(pvTrack)pvTrack.innerHTML='<div class="jz-line jz-center show"><div class="cur" style="opacity:.4">暂无歌词</div></div>';
+  return;
+ }
+ _jzLastIdx=-1;
+};
+/* 封面取色：8x8 采样算主色，混向主题背景 55%，CORS 失败静默 */
+function _jzAmbient(url){
+ var st=document.getElementById('pvStage');
+ if(!st||!url)return;
+ if(_jzStyle&&_jzStyle.id!=='auto')return;
+ var img=new Image();img.crossOrigin='anonymous';
+ img.onload=function(){
+  try{
+   var cv=document.createElement('canvas');cv.width=cv.height=8;
+   var cx=cv.getContext('2d');cx.drawImage(img,0,0,8,8);
+   var d=cx.getImageData(0,0,8,8).data,r=0,g=0,b=0,n=0;
+   for(var i=0;i<d.length;i+=4){r+=d[i];g+=d[i+1];b+=d[i+2];n++}
+   r=Math.round(r/n);g=Math.round(g/n);b=Math.round(b/n);
+   st.style.setProperty('--jz-bg','color-mix(in srgb, rgb('+r+','+g+','+b+') 32%, var(--card-bg))');
+  }catch(e){}
+ };
+ img.src=url;
+}
+window.renderJizuraLine=function(idx){
+ if(idx===_jzLastIdx)return;
+ _jzLastIdx=idx;
+ var lrc=window._jizuraLrcData||[];
+ if(!lrc.length||idx<0||idx>=lrc.length)return;
+ var line=lrc[idx];
+ _jzRender(line.text,idx);
+ // folia 扫光数据：逐字时序（TTML）或行起止均分（LRC）
+ var toks=_jzTokens(line.text), offs=[], acc=0;
+ toks.forEach(function(tk){offs.push(acc);acc+=tk===' '?1:[...tk].length});
+ var total=Math.max(1,acc);
+ window._jzKaraoke={words:line.words||null,t0:line.time||0,t1:line.end||((lrc[idx+1]&&lrc[idx+1].time)||(line.time||0)+4000),offs:offs,lens:toks.map(function(tk){return tk===' '?1:[...tk].length}),total:total};
+};
+/* folia 式逐字扫光循环（MonetGlow 包络：smoothstep 升起→驻留→衰减） */
+(function _jzKaraokeTick(){
+ requestAnimationFrame(_jzKaraokeTick);
+ if(!document.body.classList.contains('jizura-mode'))return;
+ var k=window._jzKaraoke, pvTrack=document.getElementById('pvTrack'), audio=document.querySelector('audio');
+ if(!k||!pvTrack||!audio)return;
+ var els=pvTrack.querySelectorAll('.jz-w');
+ if(!els.length)return;
+ var now=audio.currentTime*1000;
+ var t0=k.t0, t1=Math.max(k.t1,t0+800);
+ if(k.words&&k.words.length){
+  t0=k.words[0].time;
+  t1=k.words[k.words.length-1].time+k.words[k.words.length-1].dur;
+ }
+ var span=Math.max(1,t1-t0);
+ for(var i=0;i<els.length;i++){
+  var w0=t0+span*(k.offs[i]/k.total), w1=t0+span*((k.offs[i]+k.lens[i])/k.total);
+  var el=els[i];
+  if(now<w0){ el.style.color='color-mix(in srgb,var(--jz-fg) 38%,transparent)'; el.style.textShadow='none'; }
+  else if(now>w1){ el.style.color=''; el.style.textShadow='none'; }
+  else{
+   var p=(now-w0)/Math.max(1,w1-w0);
+   var glow=p*p*(3-2*p);
+   el.style.color='var(--jz-acc)';
+   el.style.textShadow='0 0 '+(6+16*glow).toFixed(1)+'px var(--jz-acc), 0 0 '+(2+5*glow).toFixed(1)+'px var(--jz-fg)';
+  }
+ }
+})();
+function _jzOmakase(){
+ _jzSeed=Math.floor(Math.random()*1e9);
+ var s=_jzPick(JZ_STYLES),g=0;while(s.id===_jzStyle.id&&g++<6)s=_jzPick(JZ_STYLES);
+ _jzApplyStyle(s);
+ _jzAmbient(window._jzCover);
+ /* 强制重渲染当前行 */
+ var lrc=window._jizuraLrcData||[];
+ if(lrc.length&&_jzLastIdx>=0&&_jzLastIdx<lrc.length){
+  var idx=_jzLastIdx;
+  _jzLastIdx=-1;
+  _jzRender(lrc[idx].text,idx);
+  _jzLastIdx=idx;
+ }
+}
+/* R 键 */
+document.addEventListener('keydown',function(e){
+ if(!document.body.classList.contains('jizura-mode'))return;
+ if(e.key==='r'||e.key==='R')_jzOmakase();
+});
+/* JIZURA 开关：双击 PV 舞台切换 */
+document.addEventListener('dblclick',function(e){
+ var pvStage=document.getElementById('pvStage');
+ if(!pvStage||!pvStage.contains(e.target))return;
+ if(!document.body.classList.contains('lyrics-mode'))return;
+ document.body.classList.toggle('jizura-mode');
+ if(document.body.classList.contains('jizura-mode')){
+  window.renderJizuraInit();
+ }else{
+  /* 退出 JIZURA：触发一次 renderPv 恢复 folia */
+  var evt=new Event('jizura-exit');
+  document.dispatchEvent(evt);
+ }
+});
+})();
+</script>
+
+
+<script>
+/* ===== JIZURA UI：骰子 + 风格条 ===== */
+(function(){
+'use strict';
+var JZ_STYLES_REF=[
+ {id:'auto',nm:'自动'},
+ {id:'gold',nm:'金夜',bg:'#0A0907',fg:'#F3E7C4',sub:'#B39A62',acc:'#D4AF37'},
+ {id:'ocean',nm:'深海',bg:'#031A2E',fg:'#E4FAFF',sub:'#7FB2C8',acc:'#1FD2E6'},
+ {id:'sakura',nm:'夜樱',bg:'#26091B',fg:'#FCE8F0',sub:'#D69DB6',acc:'#FF86B0'},
+ {id:'vapor',nm:'蒸汽',bg:'#3A2A6E',fg:'#FFFFFF',sub:'#D6C8FF',acc:'#FF8FD8'},
+ {id:'synth80',nm:'合成80s',bg:'#0B0414',fg:'#FF4FD8',sub:'#A98BFF',acc:'#22E6FF'},
+ {id:'newsprint',nm:'新闻',bg:'#E6E5E0',fg:'#111111',sub:'#4E4E4C',acc:'#D8141B',light:1},
+ {id:'kraft',nm:'牛皮纸',bg:'#C49A6C',fg:'#1A1410',sub:'#46301E',acc:'#B8361B',light:1},
+ {id:'sumi',nm:'墨与朱',bg:'#EFE5CF',fg:'#16130F',sub:'#5E574C',acc:'#B83A22',light:1}
+];
+var _jzStyleBarInjected=false;
+function _jzInjectStyleBar(){
+ if(_jzStyleBarInjected)return;
+ var pvStage=document.getElementById('pvStage');
+ if(!pvStage)return;
+ /* 风格条：底部居中一排小圆点 */
+ var bar=document.createElement('div');
+ bar.className='jizura-style-bar';
+ bar.style.cssText='position:absolute;bottom:10px;left:50%;transform:translateX(-50%);z-index:30;display:flex;gap:6px;padding:6px 10px;background:rgba(0,0,0,.35);border-radius:16px;backdrop-filter:blur(4px)';
+ JZ_STYLES_REF.forEach(function(s){
+  var dot=document.createElement('div');
+  var _dbg=s.id==='auto'?'linear-gradient(135deg,var(--card-bg) 45%,var(--accent))':('linear-gradient(135deg,'+s.bg+' 45%,'+s.acc+')');
+  var _dbd=s.id==='auto'?'var(--accent)':s.acc;
+  dot.style.cssText='width:14px;height:14px;border-radius:50%;cursor:pointer;border:1.5px solid '+_dbd+';background:'+_dbg+';transition:transform .15s';
+  dot.title=s.nm;
+  dot.onclick=function(e){
+   e.stopPropagation();
+   if(window._jzApplyStyle)window._jzApplyStyle(s);
+  };
+  dot.onmouseenter=function(){dot.style.transform='scale(1.3)'};
+  dot.onmouseleave=function(){dot.style.transform=''};
+  bar.appendChild(dot);
+ });
+ pvStage.appendChild(bar);
+ _jzStyleBarInjected=true;
+}
+/* 监听 jizura-mode 类变化，开启时注入 */
+var _jzObserver=new MutationObserver(function(){
+ if(document.body.classList.contains('jizura-mode')){
+  _jzInjectStyleBar();
+ }
+});
+_jzObserver.observe(document.body,{attributes:true,attributeFilter:['class']});
+})();
+</script>
+
+
+
+
+
+<script>
+/* ===== 黑胶旋转联动 ===== */
+(function(){
+'use strict';
+var cover=document.getElementById('npCover');
+var audio=document.querySelector('audio');
+if(!cover||!audio)return;
+function sync(){ cover.classList.toggle('spinning',!audio.paused); }
+audio.addEventListener('play',sync);
+audio.addEventListener('pause',sync);
+sync();
+})();
+</script>
+
+
+<script>
+/* ===== 主 UI 对齐 ===== */
+(function(){
+'use strict';
+/* D1. 首次注入后默认金夜主题（只设一次，之后用户自选） */
+try{
+  if(!localStorage.getItem('hana_audio_mainui_v1')){
+    localStorage.setItem('hana_audio_mainui_v1','1');
+    localStorage.setItem('hana_audio_theme_preset','goldnight');
+    location.reload();
+    return;
+  }
+}catch(e){}
+/* D2. 顶栏三模式胶囊 */
+function curMode(){ return document.body.classList.contains('jizura-mode')?2:(document.body.classList.contains('lyrics-mode')?1:0); }
+function setMode(m){
+  var btn=document.getElementById('lyricModeBtn');
+  if(!btn)return;
+  var guard=0;
+  while(curMode()!==m&&guard++<5){ btn.click(); }
+}
+var header=document.querySelector('.header');
+var actions=document.querySelector('.header-actions');
+if(header&&actions&&!document.getElementById('modeCaps')){
+  var caps=document.createElement('div');
+  caps.className='mode-caps';caps.id='modeCaps';
+  [['标准',0],['PV',2],['歌词',1]].forEach(function(it){
+    var b=document.createElement('button');
+    b.className='mc';b.textContent=it[0];b.dataset.m=it[1];
+    b.onclick=function(){setMode(it[1]);syncCaps();};
+    caps.appendChild(b);
+  });
+  header.insertBefore(caps,actions);
+  window.syncCaps=function(){
+    var m=curMode();
+    caps.querySelectorAll('.mc').forEach(function(x){x.classList.toggle('on',+x.dataset.m===m)});
+  };
+  var mo=new MutationObserver(syncCaps);
+  mo.observe(document.body,{attributes:true,attributeFilter:['class']});
+  syncCaps();
+}
+/* D3. 分组双排 label */
+var gs=document.querySelector('.group-selector');
+var addBtn=document.getElementById('groupAddBtn');
+if(gs&&addBtn&&!gs.querySelector('.gs-label')){
+  var l1=document.createElement('span');l1.className='gs-label';l1.textContent='来源';
+  gs.insertBefore(l1,gs.firstChild);
+  var br=document.createElement('div');br.className='gs-break';
+  var l2=document.createElement('span');l2.className='gs-label';l2.textContent='自建';
+  gs.insertBefore(br,addBtn);
+  gs.insertBefore(l2,addBtn);
+}
+/* D4. 行内组胶囊：包装 renderPL 后处理 */
+function injectPills(){
+  var plBody=document.getElementById('plBody');
+  if(!plBody)return;
+  plBody.querySelectorAll('.pl-group-body').forEach(function(body){
+    var g=body.dataset.group||'';
+    if(!g)return;
+    body.querySelectorAll('.pl-item').forEach(function(item){
+      if(item.querySelector('.jz-gpill'))return;
+      var name=item.querySelector('.pl-name');
+      if(!name)return;
+      var pill=document.createElement('span');
+      pill.className='jz-gpill';pill.textContent=g;
+      name.after(pill);
+    });
+  });
+}
+if(typeof window.renderPL==='function'&&!window.renderPL._pillWrapped){
+  var _r=window.renderPL;
+  window.renderPL=function(){ _r.apply(this,arguments); injectPills(); };
+  window.renderPL._pillWrapped=1;
+}
+injectPills();
+})();
+</script>
+
 </body>
 </html>
