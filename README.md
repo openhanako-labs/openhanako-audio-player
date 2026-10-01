@@ -26,7 +26,7 @@ Hana 的音频播放器 App：本地音乐与在线音乐播放，歌词驱动�
 
 ## 安装
 
-1. 把本仓库目录放进 `<HANA_HOME>/apps/openhanako-audio-player`（目录名须与 `manifest.id` 一致）
+1. 把本仓库目录放进 `<HANA_HOME>/apps/hanako-audio-player`（目录名须与 `manifest.id` 一致）
 2. Hana → Market → Installed → 批准该应用
 3. 之后改代码只需在详情页 Reload
 
