@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1001175911";
+  window.__HANA_BUILD = "1001180751";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -3394,6 +3394,29 @@ body:not(.view-compact) .np-cover img { border-radius: 50%; }
 
 /* JIZURA 默认跟随 App 主题：内联没设 --jz-* 时走 App 变量 */
 .pv-stage { --jz-bg: var(--card-bg); --jz-fg: var(--text); --jz-acc: var(--accent); }
+
+
+/* ===== 主 UI 对齐设计稿 ===== */
+/* 顶栏三模式胶囊 */
+.mode-caps { display:flex; border:1px solid var(--accent); border-radius:20px; overflow:hidden; margin-left:auto; margin-right:8px; }
+.mode-caps .mc { padding:4px 14px; font-size:11px; cursor:pointer; user-select:none; opacity:.55; transition:all .2s; color:var(--text); background:transparent; border:none; font-family:inherit; }
+.mode-caps .mc + .mc { border-left:1px solid var(--accent); }
+.mode-caps .mc.on { opacity:1; font-weight:700; background:var(--accent); color:var(--card-bg); }
+/* 原歌词模式图标按钮由胶囊接管 */
+body:not(.view-compact) #lyricModeBtn { display:none; }
+/* 左栏纵排居中（设计稿唱盘机） */
+body:not(.view-compact) .now-playing-section { display:flex; flex-direction:column; align-items:center; text-align:center; }
+body:not(.view-compact) .np-cover { order:1; width:180px !important; height:180px !important; margin:14px 0 12px !important; font-size:56px !important; flex-shrink:0; }
+body:not(.view-compact) .np-info { order:2; display:flex; flex-direction:column; align-items:center; }
+body:not(.view-compact) .np-actions { justify-content:center; }
+body:not(.view-compact) .lyrics-section { order:3; width:100%; }
+body:not(.view-compact) .pv-stage { order:4; }
+/* 分组双排：来源一排、自建一排 */
+.group-selector { flex-wrap:wrap; row-gap:6px; align-items:center; }
+.gs-label { font-size:9px; font-family:monospace; color:var(--text-faint); letter-spacing:.1em; margin-right:2px; }
+.gs-break { flex-basis:100%; height:0; }
+/* 行内组胶囊 */
+.jz-gpill { font-size:8.5px; font-family:monospace; padding:1px 6px; border:1px solid var(--border); border-radius:3px; color:var(--text-faint); flex-shrink:0; }
 
 </style><script>
 (function () {
@@ -4833,7 +4856,7 @@ if (typeof module !== 'undefined' && module.exports) {
 <div class="header">
   <div class="header-left">
     <div class="header-icon">♫</div>
-    <span class="header-title">播放器</span>
+    <span class="header-title">HANA PLAYER</span>
   </div>
   <div class="header-actions">
     <button class="icon-btn" id="fontSizeBtn" title="字号设置">
@@ -10761,6 +10784,10 @@ setTimeout(notifySize, 300);
   var CUSTOM_KEY = "hana_audio_theme_custom";
 
   var PRESETS = [
+    { id: "goldnight", name: "金夜", mode: "dark",
+      colors: { primary: "#D4AF37", secondary: "#B39A62", accent: "#F3E7C4" },
+      background: { kind: "gradient", from: "#0A0907", to: "#17130C", angle: 160 },
+      animation: { speed: 1, glowIntensity: 0.25, pulse: 0.1 } },
     { id: "amber", name: "暖褐", mode: null,
       colors: { primary: "#d49a6a", secondary: "#c48454" },
       background: { kind: "none" },
@@ -11492,6 +11519,85 @@ function sync(){ cover.classList.toggle('spinning',!audio.paused); }
 audio.addEventListener('play',sync);
 audio.addEventListener('pause',sync);
 sync();
+})();
+</script>
+
+
+<script>
+/* ===== 主 UI 对齐 ===== */
+(function(){
+'use strict';
+/* D1. 首次注入后默认金夜主题（只设一次，之后用户自选） */
+try{
+  if(!localStorage.getItem('hana_audio_mainui_v1')){
+    localStorage.setItem('hana_audio_mainui_v1','1');
+    localStorage.setItem('hana_audio_theme_preset','goldnight');
+    location.reload();
+    return;
+  }
+}catch(e){}
+/* D2. 顶栏三模式胶囊 */
+function curMode(){ return document.body.classList.contains('jizura-mode')?2:(document.body.classList.contains('lyrics-mode')?1:0); }
+function setMode(m){
+  var btn=document.getElementById('lyricModeBtn');
+  if(!btn)return;
+  var guard=0;
+  while(curMode()!==m&&guard++<5){ btn.click(); }
+}
+var header=document.querySelector('.header');
+var actions=document.querySelector('.header-actions');
+if(header&&actions&&!document.getElementById('modeCaps')){
+  var caps=document.createElement('div');
+  caps.className='mode-caps';caps.id='modeCaps';
+  [['标准',0],['PV',1],['歌词',2]].forEach(function(it){
+    var b=document.createElement('button');
+    b.className='mc';b.textContent=it[0];b.dataset.m=it[1];
+    b.onclick=function(){setMode(it[1]);syncCaps();};
+    caps.appendChild(b);
+  });
+  header.insertBefore(caps,actions);
+  window.syncCaps=function(){
+    var m=curMode();
+    caps.querySelectorAll('.mc').forEach(function(x){x.classList.toggle('on',+x.dataset.m===m)});
+  };
+  var mo=new MutationObserver(syncCaps);
+  mo.observe(document.body,{attributes:true,attributeFilter:['class']});
+  syncCaps();
+}
+/* D3. 分组双排 label */
+var gs=document.querySelector('.group-selector');
+var addBtn=document.getElementById('groupAddBtn');
+if(gs&&addBtn&&!gs.querySelector('.gs-label')){
+  var l1=document.createElement('span');l1.className='gs-label';l1.textContent='来源';
+  gs.insertBefore(l1,gs.firstChild);
+  var br=document.createElement('div');br.className='gs-break';
+  var l2=document.createElement('span');l2.className='gs-label';l2.textContent='自建';
+  gs.insertBefore(br,addBtn);
+  gs.insertBefore(l2,addBtn);
+}
+/* D4. 行内组胶囊：包装 renderPL 后处理 */
+function injectPills(){
+  var plBody=document.getElementById('plBody');
+  if(!plBody)return;
+  plBody.querySelectorAll('.pl-group-body').forEach(function(body){
+    var g=body.dataset.group||'';
+    if(!g)return;
+    body.querySelectorAll('.pl-item').forEach(function(item){
+      if(item.querySelector('.jz-gpill'))return;
+      var name=item.querySelector('.pl-name');
+      if(!name)return;
+      var pill=document.createElement('span');
+      pill.className='jz-gpill';pill.textContent=g;
+      name.after(pill);
+    });
+  });
+}
+if(typeof window.renderPL==='function'&&!window.renderPL._pillWrapped){
+  var _r=window.renderPL;
+  window.renderPL=function(){ _r.apply(this,arguments); injectPills(); };
+  window.renderPL._pillWrapped=1;
+}
+injectPills();
 })();
 </script>
 
