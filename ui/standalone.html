@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1001185106";
+  window.__HANA_BUILD = "1001190751";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -2760,10 +2760,10 @@ try {
      CSS 只留结构和过渡——数值不在样式表里写死。
      过去行比未来行更暗（不对称衰减），非当前行带缩放收缩。 */
   .pv-line {
-    padding: .5em 10%;
-    font-size: 15px; line-height: 1.6;
+    padding: .45em 8%;
+    font-size: 24px; line-height: 1.55;
     color: var(--text-dim);
-    opacity: .16; filter: blur(2.6px);
+    opacity: .3; filter: blur(1.1px);
     transform-origin: left center;
     transition: opacity .45s ease, filter .45s ease, transform .45s cubic-bezier(.22, .9, .3, 1);
   }
@@ -3441,6 +3441,10 @@ body.jizura-mode:not(.view-compact) .pv-track { position:absolute !important; in
 /* JIZURA 模式不要封面糊开背景，用风格底色 */
 body.jizura-mode:not(.view-compact) .pv-bg { display:none; }
 body.jizura-mode:not(.view-compact) .pv-stage { background:var(--jz-bg) !important; color:var(--jz-fg); }
+
+
+/* 明暗切换按钮下线（主题由配色面板统一管理） */
+#themeBtn { display:none !important; }
 
 </style><script>
 (function () {
@@ -10882,6 +10886,11 @@ setTimeout(notifySize, 300);
       background: { kind: "gradient", from: "#0A0907", to: "#17130C", angle: 160,
         light: { kind: "gradient", from: "#F6EEDC", to: "#EDE0C2", angle: 160 } },
       animation: { speed: 1, glowIntensity: 0.25, pulse: 0.1 } },
+    { id: "pitchblack", name: "暗夜", mode: "dark",
+      colors: { primary: "#E8E8EC", secondary: "#8E8E96", accent: "#FFFFFF" },
+      background: { kind: "solid", color: "#050505",
+        light: { kind: "solid", color: "#F4F4F6" } },
+      animation: { speed: 1, glowIntensity: 0.15, pulse: 0 } },
     { id: "amber", name: "暖褐", mode: null,
       colors: { primary: "#d49a6a", secondary: "#c48454" },
       background: { kind: "none" },
@@ -11369,7 +11378,14 @@ function _jzFits(p,txt){var n=[...txt].length;
  if(p==='circle'||p==='cond')return n<=10;
  if(p==='stack')return n<=12;
  return true}
-function _jzSpans(txt){return[...txt].map(function(c,i){return'<span class="jz-w" style="animation-delay:'+(i*45)+'ms">'+c+'</span>'}).join('')}
+function _jzTokens(txt){
+ if(/[a-zA-Z]{2,}/.test(txt)){
+  // 拉丁文按词切（保留空格不断词），中日韩逐字
+  return txt.split(/(\s+)/).filter(function(s){return s.length});
+ }
+ return [...txt];
+}
+function _jzSpans(txt){return _jzTokens(txt).map(function(c,i){return'<span class="jz-w" style="animation-delay:'+(i*45)+'ms">'+(c===' '?'\u00A0':c)+'</span>'}).join('')}
 window._jzApplyStyle=function _jzApplyStyle(s){
  _jzStyle=s;
  if(s&&s.id==='auto'){
@@ -11393,13 +11409,13 @@ function _jzRender(txt,idx){
  var html='';
  switch(p.id){
   case 'center':html='<div class="jz-line jz-center show"><div class="cur">'+_jzSpans(txt)+'</div></div>';break;
-  case 'mix':var out='';[...txt].forEach(function(c,i){out+='<span class="jz-w '+(i%3===1?'sm':'big')+'" style="animation-delay:'+(i*50)+'ms">'+c+'</span>'});html='<div class="jz-line jz-mix show"><div>'+out+'</div></div>';break;
+  case 'mix':var out='';_jzTokens(txt).forEach(function(c,i){out+='<span class="jz-w '+(i%3===1?'sm':'big')+'" style="animation-delay:'+(i*50)+'ms">'+(c===' '?'\u00A0':c)+'</span>'});html='<div class="jz-line jz-mix show"><div>'+out+'</div></div>';break;
   case 'tategaki':html='<div class="jz-line jz-tategaki show"><div class="cur">'+_jzSpans(txt)+'</div></div>';break;
   case 'band':html='<div class="jz-line jz-band show"><div class="bandrow">'+_jzSpans(txt)+'</div></div>';break;
-  case 'tile':var out='';[...txt].forEach(function(c,i){out+='<span class="jz-w" style="animation-delay:'+(i*35)+'ms;font-size:'+(20+((i*7)%3)*8)+'px">'+c+'</span>'});html='<div class="jz-line jz-tile show">'+out+'</div>';break;
-  case 'scatter':var out='';[...txt].forEach(function(c,i){var x=8+_jzR(78),y=12+_jzR(70),r=(_jzR(30)-15).toFixed(0),s=(18+_jzR(22)).toFixed(0);out+='<span class="jz-w" style="left:'+x+'%;top:'+y+'%;font-size:'+s+'px;transform:rotate('+r+'deg);animation-delay:'+(i*55)+'ms">'+c+'</span>'});html='<div class="jz-line jz-scatter show">'+out+'</div>';break;
-  case 'ring':var ch=[...txt],Rr=130,t='';ch.forEach(function(c,i){var a=(i/ch.length)*Math.PI*2-Math.PI/2;var x=(200+Math.cos(a)*Rr).toFixed(1),y=(150+Math.sin(a)*Rr).toFixed(1),rot=(a*180/Math.PI+90).toFixed(0);t+='<text x="'+x+'" y="'+y+'" fill="var(--jz-fg)" font-size="30" font-weight="800" text-anchor="middle" transform="rotate('+rot+' '+x+' '+y+')"><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="'+(i*0.05)+'s" fill="freeze"/>'+c+'</text>'});html='<div class="jz-line jz-ring show"><svg viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet">'+t+'<circle cx="200" cy="150" r="4" fill="var(--jz-acc)"/></svg></div>';break;
-  case 'wave':var out='';[...txt].forEach(function(c,i){var dy=Math.sin(i/1.6)*26;out+='<span class="jz-w" style="transform:translateY('+dy.toFixed(0)+'px);animation-delay:'+(i*45)+'ms">'+c+'</span>'});html='<div class="jz-line jz-wave show">'+out+'</div>';break;
+  case 'tile':var out='';_jzTokens(txt).forEach(function(c,i){out+='<span class="jz-w" style="animation-delay:'+(i*35)+'ms;font-size:'+(20+((i*7)%3)*8)+'px">'+(c===' '?'\u00A0':c)+'</span>'});html='<div class="jz-line jz-tile show">'+out+'</div>';break;
+  case 'scatter':var out='';_jzTokens(txt).forEach(function(c,i){var x=8+_jzR(78),y=12+_jzR(70),r=(_jzR(30)-15).toFixed(0),s=(18+_jzR(22)).toFixed(0);out+='<span class="jz-w" style="left:'+x+'%;top:'+y+'%;font-size:'+s+'px;transform:rotate('+r+'deg);animation-delay:'+(i*55)+'ms">'+(c===' '?'\u00A0':c)+'</span>'});html='<div class="jz-line jz-scatter show">'+out+'</div>';break;
+  case 'ring':var ch=_jzTokens(txt).filter(function(s){return s!==' '}),Rr=130,t='';ch.forEach(function(c,i){var a=(i/ch.length)*Math.PI*2-Math.PI/2;var x=(200+Math.cos(a)*Rr).toFixed(1),y=(150+Math.sin(a)*Rr).toFixed(1),rot=(a*180/Math.PI+90).toFixed(0);t+='<text x="'+x+'" y="'+y+'" fill="var(--jz-fg)" font-size="30" font-weight="800" text-anchor="middle" transform="rotate('+rot+' '+x+' '+y+')"><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="'+(i*0.05)+'s" fill="freeze"/>'+c+'</text>'});html='<div class="jz-line jz-ring show"><svg viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet">'+t+'<circle cx="200" cy="150" r="4" fill="var(--jz-acc)"/></svg></div>';break;
+  case 'wave':var out='';_jzTokens(txt).forEach(function(c,i){var dy=Math.sin(i/1.6)*26;out+='<span class="jz-w" style="transform:translateY('+dy.toFixed(0)+'px);animation-delay:'+(i*45)+'ms">'+(c===' '?'\u00A0':c)+'</span>'});html='<div class="jz-line jz-wave show">'+out+'</div>';break;
   case 'break':html='<div class="jz-line jz-break show"><div class="cur">'+_jzSpans(txt)+'</div><div class="sub2">TRACK '+String((idx||0)+1).padStart(2,'0')+' — PUNCH THROUGH</div></div>';break;
   case 'label':html='<div class="jz-line jz-label show"><div class="tagbox" data-n="'+String((idx||0)+1).padStart(2,'0')+'">'+_jzSpans(txt)+'</div></div>';break;
   case 'type':html='<div class="jz-line jz-type show"><div>&gt; '+_jzSpans(txt)+'<span class="caret"></span></div></div>';break;
@@ -11447,8 +11463,42 @@ window.renderJizuraLine=function(idx){
  _jzLastIdx=idx;
  var lrc=window._jizuraLrcData||[];
  if(!lrc.length||idx<0||idx>=lrc.length)return;
- _jzRender(lrc[idx].text,idx);
+ var line=lrc[idx];
+ _jzRender(line.text,idx);
+ // folia 扫光数据：逐字时序（TTML）或行起止均分（LRC）
+ var toks=_jzTokens(line.text), offs=[], acc=0;
+ toks.forEach(function(tk){offs.push(acc);acc+=tk===' '?1:[...tk].length});
+ var total=Math.max(1,acc);
+ window._jzKaraoke={words:line.words||null,t0:line.time||0,t1:line.end||((lrc[idx+1]&&lrc[idx+1].time)||(line.time||0)+4000),offs:offs,lens:toks.map(function(tk){return tk===' '?1:[...tk].length}),total:total};
 };
+/* folia 式逐字扫光循环（MonetGlow 包络：smoothstep 升起→驻留→衰减） */
+(function _jzKaraokeTick(){
+ requestAnimationFrame(_jzKaraokeTick);
+ if(!document.body.classList.contains('jizura-mode'))return;
+ var k=window._jzKaraoke, pvTrack=document.getElementById('pvTrack'), audio=document.querySelector('audio');
+ if(!k||!pvTrack||!audio)return;
+ var els=pvTrack.querySelectorAll('.jz-w');
+ if(!els.length)return;
+ var now=audio.currentTime*1000;
+ var t0=k.t0, t1=Math.max(k.t1,t0+800);
+ if(k.words&&k.words.length){
+  t0=k.words[0].time;
+  t1=k.words[k.words.length-1].time+k.words[k.words.length-1].dur;
+ }
+ var span=Math.max(1,t1-t0);
+ for(var i=0;i<els.length;i++){
+  var w0=t0+span*(k.offs[i]/k.total), w1=t0+span*((k.offs[i]+k.lens[i])/k.total);
+  var el=els[i];
+  if(now<w0){ el.style.color='color-mix(in srgb,var(--jz-fg) 38%,transparent)'; el.style.textShadow='none'; }
+  else if(now>w1){ el.style.color=''; el.style.textShadow='none'; }
+  else{
+   var p=(now-w0)/Math.max(1,w1-w0);
+   var glow=p*p*(3-2*p);
+   el.style.color='var(--jz-acc)';
+   el.style.textShadow='0 0 '+(6+16*glow).toFixed(1)+'px var(--jz-acc), 0 0 '+(2+5*glow).toFixed(1)+'px var(--jz-fg)';
+  }
+ }
+})();
 function _jzOmakase(){
  _jzSeed=Math.floor(Math.random()*1e9);
  var s=_jzPick(JZ_STYLES),g=0;while(s.id===_jzStyle.id&&g++<6)s=_jzPick(JZ_STYLES);
