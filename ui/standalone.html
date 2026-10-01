@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1001191841";
+  window.__HANA_BUILD = "1001193508";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -3406,7 +3406,7 @@ body:not(.view-compact) .np-cover img { border-radius: 50%; }
 body:not(.view-compact) #lyricModeBtn { display:none; }
 /* 左栏纵排居中（设计稿唱盘机） */
 body:not(.view-compact) .now-playing-section { display:flex; flex-direction:column; align-items:center; text-align:center; }
-body:not(.view-compact) .np-cover { order:1; width:180px !important; height:180px !important; margin:14px 0 12px !important; font-size:56px !important; flex-shrink:0; }
+body:not(.view-compact) .np-cover { order:1; width:clamp(110px, 30vh, 180px) !important; height:clamp(110px, 30vh, 180px) !important; margin:10px 0 10px !important; font-size:56px !important; flex-shrink:0; }
 body:not(.view-compact) .np-info { order:2; display:flex; flex-direction:column; align-items:center; }
 body:not(.view-compact) .np-actions { justify-content:center; }
 body:not(.view-compact) .lyrics-section { order:3; width:100%; }
@@ -3449,6 +3449,18 @@ body.jizura-mode:not(.view-compact) .pv-stage { background:var(--jz-bg) !importa
 
 /* 右键菜单背景：--card 变量不存在导致透明，改用 --card-bg */
 .pl-ctx-menu { background: var(--card-bg) !important; }
+
+
+/* ===== 布局溢出修复 ===== */
+/* 标准模式纵排：歌词区不再吃掉整个剩余空间 */
+body:not(.view-compact):not(.lyrics-mode) .now-playing-section .lyrics-section { flex:0 1 auto; max-height:22%; overflow-y:auto; }
+/* header 保险：任何情况下完整视图的顶栏都在文档流且可点 */
+body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
+/* ===== cadenza「星散」排版 ===== */
+.jz-cad{ width:100%; height:100%; position:relative; }
+.jz-cad .jz-w{ position:absolute; font-weight:800; letter-spacing:.02em; }
+.jz-cad .deco{ position:absolute; pointer-events:none; opacity:.35; animation:jzDrift 9s ease-in-out infinite alternate; }
+@keyframes jzDrift{ 0%{ transform:translate(0,0) rotate(0deg);} 100%{ transform:translate(10px,-14px) rotate(18deg);} }
 
 </style><script>
 (function () {
@@ -11366,7 +11378,7 @@ var JZ_PARTS=[
  {id:'tile',nm:'敷き詰め'},{id:'scatter',nm:'散らし'},{id:'ring',nm:'円環'},{id:'wave',nm:'波の軌跡'},
  {id:'break',nm:'画面突き抜け'},{id:'label',nm:'ラベル貼り'},{id:'type',nm:'タイプ'},{id:'caption',nm:'注釈'},
  {id:'diag',nm:'斜め帯'},{id:'circle',nm:'円窓'},{id:'stack',nm:'残像スタック'},{id:'pill',nm:'カプセル'},
- {id:'cond',nm:'縦長圧縮'},{id:'title',nm:'タイトル',sp:1},{id:'interlude',nm:'間奏',sp:1}
+ {id:'cond',nm:'縦長圧縮'},{id:'cad',nm:'星散'},{id:'title',nm:'タイトル',sp:1},{id:'interlude',nm:'間奏',sp:1}
 ];
 var _jzSeed=Math.floor(Math.random()*1e9),_jzLastLayout='',_jzLastIdx=-1,_jzStyle=JZ_STYLES[0];
 function _jzR(a){_jzSeed=(_jzSeed*1664525+1013904223)>>>0;return(_jzSeed/4294967296)*a}
@@ -11429,6 +11441,21 @@ function _jzRender(txt,idx){
   case 'stack':html='<div class="jz-line jz-stack show"><div class="sk">'+_jzSpans(txt)+'</div></div>';break;
   case 'pill':html='<div class="jz-line jz-pill show"><div class="pd pt2"></div><div class="pd pb2"></div><div class="pl">'+_jzSpans(txt)+'</div></div>';break;
   case 'cond':html='<div class="jz-line jz-cond show"><div class="cd">'+_jzSpans(txt)+'</div></div>';break;
+  case 'cad':{
+   // cadenza 风：词/字种子散落 + 微旋转 + 漂浮几何；当前词发光交给扫光循环
+   var toks=_jzTokens(txt), out='';
+   var seedBase=txt.length*7+(idx||0)*13;
+   function cr(o){var x=Math.sin(seedBase+o)*10000;return x-Math.floor(x)}
+   var glyphs=['◇','✕','△','+','□'];
+   for(var d=0;d<4;d++){
+    out+='<span class="deco" style="left:'+(8+cr(d+40)*84).toFixed(1)+'%;top:'+(10+cr(d+50)*76).toFixed(1)+'%;font-size:'+(10+cr(d+60)*16).toFixed(0)+'px;animation-delay:'+(d*1.7).toFixed(1)+'s;color:var(--jz-acc)">'+glyphs[Math.floor(cr(d+70)*glyphs.length)]+'</span>';
+   }
+   toks.forEach(function(c,i){
+    var x=6+cr(i*3)*82, y=14+cr(i*3+1)*64, r=(cr(i*3+2)-0.5)*24, s=(22+cr(i*3+4)*22).toFixed(0);
+    out+='<span class="jz-w" style="left:'+x.toFixed(1)+'%;top:'+y.toFixed(1)+'%;font-size:'+s+'px;transform:rotate('+r.toFixed(1)+'deg);animation-delay:'+(i*60)+'ms">'+(c===' '?'':c)+'</span>';
+   });
+   html='<div class="jz-line jz-cad show">'+out+'</div>';break;
+  }
  }
  pvTrack.innerHTML=html;
  /* 前后行 ghost */
