@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1001182044";
+  window.__HANA_BUILD = "1001183557";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -3426,6 +3426,13 @@ body:not(.view-compact) .pv-stage { order:4; }
 body.lyrics-mode:not(.view-compact) .now-playing-section { align-items:stretch !important; text-align:left !important; }
 body.lyrics-mode:not(.view-compact) .np-info { display:none !important; }
 body.lyrics-mode:not(.view-compact) .pv-stage { flex:1 !important; width:100% !important; }
+
+
+/* JIZURA 元素只在歌词模式显示 */
+body:not(.jizura-mode) .jizura-dice,
+body:not(.jizura-mode) .jizura-style-bar,
+body:not(.jizura-mode) .jizura-tag,
+body:not(.jizura-mode) .jizura-ghost { display:none !important; }
 
 </style><script>
 (function () {
@@ -9913,10 +9920,11 @@ function doPlaylistImport(){
         document.body.classList.add('jizura-mode');
         btn.style.color='var(--accent)';
         btn.title='退出歌词模式';
-        if(window.renderJizuraInit)window.renderJizuraInit();
+        renderPv();
       }else{
         // 歌词 → 标准
         document.body.classList.remove('jizura-mode');
+        renderPv();
         apply(false);
       }
       updateBtnIcon();
@@ -10146,6 +10154,7 @@ function doPlaylistImport(){
   }
   function pvSync(idx){
     if(document.body.classList.contains('jizura-mode')){
+      window._jizuraLrcData=lrcData;
       if(window.renderJizuraLine)window.renderJizuraLine(idx);
       return;
     }
@@ -10277,7 +10286,7 @@ function doPlaylistImport(){
 
   var _lastLrcKey='';
   function _loadLineLrc(lrcUrl, trackName){
-    if(!lrcUrl) return;
+    if(!lrcUrl && !trackName) return;
     var cached=_cachedLrcByUrl(lrcUrl);
     if(cached){ lrcData=cached; renderLrc(); return; }
     // 先读盘（离线歌词库）
