@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1001194934";
+  window.__HANA_BUILD = "1001195950";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -10306,15 +10306,16 @@ function doPlaylistImport(){
 
   (function karaokeLoop() {
     try {
-      if (!audio.paused) updateKaraoke(audio.currentTime * 1000);
+      if (!audio.paused) {
+        var _t = audio.currentTime * 1000;
+        updateKaraoke(_t);
+        // 行切换也走帧循环（原来挂 timeupdate，只有 ~4Hz，行入场最多慢 250ms）
+        // highlightLrc 幂等：行没变时 pvSync 里 idx===_pvIdx 直接返回，重复调零成本
+        if (lrcData.length && lyricOpen) highlightLrc(_t);
+      }
     } catch (e) {}
     requestAnimationFrame(karaokeLoop);
   })();
-
-  audio.addEventListener('timeupdate',function(){
-    if(!lrcData.length||!lyricOpen) return;
-    highlightLrc(audio.currentTime*1000);
-  });
 
   // 逐字歌词源：从 meting 播放地址里抠 server+id，映射到 AMLL DB 的平台
   function _wordSourceOf(t){
