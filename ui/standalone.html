@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1001193508";
+  window.__HANA_BUILD = "1001194934";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -3461,6 +3461,22 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 .jz-cad .jz-w{ position:absolute; font-weight:800; letter-spacing:.02em; }
 .jz-cad .deco{ position:absolute; pointer-events:none; opacity:.35; animation:jzDrift 9s ease-in-out infinite alternate; }
 @keyframes jzDrift{ 0%{ transform:translate(0,0) rotate(0deg);} 100%{ transform:translate(10px,-14px) rotate(18deg);} }
+
+
+/* ===== JIZURA 氛围层 ===== */
+.jz-particles{ position:absolute; inset:0; pointer-events:none; overflow:hidden; z-index:1; }
+.jz-particles i{ position:absolute; border-radius:50%; background:var(--jz-acc); opacity:0; animation:jzFloat linear infinite; }
+.jz-particles i.sq{ border-radius:1px; background:none; border:1px solid var(--jz-acc); }
+@keyframes jzFloat{ 0%{ transform:translateY(30px) rotate(0deg); opacity:0 } 15%{ opacity:.28 } 80%{ opacity:.22 } 100%{ transform:translateY(-70px) rotate(160deg); opacity:0 } }
+/* 前后行 ghost 清晰化（参与排版，不再只是模糊影子） */
+.jizura-ghost{ opacity:.5; filter:none; font-size:13px; }
+/* 連行布局 */
+.jz-ren{ flex-direction:column; gap:14px; text-align:center; }
+.jz-ren .prev,.jz-ren .next{ font-size:15px; opacity:.5; letter-spacing:.06em; }
+.jz-ren .cur{ font-size:34px; font-weight:800; letter-spacing:.05em; }
+.jz-ren .rule{ width:56px; height:2px; background:var(--jz-acc); margin:2px auto; opacity:.7; }
+/* pill 装饰胶囊里的小字 */
+.jz-pill .pd{ display:flex; align-items:center; justify-content:center; font-size:9px; color:var(--jz-fg); opacity:.65; width:auto; min-width:88px; padding:0 12px; white-space:nowrap; }
 
 </style><script>
 (function () {
@@ -10367,6 +10383,7 @@ function doPlaylistImport(){
     try{
       var bg=document.getElementById('pvBg');
       if(bg) bg.style.backgroundImage=t.pic?('url("'+String(t.pic).replace(/"/g,'')+'")'):'';
+      window._jzCover=t.pic||'';
     }catch(e){}
     // 先试逐字（TTML）：拿到手行级/字级都有了，拿不到再退 LRC
     var wp=_wordSourceOf(t);
@@ -11378,7 +11395,7 @@ var JZ_PARTS=[
  {id:'tile',nm:'敷き詰め'},{id:'scatter',nm:'散らし'},{id:'ring',nm:'円環'},{id:'wave',nm:'波の軌跡'},
  {id:'break',nm:'画面突き抜け'},{id:'label',nm:'ラベル貼り'},{id:'type',nm:'タイプ'},{id:'caption',nm:'注釈'},
  {id:'diag',nm:'斜め帯'},{id:'circle',nm:'円窓'},{id:'stack',nm:'残像スタック'},{id:'pill',nm:'カプセル'},
- {id:'cond',nm:'縦長圧縮'},{id:'cad',nm:'星散'},{id:'title',nm:'タイトル',sp:1},{id:'interlude',nm:'間奏',sp:1}
+ {id:'cond',nm:'縦長圧縮'},{id:'cad',nm:'星散'},{id:'ren',nm:'連行'},{id:'title',nm:'タイトル',sp:1},{id:'interlude',nm:'間奏',sp:1}
 ];
 var _jzSeed=Math.floor(Math.random()*1e9),_jzLastLayout='',_jzLastIdx=-1,_jzStyle=JZ_STYLES[0];
 function _jzR(a){_jzSeed=(_jzSeed*1664525+1013904223)>>>0;return(_jzSeed/4294967296)*a}
@@ -11407,6 +11424,7 @@ window._jzApplyStyle=function _jzApplyStyle(s){
  if(s&&s.id==='auto'){
   var st0=document.getElementById('pvStage');
   if(st0){st0.style.removeProperty('--jz-bg');st0.style.removeProperty('--jz-fg');st0.style.removeProperty('--jz-acc');st0.style.background='';st0.style.color='';}
+  _jzAmbient(window._jzCover);
   return;
  }
  var st=document.getElementById('pvStage');
@@ -11439,7 +11457,14 @@ function _jzRender(txt,idx){
   case 'diag':html='<div class="jz-line jz-diag show"><div class="bd"></div><div class="bd bd2"></div><div class="dt">'+_jzSpans(txt)+'</div></div>';break;
   case 'circle':html='<div class="jz-line jz-circle show"><div class="disc"></div><div class="ct">'+_jzSpans(txt)+'</div></div>';break;
   case 'stack':html='<div class="jz-line jz-stack show"><div class="sk">'+_jzSpans(txt)+'</div></div>';break;
-  case 'pill':html='<div class="jz-line jz-pill show"><div class="pd pt2"></div><div class="pd pb2"></div><div class="pl">'+_jzSpans(txt)+'</div></div>';break;
+  case 'pill':{
+   var _lrc=window._jizuraLrcData||[], _pv=(idx>0&&_lrc[idx-1])?_lrc[idx-1].text:'', _nx=(idx<_lrc.length-1&&_lrc[idx+1])?_lrc[idx+1].text:'';
+   html='<div class="jz-line jz-pill show"><div class="pd pt2">'+_pv+'</div><div class="pd pb2">'+_nx+'</div><div class="pl">'+_jzSpans(txt)+'</div></div>';break;
+  }
+  case 'ren':{
+   var _lrc2=window._jizuraLrcData||[], _p2=(idx>0&&_lrc2[idx-1])?_lrc2[idx-1].text:'', _n2=(idx<_lrc2.length-1&&_lrc2[idx+1])?_lrc2[idx+1].text:'';
+   html='<div class="jz-line jz-ren show"><div class="prev">'+_p2+'</div><div class="rule"></div><div class="cur">'+_jzSpans(txt)+'</div><div class="rule"></div><div class="next">'+_n2+'</div></div>';break;
+  }
   case 'cond':html='<div class="jz-line jz-cond show"><div class="cd">'+_jzSpans(txt)+'</div></div>';break;
   case 'cad':{
    // cadenza 风：词/字种子散落 + 微旋转 + 漂浮几何；当前词发光交给扫光循环
@@ -11480,7 +11505,23 @@ window.renderJizuraInit=function(){
   pvStage.appendChild(tag);
   var gUp=document.createElement('div');gUp.className='jizura-ghost up';pvStage.appendChild(gUp);
   var gDn=document.createElement('div');gDn.className='jizura-ghost dn';pvStage.appendChild(gDn);
+  /* 全局粒子层 */
+  var pl=document.createElement('div');pl.className='jz-particles';
+  for(var pi=0;pi<14;pi++){
+   var sp=document.createElement('i');
+   var sz=(2+Math.random()*4).toFixed(1);
+   sp.style.width=sz+'px';sp.style.height=sz+'px';
+   sp.style.left=(Math.random()*96).toFixed(1)+'%';
+   sp.style.top=(10+Math.random()*80).toFixed(1)+'%';
+   sp.style.animationDuration=(7+Math.random()*9).toFixed(1)+'s';
+   sp.style.animationDelay=(-Math.random()*10).toFixed(1)+'s';
+   if(Math.random()<0.3)sp.className='sq';
+   pl.appendChild(sp);
+  }
+  pvStage.appendChild(pl);
  }
+ /* 封面取色（auto 风格时背景匹配封面主色） */
+ _jzAmbient(window._jzCover);
  var lrc=window._jizuraLrcData||[];
  if(!lrc.length){
   var pvTrack=document.getElementById('pvTrack');
@@ -11489,6 +11530,24 @@ window.renderJizuraInit=function(){
  }
  _jzLastIdx=-1;
 };
+/* 封面取色：8x8 采样算主色，混向主题背景 55%，CORS 失败静默 */
+function _jzAmbient(url){
+ var st=document.getElementById('pvStage');
+ if(!st||!url)return;
+ if(_jzStyle&&_jzStyle.id!=='auto')return;
+ var img=new Image();img.crossOrigin='anonymous';
+ img.onload=function(){
+  try{
+   var cv=document.createElement('canvas');cv.width=cv.height=8;
+   var cx=cv.getContext('2d');cx.drawImage(img,0,0,8,8);
+   var d=cx.getImageData(0,0,8,8).data,r=0,g=0,b=0,n=0;
+   for(var i=0;i<d.length;i+=4){r+=d[i];g+=d[i+1];b+=d[i+2];n++}
+   r=Math.round(r/n);g=Math.round(g/n);b=Math.round(b/n);
+   st.style.setProperty('--jz-bg','color-mix(in srgb, rgb('+r+','+g+','+b+') 32%, var(--card-bg))');
+  }catch(e){}
+ };
+ img.src=url;
+}
 window.renderJizuraLine=function(idx){
  if(idx===_jzLastIdx)return;
  _jzLastIdx=idx;
@@ -11534,6 +11593,7 @@ function _jzOmakase(){
  _jzSeed=Math.floor(Math.random()*1e9);
  var s=_jzPick(JZ_STYLES),g=0;while(s.id===_jzStyle.id&&g++<6)s=_jzPick(JZ_STYLES);
  _jzApplyStyle(s);
+ _jzAmbient(window._jzCover);
  /* 强制重渲染当前行 */
  var lrc=window._jizuraLrcData||[];
  if(lrc.length&&_jzLastIdx>=0&&_jzLastIdx<lrc.length){
