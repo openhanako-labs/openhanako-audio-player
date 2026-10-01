@@ -5038,6 +5038,7 @@ if (typeof module !== 'undefined' && module.exports) {
     <button class="group-tab active" data-group="all">全部</button>
     <button class="group-tab" data-group="local">本地音乐</button>
     <button class="group-tab" data-group="online">在线音乐</button>
+    <span id="condGroupTabs" style="display:contents"></span>
     <span id="customGroupTabs" style="display:contents"></span>
     <button class="group-tab" id="groupAddBtn" title="新建分组" style="border-style:dashed;opacity:.7">+</button>
   </div>
@@ -9329,10 +9330,12 @@ document.querySelectorAll('.group-tab').forEach(function(btn) {
     }
     function renderTabs(){
       var box=document.getElementById('customGroupTabs');if(!box)return;
+      var condBox=document.getElementById('condGroupTabs');
       box.innerHTML='';
-      /* 条件动态 tab：电台流（有曲目时）、我的喜欢（有收藏时）——不再钉死在来源排 */
+      if(condBox)condBox.innerHTML='';
+      /* 条件动态 tab：电台流（有曲目时）、我的喜欢（有收藏时）——渲染在来源排末尾 */
       function addCondTab(label, dataGroup, show){
-        if(!show) return;
+        if(!show||!condBox) return;
         var b=document.createElement('button');
         b.className='group-tab'+(currentGroup===dataGroup?' active':'');
         b.textContent=label;
@@ -9342,7 +9345,7 @@ document.querySelectorAll('.group-tab').forEach(function(btn) {
           currentGroup=dataGroup;
           renderPL();
         };
-        box.appendChild(b);
+        condBox.appendChild(b);
       }
       addCondTab('电台流','radio', trks.some(function(t){return t.group==='电台流'}));
       try{ addCondTab('我的喜欢','favorites', (JSON.parse(localStorage.getItem('hanako_audio_favs')||'[]')).length>0); }catch(e){}
@@ -11755,13 +11758,14 @@ if(header&&actions&&!document.getElementById('modeCaps')){
 /* D3. 分组双排 label */
 var gs=document.querySelector('.group-selector');
 var addBtn=document.getElementById('groupAddBtn');
-if(gs&&addBtn&&!gs.querySelector('.gs-label')){
+var customBox=document.getElementById('customGroupTabs');
+if(gs&&customBox&&!gs.querySelector('.gs-label')){
   var l1=document.createElement('span');l1.className='gs-label';l1.textContent='来源';
   gs.insertBefore(l1,gs.firstChild);
   var br=document.createElement('div');br.className='gs-break';
   var l2=document.createElement('span');l2.className='gs-label';l2.textContent='自建';
-  gs.insertBefore(br,addBtn);
-  gs.insertBefore(l2,addBtn);
+  gs.insertBefore(br,customBox);
+  gs.insertBefore(l2,customBox);
 }
 /* D4. 行内组胶囊：包装 renderPL 后处理 */
 function injectPills(){
