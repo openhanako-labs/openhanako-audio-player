@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1001183557";
+  window.__HANA_BUILD = "1001185106";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -3433,6 +3433,14 @@ body:not(.jizura-mode) .jizura-dice,
 body:not(.jizura-mode) .jizura-style-bar,
 body:not(.jizura-mode) .jizura-tag,
 body:not(.jizura-mode) .jizura-ghost { display:none !important; }
+
+
+/* ===== JIZURA 舞台塌缩修复 ===== */
+/* pvTrack 在 folia 里靠内容撑高，JIZURA 的行是 absolute 不撑高 → 铺满舞台 */
+body.jizura-mode:not(.view-compact) .pv-track { position:absolute !important; inset:0 !important; height:auto !important; transform:none !important; }
+/* JIZURA 模式不要封面糊开背景，用风格底色 */
+body.jizura-mode:not(.view-compact) .pv-bg { display:none; }
+body.jizura-mode:not(.view-compact) .pv-stage { background:var(--jz-bg) !important; color:var(--jz-fg); }
 
 </style><script>
 (function () {
@@ -9934,10 +9942,10 @@ function doPlaylistImport(){
       var hasJiz=document.body.classList.contains('jizura-mode');
       if(hasJiz){
         btn.style.color='var(--accent)';
-        btn.title='歌词模式（JIZURA）— 点击退出';
+        btn.title='PV 模式（文字PV）— 点击退出';
       }else if(hasLyr){
         btn.style.color='var(--accent)';
-        btn.title='PV 模式 — 点击进歌词模式';
+        btn.title='歌词模式 — 点击进 PV';
       }else{
         btn.style.color='';
         btn.title='歌词模式';
@@ -10000,7 +10008,7 @@ function doPlaylistImport(){
   //   · 以常见的署名词开头（中英对照都算）
   //   · 且冒号出现在很靠前的位置（真正的歌词不会在第二三个字就冒号）
   //   · 或整行就是 【xx】/ [xx] 包起来的署名
-  var CREDIT_HEAD = /^(作词|作曲|编曲|制作人|出品|发行|监制|混音|母带|录音|吉他|贝斯|鼓|键盘|和声|和音|合声|配唱|演唱|演奏|朗诵|旁白|企划|统筹|语势|后期|美术|设计|策划|封面|翻译|校对|特别感谢|助理|工程|工程师|Assistant|Producer|Composer|Lyricist|Arranger|Mixing|Mastering|Engineer|Studio|Vocal|Guitar|Bass|Drums|Piano|Strings|OP|SP|词|曲)/i;
+  var CREDIT_HEAD = /^(作词|作曲|编曲|制作人|出品|发行|监制|混音|母带|录音|吉他|贝斯|鼓|键盘|和声|和音|合声|配唱|演唱|演奏|朗诵|旁白|企划|统筹|语势|后期|美术|设计|策划|封面|翻译|校对|特别感谢|助理|工程|工程师|Assistant|Producer|Composer|Lyricist|Arranger|Mixing|Mastering|Engineer|Studio|Vocal|Guitar|Bass|Drums|Piano|Strings|OP|SP|词|曲|Recording|Scoring|谱务|乐器|独奏|Violin|Cello|Saxophone|Trumpet|Trombone|Harmonica|Keyboard|Synthesizer|Program|Programming|Editing|Chorus|Backing|Percussion|Viola|Flute|Oboe|Clarinet|Harp|Organ|Accordion|Lute|二胡|琵琶|古筝|笛|箫|唢呐|扬琴|柳琴|阮|埙|编钟)/i;
 
   function looksLikeCredit(txt) {
     if (/^[【\[]/.test(txt)) return true;              // 【】/[] 包起来的通常也是署名
@@ -11351,8 +11359,11 @@ var _jzSeed=Math.floor(Math.random()*1e9),_jzLastLayout='',_jzLastIdx=-1,_jzStyl
 function _jzR(a){_jzSeed=(_jzSeed*1664525+1013904223)>>>0;return(_jzSeed/4294967296)*a}
 function _jzPick(a){return a[Math.floor(_jzR(a.length))]}
 function _jzFits(p,txt){var n=[...txt].length;
- if(p==='tategaki'||p==='ring')return n>=3&&n<=16;
- if(p==='tile')return n>=6;
+ var latin=/[a-zA-Z]{3,}/.test(txt);
+ if(p==='tategaki')return !latin&&n>=3&&n<=16;
+ if(p==='cond')return !latin&&n<=10;
+ if(p==='tile')return !latin&&n>=6;
+ if(p==='ring')return n>=3&&n<=16;
  if(p==='band'||p==='break')return n<=20;
  if(p==='diag'||p==='pill')return n<=14;
  if(p==='circle'||p==='cond')return n<=10;
@@ -11570,7 +11581,7 @@ var actions=document.querySelector('.header-actions');
 if(header&&actions&&!document.getElementById('modeCaps')){
   var caps=document.createElement('div');
   caps.className='mode-caps';caps.id='modeCaps';
-  [['标准',0],['PV',1],['歌词',2]].forEach(function(it){
+  [['标准',0],['PV',2],['歌词',1]].forEach(function(it){
     var b=document.createElement('button');
     b.className='mc';b.textContent=it[0];b.dataset.m=it[1];
     b.onclick=function(){setMode(it[1]);syncCaps();};
