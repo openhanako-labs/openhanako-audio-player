@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1001195950";
+  window.__HANA_BUILD = "1001203823";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -5038,8 +5038,6 @@ if (typeof module !== 'undefined' && module.exports) {
     <button class="group-tab active" data-group="all">全部</button>
     <button class="group-tab" data-group="local">本地音乐</button>
     <button class="group-tab" data-group="online">在线音乐</button>
-    <button class="group-tab" data-group="radio">电台流</button>
-    <button class="group-tab" data-group="favorites">我的喜欢</button>
     <span id="customGroupTabs" style="display:contents"></span>
     <button class="group-tab" id="groupAddBtn" title="新建分组" style="border-style:dashed;opacity:.7">+</button>
   </div>
@@ -9332,6 +9330,22 @@ document.querySelectorAll('.group-tab').forEach(function(btn) {
     function renderTabs(){
       var box=document.getElementById('customGroupTabs');if(!box)return;
       box.innerHTML='';
+      /* 条件动态 tab：电台流（有曲目时）、我的喜欢（有收藏时）——不再钉死在来源排 */
+      function addCondTab(label, dataGroup, show){
+        if(!show) return;
+        var b=document.createElement('button');
+        b.className='group-tab'+(currentGroup===dataGroup?' active':'');
+        b.textContent=label;
+        b.onclick=function(){
+          document.querySelectorAll('.group-tab').forEach(function(x){x.classList.remove('active')});
+          b.classList.add('active');
+          currentGroup=dataGroup;
+          renderPL();
+        };
+        box.appendChild(b);
+      }
+      addCondTab('电台流','radio', trks.some(function(t){return t.group==='电台流'}));
+      try{ addCondTab('我的喜欢','favorites', (JSON.parse(localStorage.getItem('hanako_audio_favs')||'[]')).length>0); }catch(e){}
       knownGroups().forEach(function(g){
         var b=document.createElement('button');
         b.className='group-tab'+(currentGroup===g?' active':'');
