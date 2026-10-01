@@ -1,44 +1,65 @@
-# hanako-audio-player v2 沙盒
+# Hana Audio Player
 
-`hanako-audio-player` 从 v1 插件迁移到 v2 App 的验证沙盒。Phase 1 最小骨架。
+Hana 的音频播放器 App：本地音乐与在线音乐播放，歌词驱动的双模式视觉舞台。
 
-完整计划见 `W:\Games\Hanako\Work\projects\docs\hanako-audio-player-v2-execution-plan.md`。
+## 功能
 
-## 已实现（Phase 1）
+**播放**
+- 本地文件 / 文件夹扫描导入（mp3 / wav / ogg / flac / m4a，Range 流式播放，拖进度条不卡）
+- 在线搜索与直链播放（网易云 / QQ / 酷狗，meting 公共节点，多节点自动降级）
+- 粘贴链接直接导入：**歌单**（整张）和**单曲**都支持
+- 播放列表分组：固定来源分组 + 自建分组（持久化，可右键移动 / 重命名 / 删除）
 
-| 项 | 说明 |
-|---|---|
-| `manifest.json` | `manifestVersion: 2`，`contributes.cards` + `contributes.messageRenderers` |
-| `index.js` | `export async function apply(ctx)`，注册工具与路由 |
-| `tools/play.js` | 入队 + `session:send-custom` 投递播放卡 |
-| `tools/list-music.js` | 列出队列 |
-| `ui/player.html` | 播放卡（audio + 队列 + 横竖切换 + 歌词横幅入口） |
-| `lib/register-routes.js` | `api/state` / `api/select` / `api/lyric-line` / `api/lyric-hide` |
+**歌词**
+- 自动匹配：播放即按曲名搜索歌词，五源回退
+- 逐字歌词：TTML（AMLL 歌词数据库）优先，行级 LRC 兜底
+- **离线歌词库**：匹配过的歌词自动落盘（app-data/lyrics/），离线也能出词
+- 歌词横幅：当前行实时推到会话输入框上方
+
+**视觉舞台**（顶栏三模式胶囊切换）
+- **标准**——黑胶唱盘（播放旋转 / 暂停即停）+ 队列
+- **PV**——文字 PV 舞台：[JIZURA](https://github.com/852wa/JIZURA) 式随机排版引擎，21 种构图每行抽签（中央 / 竖排 / 斜带 / 円環 / 星散 / 連行…），🎲 骰子或 R 键一键重摇（おまかせ）。逐字扫光用 [folia](https://github.com/chthollyphile/folia-major) 的 MonetGlow 包络公式（smoothstep 升起→驻留→衰减），帧级同步音频（rAF 驱动，不走 4Hz 的 timeupdate）。封面取色背景、全局漂浮粒子、前后行参与排版
+- **歌词**——AMLL 式滚动窗：当前行居中放大，焦外虚化，逐字高亮
+
+**主题**
+- 配色面板内置多套预设（含金夜 / 暗夜纯黑），PV 风格可独立于主题切换
 
 ## 安装
 
-1. 把本目录复制到 `<HANA_HOME>/apps/hanako-audio-player-v2-sandbox`。
-   **目录名必须一字不差等于 `manifest.id`。**
-2. 打开 Market → Installed → App，批准该应用。
-3. 之后改代码只需在详情页 Reload，不必重新批准。
+1. 把本仓库目录放进 `<HANA_HOME>/apps/openhanako-audio-player`（目录名须与 `manifest.id` 一致）
+2. Hana → Market → Installed → 批准该应用
+3. 之后改代码只需在详情页 Reload
 
 最低 Hana 版本：`0.946.2`。
 
-> v1 的 `hanako-audio-player` 与本沙盒是**两个不同的 id**，可以共存，不会互相抢。
-> 迁到正式 id 时才需要先停掉 v1 版本。
+## 可选：完整音源
 
-## 与 v1 的关键差异
+在 `app-data/hanako-audio-player/cookies.env` 里配置网易云 / 腾讯的登录 cookie，可向 full-url 端点换完整音频（没有则回退试听版）：
 
-- v2 没有 `contributes.tools[]` → 工具由 `ctx.tools.register()` 编程式注册
-- v2 没有 `ctx.bus.handle` → 卡片↔后端走 `ctx.routes`，卡片 2 秒轮询
-- 工具 `execute` 是**单参数**：`execute({ ...args, context: { ... } })`
-- 静态资源在 `ui/`（不是 `assets/`），URL 为 `/api/apps/<id>/ui<route>`
-- 卡片不再由工具返回 `details.card.type`，而是 `contributes.messageRenderers` + `session:send-custom`
-- 歌词横幅走 `ctx.inputBanner.set`，`text` 上限 200 字符
+```
+NETEASE_COOKIE=MUSIC_U=xxx; __csrf=xxx; ...
+TENCENT_COOKIE=uin=xxx; qqmusic_key=xxx; ...
+```
 
-## 已知限制（Phase 1 范围）
+## 开发
 
-- 本地文件只入队、不播放 —— 需要 Phase 2 的媒体路由
-- 在线音频走直链 —— 防盗链与签名时效要 Phase 2 的宿主端代理
-- 播放状态是单例，多会话并行播放会互相覆盖
-- 卡片用轮询，不是事件推送
+```
+tools/inject-*.mjs   功能注入脚本（可重复执行，断言锚点命中恰好 1 次）
+tools/fix-*.mjs      修复脚本
+tools/bump-build.mjs 构建号三处同步（_build.json + index.html + standalone.html）
+```
+
+**两条铁律**：
+- `ui/index.html` 与 `ui/standalone.html` 是内容相同的双副本——改动必须同步，改完跑 `bump-build.mjs`
+- 主 script 是一整个大 IIFE——需要访问内部变量的代码必须注入到 IIFE 内部（以现有代码为锚点），独立 script 块只能做纯 DOM/CSS 操作
+
+## 致谢
+
+- [JIZURA](https://github.com/852wa/JIZURA)（852話）——文字 PV 排版引擎的灵感与部件语义
+- [folia-major](https://github.com/chthollyphile/folia-major)——Monet 动效公式（光晕包络 / 逐字插值 / 色调衰减）
+- [AMLL TTML DB](https://github.com/Steve-xmh/amll-ttml-db)——逐字歌词数据库
+- Meting 公共节点——搜索 / 歌词 / 直链
+
+## License
+
+MIT
