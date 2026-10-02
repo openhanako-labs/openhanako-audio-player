@@ -133,6 +133,18 @@ window.__pvCore = { render(), sync(i), idx(), lrc() }   // 核心闭包里的 re
 
 PV 渲染在自己的 `#pvJv` 层里，**不写 folia 的 `#pvTrack`**：退出 PV 只需摘掉 `jizura-mode` 再请核心重画一次。
 
+### 歌词表每帧对身份（`PV.syncTable`）
+
+核心在换歌时是**重新赋值** `lrcData = parsed`，旧数组当场作废。接线早期写的是
+`if (!PV.lyrics().length) PV.setLyrics(c.lrc())`——只有空表才灌，于是第一首歌灌满之后
+换歌永远灌不进来：PV 拿着上一首的旧表反复演，行号还是按新曲时间查旧表，
+看上去就是「歌词被固定住了」。
+
+现在 `renderJizuraInit` / `renderJizuraLine` / `PV.enter` 三个入口每帧跑 `PV.syncTable(l)`：
+**引用不同或首尾签名不同就重灌**，同一张表绝不重灌（`setLyrics` 会清 cut 缓存，
+重灌等于重掷版式）。另外 `PV.setLyrics` 会把同步缓存作废——预览台、`PV.demo`、`PV.audit`
+都会直接换成测试句，不作废的话体检跑完那句 “We are the champions” 就会赖在画面上不走。
+
 ## 构建与预览
 
 ```

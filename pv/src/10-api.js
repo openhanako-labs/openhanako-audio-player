@@ -36,12 +36,32 @@
     return true;
   };
 
+  /* ---------- 歌词表同步 ----------
+   * 核心在换歌时是**重新赋值** lrcData（lrcData = parsed），旧数组立刻作废。
+   * 而这里以前写的是 `if (!PV.lyrics().length) PV.setLyrics(...)`——只有空表才灌，
+   * 于是第一首歌把表灌满之后，换歌永远灌不进来：PV 就拿着上一首的旧数组反复演，
+   * 看上去像「歌词被固定住了」，而且行号还是按新曲时间去查旧表——全盘对不上。
+   *
+   * 现在每帧都对身份：引用不同或首尾签名不同就重灌。同一张表不会重复灌
+   * （setLyrics 会清 cut 缓存，重灌就等于重掷版式，所以“只在真变了时变”是必须的）。
+   */
+  PV.syncTable = function (l) {
+    l = l || [];
+    var sig = l.length + '|' + (l[0] ? (l[0].text + '@' + l[0].time) : '') +
+      '|' + (l.length ? (l[l.length - 1].text + '@' + l[l.length - 1].time) : '');
+    if (PV._tblRef === l && PV._tblSig === sig) return false;   // 同一张表，没动
+    PV.setLyrics(l);
+    /* 必须在 setLyrics 之后记：setLyrics 会把这两个字段清掉（见引擎里的注释） */
+    PV._tblRef = l; PV._tblSig = sig;
+    return true;
+  };
+
   /* ---------- 兼容核心调用 ---------- */
   window.renderJizuraInit = function () {
     if (!PV.boot()) return;
     if (!PV.active()) return;
     var c = core();
-    if (!PV.lyrics().length && c && c.lrc) PV.setLyrics(c.lrc());
+    PV.syncTable(c && c.lrc ? c.lrc() : null);
     var i = c && c.idx ? c.idx() : PV.idxFromTime();
     var l = PV.lyrics();
     if (!l.length) { PV.empty('暂无歌词'); return; }
@@ -51,6 +71,13 @@
   window.renderJizuraLine = function (idx) {
     if (!PV.boot()) return;
     if (!PV.active()) return;
+    var c = core();
+    /* 行回调里也要对表：换歌时核心可能先走到这里，此时 PV 手上还是上一首的词 */
+    if (PV.syncTable(c && c.lrc ? c.lrc() : null)) {
+      var l = PV.lyrics();
+      if (!l.length) { PV.empty('暂无歌词'); return; }
+      idx = Math.max(0, Math.min(l.length - 1, (c && c.idx ? c.idx() : idx) || 0));
+    }
     PV.show(idx);
   };
   /* ---------- おまかせ：换 seed、换风格、换气氛，重掷当前行 ---------- */
@@ -77,7 +104,7 @@
   /* ---------- 模式切换 ---------- */
   PV.enter = function () {
     var c = core();
-    if (c && c.lrc) PV.setLyrics(c.lrc());
+    PV.syncTable(c && c.lrc ? c.lrc() : null);
     document.body.classList.add('jizura-mode');
     window.renderJizuraInit();
   };

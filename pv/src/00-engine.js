@@ -139,7 +139,12 @@
     return layer;
   };
 
-  PV.setLyrics = function (l) { S.lyrics = l || []; S.cuts = null; S.cutI = 0; S.cutsLine = -1; };
+  PV.setLyrics = function (l) {
+    S.lyrics = l || []; S.cuts = null; S.cutI = 0; S.cutsLine = -1;
+    /* 任何人直接换表（预览台、PV.demo、PV.audit）都得把同步缓存作废：
+     * 否则 syncTable 会认为「还是那张表」，测试句就赖在画面上不走。*/
+    PV._tblRef = null; PV._tblSig = null;
+  };
 
   /* ---------- ctx：所有层读同一个上下文 ---------- */
   PV.makeCtx = function (i, txt) {
