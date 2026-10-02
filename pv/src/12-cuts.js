@@ -1,13 +1,16 @@
-/* PV 引擎 · 12 分 cut 与拍对齐（④）
+/* PV 引擎 · 12 分 cut 与拍对齐（④）+ 记号承载（⑤的语法接入口）
  *
  * 一行 ≠ 一个 cut。规则：
- *   1. 显式 `/` 优先（写 `今夜/我还在这里` 就按它切）；
- *   2. 没写就按字数自动切：超过 PV.maxCutChars 的行在词边界（拉丁）或标点/空格处断开，
+ *   1. 显式 `/` 优先（`风也/停了/星也落了` 切三段）；
+ *   2. 没写就按字数自动切：超过 PV.maxCutChars 的行在标点 / 空格 / 拉丁词边界处断，
  *      最多 PV.maxCuts 段——长句不再挤成一坨，短句一律不动；
- *   3. 时间：有 TTML words 用词的真实起止；没有就按字符权重在行的起止之间分配；
- *   4. PV.beatSnap 为真且节拍可信时，把每个 cut 的起点吸到最近的拍点（最多吸半拍）。
+ *   3. 时间：有 TTML words 用词的真实起止，否则按字符权重在行起止之间分配；
+ *   4. PV.beatSnap 为真且节拍可信时，把每段起点吸到最近的拍点（最多吸半拍）。
  *
- * 推进由帧循环做：PV.audio.time 越过下一段起点就换段。没有播放时钟时一行就是一段，
+ * `*强调*` 与行末 `!` 在这里随分段一起打标（cut.emph / cut.flash），
+ * 注釈 `歌词|注釈` 是行级的，摘出来挂在第一段上——记号本身不进画面。
+ *
+ * 推进由帧循环做：PV.audio.time 越过下段起点就换段。没有播放时钟时一行就是一段，
  * 行为与 ③ 之前完全一致。
  */
 (function () {
@@ -19,11 +22,12 @@
   PV.maxCutChars = 13;      // 超过这个字数才考虑自动切
   PV.maxCuts = 3;
 
-  var MARK = /[，。、！？；：,.!?;:…—–)」』”’]/;
+  var MARK = /[，。、！？；：,.?;:…—–)」』”’]/;
   function isSpace(t) { return /^\s+$/.test(t); }
-  function len(t) { return isSpace(t) ? 1 : Array.from(t.replace(/\u00a0/g, ' ')).length; }
+  function bare(t) { return t.replace(/[*!]/g, ''); }
+  function len(t) { return isSpace(t) ? 1 : Math.max(1, Array.from(bare(t)).length); }
+  function len2(toks) { var s = 0; toks.forEach(function (t) { s += len(t); }); return s; }
 
-  /* 先按显式 / 断成组 */
   function bySlash(tokens) {
     var gs = [], cur = [], i;
     for (i = 0; i < tokens.length; i++) {
@@ -35,13 +39,13 @@
     return gs.map(function (g) { return { tokens: g, explicit: gs.length > 1 }; });
   }
 
-  /* 在 [lo,hi] 里挑最后一个好断点（空格 / 标点之后 / 拉丁词后） */
+  /* 在 [lo,hi] 里挑最后一个好断点（空格 / 标点之后 / 拉丁词之后） */
   function findBreak(toks, lo, hi) {
     var best = -1;
     hi = Math.min(hi, toks.length - 1);
     for (var i = lo; i <= hi; i++) {
       if (i + 1 >= toks.length) break;
-      if (isSpace(toks[i]) || MARK.test(toks[i]) || toks[i + 1] === ' ' || /[a-zA-Z]{2,}/.test(toks[i])) best = i + 1;
+      if (isSpace(toks[i]) || MARK.test(bare(toks[i])) || toks[i + 1] === ' ' || /[a-zA-Z]{2,}/.test(toks[i])) best = i + 1;
     }
     return best;
   }
@@ -63,9 +67,8 @@
     }
     return out;
   }
-  function len2(toks) { var s = 0; toks.forEach(function (t) { s += len(t); }); return s; }
 
-  /* 拍点吸附：偏移不超过 limit 才吸，宁可不吸也不硬掰 */
+  /* 吸附：偏移不超过半拍才吸，且不得越界 */
   function snapMs(ms, perMs) {
     if (!PV.beatSnap || !perMs || perMs < 120) return ms;
     var b = PV.audio.beat;
@@ -77,9 +80,10 @@
   }
 
   PV.splitLine = function (line, i) {
-    var raw = (line && line.text) || '';
-    if (!raw.trim()) return [];
-    var toks = PV.tokens(raw);
+    var rawLine = (line && line.text) || '';
+    if (!rawLine.trim()) return [];
+    var sn = PV.splitNote ? PV.splitNote(rawLine) : { text: rawLine, note: '' };
+    var toks = PV.tokens(sn.text);
     var groups = [];
     bySlash(toks).forEach(function (g) { autoSplit(g).forEach(function (x) { groups.push(x); }); });
     if (!groups.length) return [];
@@ -95,13 +99,19 @@
     groups.forEach(function (g, gi) {
       var s = t0 + span * (acc / tot), e = t0 + span * ((acc + w[gi]) / tot);
       acc += w[gi];
+      var flags = PV.markFlags ? PV.markFlags(g.tokens) : { emph: 0, flash: 0 };
+      var clean = PV.cleanTokens ? PV.cleanTokens(g.tokens) : g.tokens;
       cuts.push({
-        i: gi, n: groups.length, tokens: g.tokens, text: g.tokens.join('').replace(/\u00a0/g, ' ').trim(),
-        t0: s, t1: e, explicit: !!g.explicit
+        i: gi, n: groups.length, tokens: clean, raw: g.tokens,
+        text: clean.join('').replace(/\u00a0/g, ' ').trim(),
+        t0: s, t1: e, explicit: !!g.explicit,
+        emph: flags.emph, flash: flags.flash,
+        note: gi === 0 ? sn.note : ''            // 注釈是行级的，挂在第一段
       });
     });
+    if (!cuts.some(function (c) { return c.text; })) return [];
 
-    /* TTML 逐词时间：比字符权重更准，直接覆盖 */
+    /* TTML 逐词时间比字符权重准，直接覆盖 */
     var ws = line.words;
     if (ws && ws.length && cuts.length > 1) {
       var wEnd = ws[ws.length - 1].time + (ws[ws.length - 1].dur || 0);
@@ -114,17 +124,16 @@
 
     var perMs = PV.audio.beat ? PV.audio.beat.len * 1000 : 0;
     for (var k = 1; k < cuts.length; k++) {
-      /* 吸附可以往回也可以往后，但不能跑过上一段的头或本段的尾 */
-      var sn = snapMs(cuts[k].t0, perMs);
+      var sn2 = snapMs(cuts[k].t0, perMs);
       var lo = cuts[k - 1].t0 + 320, hi = Math.max(lo + 200, cuts[k].t1 - 160);
-      cuts[k].t0 = Math.max(lo, Math.min(hi, sn));
+      cuts[k].t0 = Math.max(lo, Math.min(hi, sn2));
       cuts[k - 1].t1 = Math.min(cuts[k].t0, Math.max(cuts[k - 1].t0 + 400, cuts[k - 1].t1));
     }
     cuts[cuts.length - 1].t1 = Math.max(cuts[cuts.length - 1].t1, t1);
     return cuts;
   };
 
-  /* 帧推进：过了下一段的起点就换段 */
+  /* 帧推进：过了下段起点就换段 */
   PV.cutTick = function () {
     var S = PV.S;
     if (!S.cuts || S.cuts.length < 2) return;

@@ -87,7 +87,9 @@
   };
 
   /* 哪几层参与抽签（关掉就用默认件，可以随时收收观感） */
-  PV.rolling = { enter: true, hold: true, exit: true, transition: true, camera: true, decor: true };
+  PV.rolling = { enter: true, hold: true, exit: true, transition: true, camera: true, decor: true, treatment: true };
+  PV.decorMax = 2;        // 每段最多叠几件装饰（不含默认那几件）
+  PV.treatMax = 1;
 
   /* 每层的默认件——① 的目标是行为不变，所以默认件就是旧实现的那一套 */
   PV.defaults = { enter: 'rise', hold: 'none', exit: 'none', transition: 'cut', camera: 'none', style: 'auto', decor: ['particles'], treatment: ['sweep'] };
@@ -146,23 +148,26 @@
       lyrics: S.lyrics,
       cutI: 0, cutN: 1, t0: line.time || 0, t1: line.end || 0,
       /* 层之间可写的字段 */
-      stagger: 45, emphasis: 0, params: {}, ghost: true, decor: true,
+      stagger: 45, emph: 0, flash: 0, note: '', params: {}, ghost: true, decor: true,
       ltr: PV.hasLatin(line.text || '')
     };
   };
 
-  /* ---------- 选件：fit/when 过滤 → 气氛偏置 → 权重抽签 ---------- */
-  function bias(d) {
-    if (!PV.mood || !d.tags || !d.tags.length) return 1;
-    return d.tags.indexOf(PV.mood) >= 0 ? 2.6 : 0.45;
+  /* ---------- 选件：fit/when 过滤 → 气氛与强调偏置 → 权重抽签 ---------- */
+  function bias(d, ctx) {
+    var b = 1;
+    if (PV.mood && d.tags && d.tags.length) b *= d.tags.indexOf(PV.mood) >= 0 ? 2.6 : 0.45;
+    /* `*强调*` 的行优先冲击型件（件上标 impact:1） */
+    if (ctx && (ctx.emph || ctx.flash) && d.impact) b *= 2.4;
+    return b;
   }
-  function weighted(arr) {
+  function weighted(arr, ctx) {
     var tot = 0;
-    arr.forEach(function (d) { tot += (d.w || 1) * bias(d); });
+    arr.forEach(function (d) { tot += (d.w || 1) * bias(d, ctx); });
     if (tot <= 0) return PV.pick(arr);
     var r = PV.rnd(tot);
     for (var i = 0; i < arr.length; i++) {
-      r -= (arr[i].w || 1) * bias(arr[i]);
+      r -= (arr[i].w || 1) * bias(arr[i], ctx);
       if (r <= 0) return arr[i];
     }
     return arr[arr.length - 1];
@@ -185,9 +190,27 @@
     if (!ok.length) ok = all.filter(function (d) { return !d.sp && !d.special; });
     if (!ok.length) ok = [PV.part(group, PV.defaults[group]) || all[0]];
     if (group === 'layout') return PV.pickNot(ok, S.lastLayout);
-    var p = weighted(ok);
-    if (ok.length > 1 && p.key === opts.avoid) p = weighted(ok.filter(function (d) { return d.key !== p.key; }));
+    var p = weighted(ok, ctx);
+    if (ok.length > 1 && p.key === opts.avoid) p = weighted(ok.filter(function (d) { return d.key !== p.key; }), ctx);
     return p;
+  };
+
+  /* 多件叠加（decor / treatment 用）：不重复地抽 k 件 */
+  PV.chooseMany = function (group, ctx, opts, k) {
+    var pool = PV.parts(group).filter(function (d) {
+      if (d.sp) return false;
+      if (d.fit && !d.fit(ctx)) return false;
+      if (d.when && !d.when(ctx)) return false;
+      return true;
+    });
+    var out = [];
+    for (var i = 0; i < k && pool.length; i++) {
+      var p = weighted(pool, ctx);
+      if (!p) break;
+      out.push(p);
+      pool = pool.filter(function (d) { return d.key !== p.key; });
+    }
+    return out;
   };
 
   /* ---------- 一行（或一行里的一段）的配牌 ---------- */
@@ -206,6 +229,7 @@
       ctx.tokens = cut.tokens;
       ctx.cutI = cut.i; ctx.cutN = cut.n; ctx.t0 = cut.t0; ctx.t1 = cut.t1;
       ctx.explicitCut = !!cut.explicit;
+      ctx.emph = cut.emph || 0; ctx.flash = cut.flash || 0; ctx.note = cut.note || '';
       ctx.ltr = PV.hasLatin(ctx.text);
       /* 一行内多段时，每段自己算字数：长短句适配（fit）要按段而不是按整行 */
       ctx.line = Object.assign({}, line, { text: ctx.text, time: cut.t0, end: cut.t1 });
@@ -213,21 +237,29 @@
     if (opts.special) { ctx.special = opts.special; }
     /* 空行（间奏）不再渲染成一块空白，走专用版式 */
     if (!ctx.special && !(ctx.text || '').trim()) ctx.special = 'interlude';
-    ctx.emphasis = /[*!]/.test(line ? line.text : '') ? 1 : 0;
     var lay = (ctx.special && PV.part('layout', ctx.special))
       || (opts.layout ? PV.part('layout', opts.layout) : PV.choose('layout', ctx, opts));
     if (!lay) lay = PV.part('layout', 'center');
     if (lay.pre) lay.pre(ctx);
-    /* decor / treatment 是 0..n 叠加：默认那几件 + 再抽一件（when 不满足就抽不到）。
-     * 外部可以传字符串（指定单件）也可以传数组（多件叠加）。 */
+    /* decor / treatment 可叠 0..n 件；外部传字符串 = 只用那一件 */
     function stack(group) {
-      var raw = opts[group] == null ? PV.defaults[group] : opts[group];
-      var list = (typeof raw === 'string' ? [raw] : raw || []).slice();
-      if (PV.rolling[group] !== false && typeof raw !== 'string') {
-        var p = PV.choose(group, ctx, opts);
-        if (p && p.key !== 'none' && list.indexOf(p.key) < 0) list.push(p.key);
+      var raw = opts[group];
+      if (typeof raw === 'string') {
+        return [raw].map(function (k) { return PV.part(group, k); })
+          .filter(function (d) { return d && (!d.when || d.when(ctx)); });
       }
-      return list.map(function (k) { return typeof k === 'string' ? PV.part(group, k) : k; })
+      if (Array.isArray(raw)) {
+        return raw.map(function (k) { return typeof k === 'string' ? PV.part(group, k) : k; })
+          .filter(function (d) { return d && (!d.when || d.when(ctx)); });
+      }
+      var base = (PV.defaults[group] || []).slice();
+      var want = group === 'decor' ? PV.decorMax : PV.treatMax;
+      if (PV.rolling[group] !== false && want > 0) {
+        PV.chooseMany(group, ctx, opts, want).forEach(function (d) {
+          if (d.key !== 'none' && base.indexOf(d.key) < 0) base.push(d.key);
+        });
+      }
+      return base.map(function (k) { return PV.part(group, k); })
         .filter(function (d) { return d && (!d.when || d.when(ctx)); });
     }
     return {
@@ -321,8 +353,8 @@
 
     if (S.tag) S.tag.textContent = 'LAYOUT · ' + plan.layout.nm + (PV.mood ? ' · ' + PV.mood : '') +
       (S.cuts && S.cuts.length > 1 ? ' · ' + (S.cutI + 1) + '/' + S.cuts.length : '');
-    if (S.ghosts.up) S.ghosts.up.textContent = i > 0 && S.lyrics[i - 1] ? S.lyrics[i - 1].text : '';
-    if (S.ghosts.dn) S.ghosts.dn.textContent = i < S.lyrics.length - 1 && S.lyrics[i + 1] ? S.lyrics[i + 1].text : '';
+    if (S.ghosts.up) S.ghosts.up.textContent = i > 0 && S.lyrics[i - 1] ? PV.plain(S.lyrics[i - 1].text) : '';
+    if (S.ghosts.dn) S.ghosts.dn.textContent = i < S.lyrics.length - 1 && S.lyrics[i + 1] ? PV.plain(S.lyrics[i + 1].text) : '';
     PV.dispatch('pv:cut', plan);
     return plan;
   };
@@ -340,6 +372,8 @@
    * 顺序不能换：音频先把 energy/beat 算完，后面的件才能读到本帧的新值。 */
   var _raf = 0, _subs = [];
   PV.onFrame = function (fn) { if (fn && _subs.indexOf(fn) < 0) _subs.push(fn); };
+  PV.offFrame = function (fn) { var i = _subs.indexOf(fn); if (i >= 0) _subs.splice(i, 1); };
+  PV.frameCount = function () { return _subs.length; };
   PV.startLoop = function () {
     if (_raf) return;
     var tick = function () {

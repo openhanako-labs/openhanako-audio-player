@@ -134,8 +134,8 @@
     fit: function (c) { return c.tokens.length <= 14; },
     render: function (c) {
       var l = c.lyrics, i = c.idx;
-      var pv = i > 0 && l[i - 1] ? l[i - 1].text : '';
-      var nx = i < l.length - 1 && l[i + 1] ? l[i + 1].text : '';
+      var pv = i > 0 && l[i - 1] ? PV.plain(l[i - 1].text) : '';
+      var nx = i < l.length - 1 && l[i + 1] ? PV.plain(l[i + 1].text) : '';
       return '<div class="pd pt2">' + pv + '</div><div class="pd pb2">' + nx + '</div><div class="pl">' + PV.spans(c) + '</div>';
     }
   });
@@ -172,8 +172,8 @@
     nm: '连行', tags: ['calm', 'editorial'], w: 1,
     render: function (c) {
       var l = c.lyrics, i = c.idx;
-      var p = i > 0 && l[i - 1] ? l[i - 1].text : '';
-      var n = i < l.length - 1 && l[i + 1] ? l[i + 1].text : '';
+      var p = i > 0 && l[i - 1] ? PV.plain(l[i - 1].text) : '';
+      var n = i < l.length - 1 && l[i + 1] ? PV.plain(l[i + 1].text) : '';
       return '<div class="prev">' + p + '</div><div class="rule"></div><div class="cur">' + PV.spans(c) +
         '</div><div class="rule"></div><div class="next">' + n + '</div>';
     }

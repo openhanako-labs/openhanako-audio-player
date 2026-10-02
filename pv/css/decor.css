@@ -1,0 +1,88 @@
+/* PV 引擎 · ⑤ 装饰与处理扩容用的样式
+ * 规矩：.jv-d（段内装饰，随 .jv-line 生灭）、.jv-t（整屏处理，挂在 #pvJv）。
+ * 全部 horizontal-tb + pointer-events:none —— 竖写版式会把子层的文字方向一起带走（①踩过）。
+ */
+
+.jv-d, .jv-t { pointer-events: none; writing-mode: horizontal-tb; }
+.jv-d { position: absolute; inset: 0; z-index: 1; }
+.jv-d > * { position: absolute; }
+.jv-t { position: absolute; inset: 0; z-index: 6; }
+
+/* ---------- decor ---------- */
+.jv-frame .e { inset: 4.5% 5%; border: 1px solid var(--jv-fg); opacity: .35; }
+.jv-frame .e2 { inset: 6.6% 7.2%; border: 1px solid var(--jv-acc); opacity: .5; }
+.jv-frame .c { width: 13px; height: 13px; border: 2px solid var(--jv-acc); opacity: .8; }
+.jv-frame .c.tl { left: 3.4%; top: 3.4%; border-right: 0; border-bottom: 0; }
+.jv-frame .c.tr { right: 3.4%; top: 3.4%; border-left: 0; border-bottom: 0; }
+.jv-frame .c.bl { left: 3.4%; bottom: 3.4%; border-right: 0; border-top: 0; }
+.jv-frame .c.br { right: 3.4%; bottom: 3.4%; border-left: 0; border-top: 0; }
+
+.jv-ticks { position: absolute; inset: auto 0 auto 0; top: 5.5%; height: 16px; display: flex; gap: 3px; justify-content: center; align-items: flex-start; }
+.jv-ticks > i { position: static; width: 1px; background: var(--jv-fg); }
+
+.jv-target svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.jv-target circle { fill: none; stroke: var(--jv-acc); stroke-width: .7; opacity: .3; }
+.jv-target line { stroke: var(--jv-acc); stroke-width: 1; opacity: .5; }
+.jv-target .co { fill: var(--jv-fg); font-family: monospace; font-size: 9px; opacity: .4; letter-spacing: .1em; }
+
+.jv-barcode { inset: auto; top: 50%; transform: translateY(-50%); display: flex; gap: 2px; align-items: flex-end; height: 46%; }
+.jv-barcode.l { left: 3.5%; }
+.jv-barcode.r { right: 3.5%; }
+.jv-barcode > i { position: static; background: var(--jv-fg); height: 100%; }
+
+.jv-arrows { display: flex; gap: 12px; align-items: center; color: var(--jv-acc); font-size: 15px; inset: auto; }
+.jv-arrows.top { top: 12%; left: 50%; transform: translateX(-50%); }
+.jv-arrows.bot { bottom: 12%; left: 50%; transform: translateX(-50%); }
+.jv-arrows > span { position: static; animation: jvArrow 1.5s ease-in-out infinite; }
+@keyframes jvArrow { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(5px); } }
+
+.jv-spark > i { background: var(--jv-acc); clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); animation: jvSpark 2.6s ease-in-out infinite; }
+@keyframes jvSpark { 0%, 100% { opacity: 0; transform: scale(.4) rotate(0deg); } 45% { opacity: .85; transform: scale(1) rotate(45deg); } }
+
+.jv-grid { position: absolute; inset: 0; pointer-events: none; z-index: 0; opacity: .18;
+  background-image: linear-gradient(to right, color-mix(in srgb, var(--jv-fg) 22%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--jv-fg) 22%, transparent) 1px, transparent 1px);
+  background-size: 46px 46px; }
+
+.jv-stripes > i { inset: 0; opacity: .1;
+  background: repeating-linear-gradient(115deg, var(--jv-acc) 0 2px, transparent 2px 16px); }
+
+.jv-bignum { display: flex; align-items: center; justify-content: center; font-size: min(30vh, 26vw); font-weight: 900; color: var(--jv-fg); opacity: .07; line-height: .8; letter-spacing: -.04em; overflow: hidden; }
+
+.jv-ink > i { background: var(--jv-fg); border-radius: 50% 46% 52% 48% / 52% 48% 54% 46%; filter: blur(.4px); }
+
+.jv-note { inset: auto; left: 50%; bottom: 12%; transform: translateX(-50%); font-size: 12px; letter-spacing: .22em; color: var(--jv-fg); opacity: .55; font-family: monospace; max-width: 74%; text-align: center; }
+
+.jv-prog { inset: auto 0 6% 0; height: 2px; }
+.jv-prog > i { position: static; display: block; width: 100%; height: 100%; background: var(--jv-acc); transform-origin: 0 50%; transform: scaleX(0); }
+
+.jv-wave-band { display: flex; align-items: flex-end; gap: 3px; height: 16%; justify-content: center; inset: auto; }
+.jv-wave-band.bot { left: 0; right: 0; bottom: 5%; }
+.jv-wave-band.top { left: 0; right: 0; top: 5%; align-items: flex-start; }
+.jv-wave-band > i { position: static; width: 3px; height: 100%; background: var(--jv-acc); transform-origin: 50% 100%; transform: scaleY(.1); }
+.jv-wave-band.top > i { transform-origin: 50% 0; }
+
+.jv-corner .pg { bottom: 7%; right: 6%; font-family: monospace; font-size: 10px; letter-spacing: .2em; color: var(--jv-fg); opacity: .45; }
+.jv-corner .vt { top: 8%; right: 5.5%; writing-mode: vertical-rl; font-size: 11px; letter-spacing: .3em; color: var(--jv-acc); opacity: .5; max-height: 46%; overflow: hidden; }
+
+/* ---------- treatment ---------- */
+.jv-scan { background: repeating-linear-gradient(0deg, rgba(255, 255, 255, .07) 0 1px, transparent 1px 4px); animation: jvScan 7s linear infinite; mix-blend-mode: overlay; }
+@keyframes jvScan { 0% { background-position: 0 0; } 100% { background-position: 0 40px; } }
+
+.jv-vig { background: radial-gradient(115% 88% at 50% 46%, transparent 46%, rgba(0, 0, 0, .62) 100%); transition: opacity .2s linear; }
+
+.jv-punch { background: color-mix(in srgb, var(--jv-fg) 55%, transparent); mix-blend-mode: screen; opacity: 0; transition: opacity .09s linear; }
+
+.jv-edge { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--jv-acc) 60%, transparent), inset 0 0 70px color-mix(in srgb, var(--jv-acc) 45%, transparent); }
+
+.jv-gbars > i { left: 0; right: 0; background: var(--jv-acc); mix-blend-mode: screen; opacity: 0; }
+
+.jv-duo { background: linear-gradient(150deg, color-mix(in srgb, var(--jv-acc) 70%, #0ff), color-mix(in srgb, var(--jv-acc) 55%, #f08)); mix-blend-mode: color; }
+
+.jv-dust { opacity: .2; }
+.jv-dust > i { background: var(--jv-fg); border-radius: 50%; animation: jvDust linear infinite; }
+@keyframes jvDust { 0% { transform: translateY(6px); opacity: 0; } 20% { opacity: .5; } 80% { opacity: .35; } 100% { transform: translateY(-26px); opacity: 0; } }
+
+/* ---------- transition ---------- */
+.jv-trail { opacity: .5; pointer-events: none; mix-blend-mode: screen; }
+.jv-slice-in { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 36px; pointer-events: none; }

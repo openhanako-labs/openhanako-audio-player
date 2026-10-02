@@ -89,7 +89,8 @@
 
   PV.reg('transition', 'flash', {
     nm: '白闪', tags: ['glitch', 'pop', 'graphic', 'horror'], w: 0.9,
-    when: function () { return PV.fx.glitch > 0.12 || PV.fx.motion > 0.55; },
+    impact: 1,
+    when: function (c) { return PV.fx.glitch > 0.12 || PV.fx.motion > 0.55 || !!(c && c.flash); },
     play: function (c, prev, next, swap) {
       swap();
       var layer = PV.layer();

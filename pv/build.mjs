@@ -17,12 +17,14 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PV = dirname(fileURLToPath(import.meta.url));
 const TARGETS = ['ui/index.html', 'ui/standalone.html'];
 
-const CSS_ORDER = ['css/base.css', 'css/layouts.css', 'css/chrome.css', 'css/parts.css'];
+const CSS_ORDER = ['css/base.css', 'css/layouts.css', 'css/chrome.css', 'css/parts.css', 'css/decor.css'];
 const JS_ORDER = [
   'src/00-engine.js', 'src/01-styles.js', 'src/02-layouts.js',
   'src/03-enter.js', 'src/04-hold.js', 'src/05-exit.js',
   'src/06-camera.js', 'src/07-transition.js', 'src/08-decor.js',
-  'src/09-chrome.js', 'src/10-api.js', 'src/11-audio.js', 'src/12-cuts.js'
+  'src/09-chrome.js', 'src/10-api.js', 'src/11-audio.js',
+  'src/13-syntax.js', 'src/12-cuts.js',
+  'src/14-decor.js', 'src/15-treat.js', 'src/16-trans.js'
 ];
 
 const CSS_B = '/* ===== PV:BEGIN 文字PV引擎（pv/ 目录构建产物，勿手改） ===== */';

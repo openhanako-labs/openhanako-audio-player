@@ -88,7 +88,9 @@ ${js}
     { text: 'We are the champions, my friends', time: 4000, end: 8000 },
     { text: '就算前面是深渊也别回头，我一直都在这里等', time: 8000, end: 12000 },
     { text: '风也/停了/星也落了', time: 12000, end: 16000 },
-    { text: '', time: 16000, end: 20000 }
+    { text: '*烧成灰也要亮一下*|现场版 2026', time: 16000, end: 20000 },
+    { text: '够了!|喊完就安静', time: 20000, end: 22000 },
+    { text: '', time: 22000, end: 26000 }
   ];
   var line = 0, savedStyle = 'gold';
   /* 预览台没有 core 的频谱链，清掉那个开关免得白等 6 秒才自建图 */

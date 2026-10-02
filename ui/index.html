@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1002201701";
+  window.__HANA_BUILD = "1002203230";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -3656,6 +3656,95 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 .jv-line { transform-origin: 50% 50%; }
 .jv-w { transform-origin: 50% 50%; }
 .jv-t { transform-origin: 50% 50%; }
+
+/* PV 引擎 · ⑤ 装饰与处理扩容用的样式
+ * 规矩：.jv-d（段内装饰，随 .jv-line 生灭）、.jv-t（整屏处理，挂在 #pvJv）。
+ * 全部 horizontal-tb + pointer-events:none —— 竖写版式会把子层的文字方向一起带走（①踩过）。
+ */
+
+.jv-d, .jv-t { pointer-events: none; writing-mode: horizontal-tb; }
+.jv-d { position: absolute; inset: 0; z-index: 1; }
+.jv-d > * { position: absolute; }
+.jv-t { position: absolute; inset: 0; z-index: 6; }
+
+/* ---------- decor ---------- */
+.jv-frame .e { inset: 4.5% 5%; border: 1px solid var(--jv-fg); opacity: .35; }
+.jv-frame .e2 { inset: 6.6% 7.2%; border: 1px solid var(--jv-acc); opacity: .5; }
+.jv-frame .c { width: 13px; height: 13px; border: 2px solid var(--jv-acc); opacity: .8; }
+.jv-frame .c.tl { left: 3.4%; top: 3.4%; border-right: 0; border-bottom: 0; }
+.jv-frame .c.tr { right: 3.4%; top: 3.4%; border-left: 0; border-bottom: 0; }
+.jv-frame .c.bl { left: 3.4%; bottom: 3.4%; border-right: 0; border-top: 0; }
+.jv-frame .c.br { right: 3.4%; bottom: 3.4%; border-left: 0; border-top: 0; }
+
+.jv-ticks { position: absolute; inset: auto 0 auto 0; top: 5.5%; height: 16px; display: flex; gap: 3px; justify-content: center; align-items: flex-start; }
+.jv-ticks > i { position: static; width: 1px; background: var(--jv-fg); }
+
+.jv-target svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.jv-target circle { fill: none; stroke: var(--jv-acc); stroke-width: .7; opacity: .3; }
+.jv-target line { stroke: var(--jv-acc); stroke-width: 1; opacity: .5; }
+.jv-target .co { fill: var(--jv-fg); font-family: monospace; font-size: 9px; opacity: .4; letter-spacing: .1em; }
+
+.jv-barcode { inset: auto; top: 50%; transform: translateY(-50%); display: flex; gap: 2px; align-items: flex-end; height: 46%; }
+.jv-barcode.l { left: 3.5%; }
+.jv-barcode.r { right: 3.5%; }
+.jv-barcode > i { position: static; background: var(--jv-fg); height: 100%; }
+
+.jv-arrows { display: flex; gap: 12px; align-items: center; color: var(--jv-acc); font-size: 15px; inset: auto; }
+.jv-arrows.top { top: 12%; left: 50%; transform: translateX(-50%); }
+.jv-arrows.bot { bottom: 12%; left: 50%; transform: translateX(-50%); }
+.jv-arrows > span { position: static; animation: jvArrow 1.5s ease-in-out infinite; }
+@keyframes jvArrow { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(5px); } }
+
+.jv-spark > i { background: var(--jv-acc); clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); animation: jvSpark 2.6s ease-in-out infinite; }
+@keyframes jvSpark { 0%, 100% { opacity: 0; transform: scale(.4) rotate(0deg); } 45% { opacity: .85; transform: scale(1) rotate(45deg); } }
+
+.jv-grid { position: absolute; inset: 0; pointer-events: none; z-index: 0; opacity: .18;
+  background-image: linear-gradient(to right, color-mix(in srgb, var(--jv-fg) 22%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--jv-fg) 22%, transparent) 1px, transparent 1px);
+  background-size: 46px 46px; }
+
+.jv-stripes > i { inset: 0; opacity: .1;
+  background: repeating-linear-gradient(115deg, var(--jv-acc) 0 2px, transparent 2px 16px); }
+
+.jv-bignum { display: flex; align-items: center; justify-content: center; font-size: min(30vh, 26vw); font-weight: 900; color: var(--jv-fg); opacity: .07; line-height: .8; letter-spacing: -.04em; overflow: hidden; }
+
+.jv-ink > i { background: var(--jv-fg); border-radius: 50% 46% 52% 48% / 52% 48% 54% 46%; filter: blur(.4px); }
+
+.jv-note { inset: auto; left: 50%; bottom: 12%; transform: translateX(-50%); font-size: 12px; letter-spacing: .22em; color: var(--jv-fg); opacity: .55; font-family: monospace; max-width: 74%; text-align: center; }
+
+.jv-prog { inset: auto 0 6% 0; height: 2px; }
+.jv-prog > i { position: static; display: block; width: 100%; height: 100%; background: var(--jv-acc); transform-origin: 0 50%; transform: scaleX(0); }
+
+.jv-wave-band { display: flex; align-items: flex-end; gap: 3px; height: 16%; justify-content: center; inset: auto; }
+.jv-wave-band.bot { left: 0; right: 0; bottom: 5%; }
+.jv-wave-band.top { left: 0; right: 0; top: 5%; align-items: flex-start; }
+.jv-wave-band > i { position: static; width: 3px; height: 100%; background: var(--jv-acc); transform-origin: 50% 100%; transform: scaleY(.1); }
+.jv-wave-band.top > i { transform-origin: 50% 0; }
+
+.jv-corner .pg { bottom: 7%; right: 6%; font-family: monospace; font-size: 10px; letter-spacing: .2em; color: var(--jv-fg); opacity: .45; }
+.jv-corner .vt { top: 8%; right: 5.5%; writing-mode: vertical-rl; font-size: 11px; letter-spacing: .3em; color: var(--jv-acc); opacity: .5; max-height: 46%; overflow: hidden; }
+
+/* ---------- treatment ---------- */
+.jv-scan { background: repeating-linear-gradient(0deg, rgba(255, 255, 255, .07) 0 1px, transparent 1px 4px); animation: jvScan 7s linear infinite; mix-blend-mode: overlay; }
+@keyframes jvScan { 0% { background-position: 0 0; } 100% { background-position: 0 40px; } }
+
+.jv-vig { background: radial-gradient(115% 88% at 50% 46%, transparent 46%, rgba(0, 0, 0, .62) 100%); transition: opacity .2s linear; }
+
+.jv-punch { background: color-mix(in srgb, var(--jv-fg) 55%, transparent); mix-blend-mode: screen; opacity: 0; transition: opacity .09s linear; }
+
+.jv-edge { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--jv-acc) 60%, transparent), inset 0 0 70px color-mix(in srgb, var(--jv-acc) 45%, transparent); }
+
+.jv-gbars > i { left: 0; right: 0; background: var(--jv-acc); mix-blend-mode: screen; opacity: 0; }
+
+.jv-duo { background: linear-gradient(150deg, color-mix(in srgb, var(--jv-acc) 70%, #0ff), color-mix(in srgb, var(--jv-acc) 55%, #f08)); mix-blend-mode: color; }
+
+.jv-dust { opacity: .2; }
+.jv-dust > i { background: var(--jv-fg); border-radius: 50%; animation: jvDust linear infinite; }
+@keyframes jvDust { 0% { transform: translateY(6px); opacity: 0; } 20% { opacity: .5; } 80% { opacity: .35; } 100% { transform: translateY(-26px); opacity: 0; } }
+
+/* ---------- transition ---------- */
+.jv-trail { opacity: .5; pointer-events: none; mix-blend-mode: screen; }
+.jv-slice-in { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 36px; pointer-events: none; }
 
 /* ===== PV:END ===== */
 </style><script>
@@ -11770,7 +11859,9 @@ injectPills();
   };
 
   /* 哪几层参与抽签（关掉就用默认件，可以随时收收观感） */
-  PV.rolling = { enter: true, hold: true, exit: true, transition: true, camera: true, decor: true };
+  PV.rolling = { enter: true, hold: true, exit: true, transition: true, camera: true, decor: true, treatment: true };
+  PV.decorMax = 2;        // 每段最多叠几件装饰（不含默认那几件）
+  PV.treatMax = 1;
 
   /* 每层的默认件——① 的目标是行为不变，所以默认件就是旧实现的那一套 */
   PV.defaults = { enter: 'rise', hold: 'none', exit: 'none', transition: 'cut', camera: 'none', style: 'auto', decor: ['particles'], treatment: ['sweep'] };
@@ -11829,23 +11920,26 @@ injectPills();
       lyrics: S.lyrics,
       cutI: 0, cutN: 1, t0: line.time || 0, t1: line.end || 0,
       /* 层之间可写的字段 */
-      stagger: 45, emphasis: 0, params: {}, ghost: true, decor: true,
+      stagger: 45, emph: 0, flash: 0, note: '', params: {}, ghost: true, decor: true,
       ltr: PV.hasLatin(line.text || '')
     };
   };
 
-  /* ---------- 选件：fit/when 过滤 → 气氛偏置 → 权重抽签 ---------- */
-  function bias(d) {
-    if (!PV.mood || !d.tags || !d.tags.length) return 1;
-    return d.tags.indexOf(PV.mood) >= 0 ? 2.6 : 0.45;
+  /* ---------- 选件：fit/when 过滤 → 气氛与强调偏置 → 权重抽签 ---------- */
+  function bias(d, ctx) {
+    var b = 1;
+    if (PV.mood && d.tags && d.tags.length) b *= d.tags.indexOf(PV.mood) >= 0 ? 2.6 : 0.45;
+    /* `*强调*` 的行优先冲击型件（件上标 impact:1） */
+    if (ctx && (ctx.emph || ctx.flash) && d.impact) b *= 2.4;
+    return b;
   }
-  function weighted(arr) {
+  function weighted(arr, ctx) {
     var tot = 0;
-    arr.forEach(function (d) { tot += (d.w || 1) * bias(d); });
+    arr.forEach(function (d) { tot += (d.w || 1) * bias(d, ctx); });
     if (tot <= 0) return PV.pick(arr);
     var r = PV.rnd(tot);
     for (var i = 0; i < arr.length; i++) {
-      r -= (arr[i].w || 1) * bias(arr[i]);
+      r -= (arr[i].w || 1) * bias(arr[i], ctx);
       if (r <= 0) return arr[i];
     }
     return arr[arr.length - 1];
@@ -11868,9 +11962,27 @@ injectPills();
     if (!ok.length) ok = all.filter(function (d) { return !d.sp && !d.special; });
     if (!ok.length) ok = [PV.part(group, PV.defaults[group]) || all[0]];
     if (group === 'layout') return PV.pickNot(ok, S.lastLayout);
-    var p = weighted(ok);
-    if (ok.length > 1 && p.key === opts.avoid) p = weighted(ok.filter(function (d) { return d.key !== p.key; }));
+    var p = weighted(ok, ctx);
+    if (ok.length > 1 && p.key === opts.avoid) p = weighted(ok.filter(function (d) { return d.key !== p.key; }), ctx);
     return p;
+  };
+
+  /* 多件叠加（decor / treatment 用）：不重复地抽 k 件 */
+  PV.chooseMany = function (group, ctx, opts, k) {
+    var pool = PV.parts(group).filter(function (d) {
+      if (d.sp) return false;
+      if (d.fit && !d.fit(ctx)) return false;
+      if (d.when && !d.when(ctx)) return false;
+      return true;
+    });
+    var out = [];
+    for (var i = 0; i < k && pool.length; i++) {
+      var p = weighted(pool, ctx);
+      if (!p) break;
+      out.push(p);
+      pool = pool.filter(function (d) { return d.key !== p.key; });
+    }
+    return out;
   };
 
   /* ---------- 一行（或一行里的一段）的配牌 ---------- */
@@ -11889,6 +12001,7 @@ injectPills();
       ctx.tokens = cut.tokens;
       ctx.cutI = cut.i; ctx.cutN = cut.n; ctx.t0 = cut.t0; ctx.t1 = cut.t1;
       ctx.explicitCut = !!cut.explicit;
+      ctx.emph = cut.emph || 0; ctx.flash = cut.flash || 0; ctx.note = cut.note || '';
       ctx.ltr = PV.hasLatin(ctx.text);
       /* 一行内多段时，每段自己算字数：长短句适配（fit）要按段而不是按整行 */
       ctx.line = Object.assign({}, line, { text: ctx.text, time: cut.t0, end: cut.t1 });
@@ -11896,21 +12009,29 @@ injectPills();
     if (opts.special) { ctx.special = opts.special; }
     /* 空行（间奏）不再渲染成一块空白，走专用版式 */
     if (!ctx.special && !(ctx.text || '').trim()) ctx.special = 'interlude';
-    ctx.emphasis = /[*!]/.test(line ? line.text : '') ? 1 : 0;
     var lay = (ctx.special && PV.part('layout', ctx.special))
       || (opts.layout ? PV.part('layout', opts.layout) : PV.choose('layout', ctx, opts));
     if (!lay) lay = PV.part('layout', 'center');
     if (lay.pre) lay.pre(ctx);
-    /* decor / treatment 是 0..n 叠加：默认那几件 + 再抽一件（when 不满足就抽不到）。
-     * 外部可以传字符串（指定单件）也可以传数组（多件叠加）。 */
+    /* decor / treatment 可叠 0..n 件；外部传字符串 = 只用那一件 */
     function stack(group) {
-      var raw = opts[group] == null ? PV.defaults[group] : opts[group];
-      var list = (typeof raw === 'string' ? [raw] : raw || []).slice();
-      if (PV.rolling[group] !== false && typeof raw !== 'string') {
-        var p = PV.choose(group, ctx, opts);
-        if (p && p.key !== 'none' && list.indexOf(p.key) < 0) list.push(p.key);
+      var raw = opts[group];
+      if (typeof raw === 'string') {
+        return [raw].map(function (k) { return PV.part(group, k); })
+          .filter(function (d) { return d && (!d.when || d.when(ctx)); });
       }
-      return list.map(function (k) { return typeof k === 'string' ? PV.part(group, k) : k; })
+      if (Array.isArray(raw)) {
+        return raw.map(function (k) { return typeof k === 'string' ? PV.part(group, k) : k; })
+          .filter(function (d) { return d && (!d.when || d.when(ctx)); });
+      }
+      var base = (PV.defaults[group] || []).slice();
+      var want = group === 'decor' ? PV.decorMax : PV.treatMax;
+      if (PV.rolling[group] !== false && want > 0) {
+        PV.chooseMany(group, ctx, opts, want).forEach(function (d) {
+          if (d.key !== 'none' && base.indexOf(d.key) < 0) base.push(d.key);
+        });
+      }
+      return base.map(function (k) { return PV.part(group, k); })
         .filter(function (d) { return d && (!d.when || d.when(ctx)); });
     }
     return {
@@ -12004,8 +12125,8 @@ injectPills();
 
     if (S.tag) S.tag.textContent = 'LAYOUT · ' + plan.layout.nm + (PV.mood ? ' · ' + PV.mood : '') +
       (S.cuts && S.cuts.length > 1 ? ' · ' + (S.cutI + 1) + '/' + S.cuts.length : '');
-    if (S.ghosts.up) S.ghosts.up.textContent = i > 0 && S.lyrics[i - 1] ? S.lyrics[i - 1].text : '';
-    if (S.ghosts.dn) S.ghosts.dn.textContent = i < S.lyrics.length - 1 && S.lyrics[i + 1] ? S.lyrics[i + 1].text : '';
+    if (S.ghosts.up) S.ghosts.up.textContent = i > 0 && S.lyrics[i - 1] ? PV.plain(S.lyrics[i - 1].text) : '';
+    if (S.ghosts.dn) S.ghosts.dn.textContent = i < S.lyrics.length - 1 && S.lyrics[i + 1] ? PV.plain(S.lyrics[i + 1].text) : '';
     PV.dispatch('pv:cut', plan);
     return plan;
   };
@@ -12023,6 +12144,8 @@ injectPills();
    * 顺序不能换：音频先把 energy/beat 算完，后面的件才能读到本帧的新值。 */
   var _raf = 0, _subs = [];
   PV.onFrame = function (fn) { if (fn && _subs.indexOf(fn) < 0) _subs.push(fn); };
+  PV.offFrame = function (fn) { var i = _subs.indexOf(fn); if (i >= 0) _subs.splice(i, 1); };
+  PV.frameCount = function () { return _subs.length; };
   PV.startLoop = function () {
     if (_raf) return;
     var tick = function () {
@@ -12270,8 +12393,8 @@ injectPills();
     fit: function (c) { return c.tokens.length <= 14; },
     render: function (c) {
       var l = c.lyrics, i = c.idx;
-      var pv = i > 0 && l[i - 1] ? l[i - 1].text : '';
-      var nx = i < l.length - 1 && l[i + 1] ? l[i + 1].text : '';
+      var pv = i > 0 && l[i - 1] ? PV.plain(l[i - 1].text) : '';
+      var nx = i < l.length - 1 && l[i + 1] ? PV.plain(l[i + 1].text) : '';
       return '<div class="pd pt2">' + pv + '</div><div class="pd pb2">' + nx + '</div><div class="pl">' + PV.spans(c) + '</div>';
     }
   });
@@ -12308,8 +12431,8 @@ injectPills();
     nm: '连行', tags: ['calm', 'editorial'], w: 1,
     render: function (c) {
       var l = c.lyrics, i = c.idx;
-      var p = i > 0 && l[i - 1] ? l[i - 1].text : '';
-      var n = i < l.length - 1 && l[i + 1] ? l[i + 1].text : '';
+      var p = i > 0 && l[i - 1] ? PV.plain(l[i - 1].text) : '';
+      var n = i < l.length - 1 && l[i + 1] ? PV.plain(l[i + 1].text) : '';
       return '<div class="prev">' + p + '</div><div class="rule"></div><div class="cur">' + PV.spans(c) +
         '</div><div class="rule"></div><div class="next">' + n + '</div>';
     }
@@ -12868,7 +12991,8 @@ injectPills();
 
   PV.reg('transition', 'flash', {
     nm: '白闪', tags: ['glitch', 'pop', 'graphic', 'horror'], w: 0.9,
-    when: function () { return PV.fx.glitch > 0.12 || PV.fx.motion > 0.55; },
+    impact: 1,
+    when: function (c) { return PV.fx.glitch > 0.12 || PV.fx.motion > 0.55 || !!(c && c.flash); },
     play: function (c, prev, next, swap) {
       swap();
       var layer = PV.layer();
@@ -13586,16 +13710,68 @@ injectPills();
   PV.onFrame(function () { PV.audioTick(); applyModulate(); });
 })();
 
-/* PV 引擎 · 12 分 cut 与拍对齐（④）
+/* PV 引擎 · 13 歌词语法层
+ * JIZURA 那套行内记号，播放器里同样吃：
+ *   今夜/我还在这里    → 分 cut（12-cuts 做）
+ *   *透明*             → 强调：该段优先抽冲击型版式、装饰加权
+ *   行末 !             → 闪：入场更狠、允许白闪
+ *   歌词|注釈          → 注釈：小号副文本，交给 decor/note 件
+ *
+ * 记号不单独跑一遍「先剥后配」的解析——那样会丢掉位置信息，
+ * 到底是哪一段被强调就查不回来了。所以 * 与 ! 留在 token 流里，
+ * 由 12-cuts 分段时顺手带上 cut.emph / cut.flash 标记；
+ * 这里只管两件事：把 `|` 之后的注釈摘出来（行级），以及给出判定用的正则。
+ */
+(function () {
+  'use strict';
+  var PV = window.PV;
+
+  PV.MARK = { star: '*', bang: '!' };
+
+  /* 行级：摘注釈。返回 {text, note}，text 里保留 * 与 ! 交给分段 */
+  PV.splitNote = function (raw) {
+    var s = raw || '';
+    var i = s.indexOf('|');
+    if (i < 0) return { text: s, note: '' };
+    return { text: s.slice(0, i), note: s.slice(i + 1).trim() };
+  };
+
+  /* token 级：这一段里有 * 就算强调（成对与否都认，写歌词的人经常只打一半） */
+  PV.markFlags = function (tokens) {
+    var emph = 0, flash = 0;
+    for (var i = 0; i < tokens.length; i++) {
+      if (tokens[i] === PV.MARK.star) emph = 1;
+      else if (tokens[i] === PV.MARK.bang) flash = 1;
+    }
+    return { emph: emph, flash: flash };
+  };
+
+  /* 渲染前清掉记号字符：记号只表达意图，不该出现在画面上 */
+  PV.cleanTokens = function (tokens) {
+    return tokens.filter(function (t) { return t !== PV.MARK.star && t !== PV.MARK.bang; });
+  };
+
+  /* 给「邻行文本」用：前后行、ghost、注釈外的地方显示的是原始行，
+   * 不加这一步会把 / * ! | 这些记号直接印到画面上（实测连行版式的前行就泄露了） */
+  PV.plain = function (raw) {
+    var s = (raw || '').split('|')[0];
+    return s.replace(/[\/*!]/g, '').replace(/\s+/g, ' ').trim();
+  };
+})();
+
+/* PV 引擎 · 12 分 cut 与拍对齐（④）+ 记号承载（⑤的语法接入口）
  *
  * 一行 ≠ 一个 cut。规则：
- *   1. 显式 `/` 优先（写 `今夜/我还在这里` 就按它切）；
- *   2. 没写就按字数自动切：超过 PV.maxCutChars 的行在词边界（拉丁）或标点/空格处断开，
+ *   1. 显式 `/` 优先（`风也/停了/星也落了` 切三段）；
+ *   2. 没写就按字数自动切：超过 PV.maxCutChars 的行在标点 / 空格 / 拉丁词边界处断，
  *      最多 PV.maxCuts 段——长句不再挤成一坨，短句一律不动；
- *   3. 时间：有 TTML words 用词的真实起止；没有就按字符权重在行的起止之间分配；
- *   4. PV.beatSnap 为真且节拍可信时，把每个 cut 的起点吸到最近的拍点（最多吸半拍）。
+ *   3. 时间：有 TTML words 用词的真实起止，否则按字符权重在行起止之间分配；
+ *   4. PV.beatSnap 为真且节拍可信时，把每段起点吸到最近的拍点（最多吸半拍）。
  *
- * 推进由帧循环做：PV.audio.time 越过下一段起点就换段。没有播放时钟时一行就是一段，
+ * `*强调*` 与行末 `!` 在这里随分段一起打标（cut.emph / cut.flash），
+ * 注釈 `歌词|注釈` 是行级的，摘出来挂在第一段上——记号本身不进画面。
+ *
+ * 推进由帧循环做：PV.audio.time 越过下段起点就换段。没有播放时钟时一行就是一段，
  * 行为与 ③ 之前完全一致。
  */
 (function () {
@@ -13607,11 +13783,12 @@ injectPills();
   PV.maxCutChars = 13;      // 超过这个字数才考虑自动切
   PV.maxCuts = 3;
 
-  var MARK = /[，。、！？；：,.!?;:…—–)」』”’]/;
+  var MARK = /[，。、！？；：,.?;:…—–)」』”’]/;
   function isSpace(t) { return /^\s+$/.test(t); }
-  function len(t) { return isSpace(t) ? 1 : Array.from(t.replace(/\u00a0/g, ' ')).length; }
+  function bare(t) { return t.replace(/[*!]/g, ''); }
+  function len(t) { return isSpace(t) ? 1 : Math.max(1, Array.from(bare(t)).length); }
+  function len2(toks) { var s = 0; toks.forEach(function (t) { s += len(t); }); return s; }
 
-  /* 先按显式 / 断成组 */
   function bySlash(tokens) {
     var gs = [], cur = [], i;
     for (i = 0; i < tokens.length; i++) {
@@ -13623,13 +13800,13 @@ injectPills();
     return gs.map(function (g) { return { tokens: g, explicit: gs.length > 1 }; });
   }
 
-  /* 在 [lo,hi] 里挑最后一个好断点（空格 / 标点之后 / 拉丁词后） */
+  /* 在 [lo,hi] 里挑最后一个好断点（空格 / 标点之后 / 拉丁词之后） */
   function findBreak(toks, lo, hi) {
     var best = -1;
     hi = Math.min(hi, toks.length - 1);
     for (var i = lo; i <= hi; i++) {
       if (i + 1 >= toks.length) break;
-      if (isSpace(toks[i]) || MARK.test(toks[i]) || toks[i + 1] === ' ' || /[a-zA-Z]{2,}/.test(toks[i])) best = i + 1;
+      if (isSpace(toks[i]) || MARK.test(bare(toks[i])) || toks[i + 1] === ' ' || /[a-zA-Z]{2,}/.test(toks[i])) best = i + 1;
     }
     return best;
   }
@@ -13651,9 +13828,8 @@ injectPills();
     }
     return out;
   }
-  function len2(toks) { var s = 0; toks.forEach(function (t) { s += len(t); }); return s; }
 
-  /* 拍点吸附：偏移不超过 limit 才吸，宁可不吸也不硬掰 */
+  /* 吸附：偏移不超过半拍才吸，且不得越界 */
   function snapMs(ms, perMs) {
     if (!PV.beatSnap || !perMs || perMs < 120) return ms;
     var b = PV.audio.beat;
@@ -13665,9 +13841,10 @@ injectPills();
   }
 
   PV.splitLine = function (line, i) {
-    var raw = (line && line.text) || '';
-    if (!raw.trim()) return [];
-    var toks = PV.tokens(raw);
+    var rawLine = (line && line.text) || '';
+    if (!rawLine.trim()) return [];
+    var sn = PV.splitNote ? PV.splitNote(rawLine) : { text: rawLine, note: '' };
+    var toks = PV.tokens(sn.text);
     var groups = [];
     bySlash(toks).forEach(function (g) { autoSplit(g).forEach(function (x) { groups.push(x); }); });
     if (!groups.length) return [];
@@ -13683,13 +13860,19 @@ injectPills();
     groups.forEach(function (g, gi) {
       var s = t0 + span * (acc / tot), e = t0 + span * ((acc + w[gi]) / tot);
       acc += w[gi];
+      var flags = PV.markFlags ? PV.markFlags(g.tokens) : { emph: 0, flash: 0 };
+      var clean = PV.cleanTokens ? PV.cleanTokens(g.tokens) : g.tokens;
       cuts.push({
-        i: gi, n: groups.length, tokens: g.tokens, text: g.tokens.join('').replace(/\u00a0/g, ' ').trim(),
-        t0: s, t1: e, explicit: !!g.explicit
+        i: gi, n: groups.length, tokens: clean, raw: g.tokens,
+        text: clean.join('').replace(/\u00a0/g, ' ').trim(),
+        t0: s, t1: e, explicit: !!g.explicit,
+        emph: flags.emph, flash: flags.flash,
+        note: gi === 0 ? sn.note : ''            // 注釈是行级的，挂在第一段
       });
     });
+    if (!cuts.some(function (c) { return c.text; })) return [];
 
-    /* TTML 逐词时间：比字符权重更准，直接覆盖 */
+    /* TTML 逐词时间比字符权重准，直接覆盖 */
     var ws = line.words;
     if (ws && ws.length && cuts.length > 1) {
       var wEnd = ws[ws.length - 1].time + (ws[ws.length - 1].dur || 0);
@@ -13702,17 +13885,16 @@ injectPills();
 
     var perMs = PV.audio.beat ? PV.audio.beat.len * 1000 : 0;
     for (var k = 1; k < cuts.length; k++) {
-      /* 吸附可以往回也可以往后，但不能跑过上一段的头或本段的尾 */
-      var sn = snapMs(cuts[k].t0, perMs);
+      var sn2 = snapMs(cuts[k].t0, perMs);
       var lo = cuts[k - 1].t0 + 320, hi = Math.max(lo + 200, cuts[k].t1 - 160);
-      cuts[k].t0 = Math.max(lo, Math.min(hi, sn));
+      cuts[k].t0 = Math.max(lo, Math.min(hi, sn2));
       cuts[k - 1].t1 = Math.min(cuts[k].t0, Math.max(cuts[k - 1].t0 + 400, cuts[k - 1].t1));
     }
     cuts[cuts.length - 1].t1 = Math.max(cuts[cuts.length - 1].t1, t1);
     return cuts;
   };
 
-  /* 帧推进：过了下一段的起点就换段 */
+  /* 帧推进：过了下段起点就换段 */
   PV.cutTick = function () {
     var S = PV.S;
     if (!S.cuts || S.cuts.length < 2) return;
@@ -13729,6 +13911,466 @@ injectPills();
     return { line: S.idx, cut: S.cutI, n: S.cuts ? S.cuts.length : 1, at: PV.audio.time,
       times: (S.cuts || []).map(function (c) { return [Math.round(c.t0), Math.round(c.t1)]; }) };
   };
+})();
+
+/* PV 引擎 · 14 装饰层扩容（⑤）
+ *
+ * 开头有一段「元数据补标」：给 ① 平移过来的既有件打 impact 标记——
+ * `*强调*` 与行末 `!` 的行要靠冲击型件来体现，而件是分散在各文件里的，
+ * 与其回头改十几个定义，不如在语法层落地处统一声明一次。只加元数据，不改行为。
+ *
+ * 装饰的规矩：一律挂在本次 cut 的 .jv-line 里（元素随段生灭，不用自己清理），
+ * 并且全部 writing-mode:horizontal-tb —— 竖写版式会把子层的文字方向一起带走（①踩过）。
+ */
+(function () {
+  'use strict';
+  var PV = window.PV;
+
+  /* ---- 元数据补标：哪些件算「冲击型」（强调行优先抽它们） ---- */
+  var IMPACT = {
+    layout: ['break', 'mix', 'diag', 'stack', 'cond', 'tile', 'band', 'scatter', 'cad'],
+    enter: ['slam', 'zoomIn', 'drop', 'scramble'],
+    exit: ['burst', 'smash', 'scatter', 'glitchOut'],
+    transition: ['whip', 'flash', 'zoomThrough', 'push']
+  };
+  Object.keys(IMPACT).forEach(function (g) {
+    IMPACT[g].forEach(function (k) { var d = PV.part(g, k); if (d) d.impact = 1; });
+  });
+
+  /* ---------- 小工具 ---------- */
+  function el(cls, html) {
+    var d = document.createElement('div');
+    d.className = 'jv-d ' + cls;
+    if (html != null) d.innerHTML = html;
+    return d;
+  }
+  function add(c, node) {
+    if (!c.el) return null;
+    if (c.el.querySelector('.' + node.className.split(' ')[1])) return null;
+    c.el.appendChild(node);
+    return null;
+  }
+  function n(c, k) { return PV.rnd(k); }         // 走引擎的 seed，同 seed 同画面
+
+  /* ---------- frame 双线框 + 角刻度 ---------- */
+  PV.reg('decor', 'frame', {
+    nm: '框', tags: ['editorial', 'graphic', 'calm'], w: 0.9,
+    when: function () { return PV.fx.decor > 0.35; },
+    apply: function (c) {
+      return add(c, el('jv-frame',
+        '<i class="e"></i><i class="e2"></i><b class="c tl"></b><b class="c tr"></b><b class="c bl"></b><b class="c br"></b>'));
+    }
+  });
+
+  /* ---------- ticks 顶部刻度尺 ---------- */
+  PV.reg('decor', 'ticks', {
+    nm: '刻度', tags: ['graphic', 'editorial', 'glitch'], w: 0.8,
+    when: function () { return PV.fx.decor > 0.4; },
+    apply: function (c) {
+      var h = '', N = 26;
+      for (var i = 0; i < N; i++) h += '<i style="height:' + (i % 5 === 0 ? 13 : 6) + 'px;opacity:' + (i % 5 === 0 ? .8 : .4) + '"></i>';
+      return add(c, el('jv-ticks', h));
+    }
+  });
+
+  /* ---------- target 同心圆 + 十字准星 ---------- */
+  PV.reg('decor', 'target', {
+    nm: '准星', tags: ['graphic', 'glitch', 'editorial'], w: 0.7,
+    when: function () { return PV.fx.decor > 0.45; },
+    apply: function (c) {
+      var r = Math.round(90 + n(c, 90));
+      return add(c, el('jv-target',
+        '<svg viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet" style="--r:' + r + 'px">' +
+        '<circle cx="200" cy="200" r="' + r + '"/><circle cx="200" cy="200" r="' + Math.round(r * 0.62) + '"/>' +
+        '<line x1="200" y1="' + (200 - r - 14) + '" x2="200" y2="' + (200 - r + 6) + '"/>' +
+        '<line x1="200" y1="' + (200 + r + 14) + '" x2="200" y2="' + (200 + r - 6) + '"/>' +
+        '<line x1="' + (200 - r - 14) + '" y1="200" x2="' + (200 - r + 6) + '" y2="200"/>' +
+        '<line x1="' + (200 + r + 14) + '" y1="200" x2="' + (200 + r - 6) + '" y2="200"/>' +
+        '<text x="' + (200 + r + 10) + '" y="' + (200 - r) + '" class="co">X ' + (100 + Math.round(n(c, 800))) +
+        ' · Y ' + (100 + Math.round(n(c, 800))) + '</text></svg>'));
+    }
+  });
+
+  /* ---------- barcode 条码 ---------- */
+  PV.reg('decor', 'barcode', {
+    nm: '条码', tags: ['graphic', 'editorial'], w: 0.6,
+    when: function () { return PV.fx.decor > 0.5; },
+    apply: function (c) {
+      var h = '', side = n(c, 2) < 1 ? 'l' : 'r';
+      for (var i = 0; i < 22; i++) h += '<i style="width:' + (1 + Math.round(n(c, 4))) + 'px;opacity:' + (0.35 + n(c, 0.5)).toFixed(2) + '"></i>';
+      return add(c, el('jv-barcode ' + side, h));
+    }
+  });
+
+  /* ---------- arrows 箭头组 ---------- */
+  PV.reg('decor', 'arrows', {
+    nm: '箭头', tags: ['pop', 'graphic'], w: 0.6,
+    when: function () { return PV.fx.motion > 0.4; },
+    apply: function (c) {
+      var h = '', dir = n(c, 2) < 1 ? '▶' : '◀';
+      for (var i = 0; i < 3; i++) h += '<span style="opacity:' + (0.2 + i * 0.22).toFixed(2) + ';animation-delay:' + (i * 0.16).toFixed(2) + 's">' + dir + '</span>';
+      return add(c, el('jv-arrows ' + (n(c, 2) < 1 ? 'top' : 'bot'), h));
+    }
+  });
+
+  /* ---------- spark 星芒 ---------- */
+  PV.reg('decor', 'spark', {
+    nm: '星芒', tags: ['pop', 'emotional', 'calm'], w: 0.7,
+    when: function () { return PV.fx.decor > 0.4; },
+    apply: function (c) {
+      var h = '';
+      for (var i = 0; i < 3; i++) {
+        h += '<i style="left:' + (6 + n(c, 86)).toFixed(1) + '%;top:' + (8 + n(c, 78)).toFixed(1) +
+          '%;width:' + (10 + Math.round(n(c, 26))) + 'px;height:' + (10 + Math.round(n(c, 26))) +
+          'px;animation-delay:' + (n(c, 2.4)).toFixed(2) + 's"></i>';
+      }
+      return add(c, el('jv-spark', h));
+    }
+  });
+
+  /* ---------- grid 网格底纹 ---------- */
+  PV.reg('decor', 'grid', {
+    nm: '网格', tags: ['graphic', 'editorial', 'glitch'], w: 0.7,
+    when: function () { return PV.fx.texture > 0.15; },
+    apply: function () {
+      var layer = PV.layer();
+      if (!layer) return null;
+      if (!layer.querySelector('.jv-grid')) layer.insertBefore(el('jv-grid'), layer.firstChild);
+      layer.querySelector('.jv-grid').style.opacity = (0.1 + 0.3 * PV.fx.texture).toFixed(3);
+      return null;
+    }
+  });
+
+  /* ---------- stripes 斜纹带 ---------- */
+  PV.reg('decor', 'stripes', {
+    nm: '斜纹', tags: ['pop', 'graphic'], w: 0.6,
+    when: function () { return PV.fx.decor > 0.5; },
+    apply: function (c) {
+      return add(c, el('jv-stripes', '<i></i>'));
+    }
+  });
+
+  /* ---------- bignum 巨大行号底纹 ---------- */
+  PV.reg('decor', 'bignum', {
+    nm: '底纹数字', tags: ['graphic', 'editorial', 'pop'], w: 0.7,
+    when: function () { return PV.fx.density > 0.35; },
+    apply: function (c) {
+      return add(c, el('jv-bignum', String((c.idx || 0) + 1).padStart(2, '0')));
+    }
+  });
+
+  /* ---------- ink 墨点 / 圆斑 ---------- */
+  PV.reg('decor', 'ink', {
+    nm: '墨点', tags: ['calm', 'emotional'], w: 0.6,
+    when: function (c) { return PV.fx.decor > 0.4 && !c.ltr; },
+    apply: function (c) {
+      var h = '';
+      for (var i = 0; i < 3; i++) {
+        var s = (16 + Math.round(n(c, 70)));
+        h += '<i style="left:' + (4 + n(c, 88)).toFixed(1) + '%;top:' + (6 + n(c, 82)).toFixed(1) +
+          '%;width:' + s + 'px;height:' + Math.round(s * (0.5 + n(c, 0.7))) + 'px;opacity:' + (0.1 + n(c, 0.16)).toFixed(2) + '"></i>';
+      }
+      return add(c, el('jv-ink', h));
+    }
+  });
+
+  /* ---------- note 注釈小字（`歌词|注釈`） ---------- */
+  PV.reg('decor', 'note', {
+    nm: '注釈', tags: ['editorial', 'calm'], w: 1,
+    fit: function (c) { return !!c.note; },
+    apply: function (c) {
+      return add(c, el('jv-note', c.note));
+    }
+  });
+
+  /* ---------- progress 本段进度条 ---------- */
+  PV.reg('decor', 'progress', {
+    nm: '进度', tags: ['graphic', 'editorial'], w: 0.7,
+    when: function () { return PV.fx.decor > 0.5; },
+    apply: function (c) {
+      var d = el('jv-prog', '<i></i>');
+      var r = add(c, d);
+      var bar = c.el && c.el.querySelector('.jv-prog > i');
+      if (!bar) return r;
+      var span = Math.max(400, (c.t1 || 0) - (c.t0 || 0));
+      var fr = function () {
+        var p = PV.audio.time == null ? 0 : (PV.audio.time - (c.t0 || 0)) / span;
+        bar.style.transform = 'scaleX(' + Math.max(0, Math.min(1, p)).toFixed(3) + ')';
+      };
+      fr();
+      PV.onFrame(fr);
+      return function () { PV.offFrame(fr); };
+    }
+  });
+
+  /* ---------- waveband 随能量跳动的波形条 ---------- */
+  PV.reg('decor', 'waveband', {
+    nm: '波形条', tags: ['pop', 'glitch', 'graphic'], w: 0.8,
+    when: function () { return PV.audio.energy != null; },
+    apply: function (c) {
+      var N = 16, h = '';
+      for (var i = 0; i < N; i++) h += '<i></i>';
+      var r = add(c, el('jv-wave-band ' + (n(c, 2) < 1 ? 'bot' : 'top'), h));
+      var bars = c.el ? c.el.querySelectorAll('.jv-wave-band i') : [];
+      if (!bars.length) return r;
+      var fr = function () {
+        var e = PV.audio.energy || 0, b = PV.audio.beat;
+        var pulse = b ? Math.max(0, 1 - b.since / (b.len * 0.5)) : 0;
+        for (var i = 0; i < bars.length; i++) {
+          var k = 0.12 + e * 0.9 * (0.5 + 0.5 * Math.sin(i * 1.7 + (c.lt || 0) * 3.2)) + pulse * 0.35;
+          bars[i].style.transform = 'scaleY(' + Math.max(0.06, Math.min(1.5, k)).toFixed(3) + ')';
+        }
+      };
+      PV.onFrame(fr);
+      return function () { PV.offFrame(fr); };
+    }
+  });
+
+  /* ---------- cornernum 书刊页角（竖排小字 + 页码） ---------- */
+  PV.reg('decor', 'cornernum', {
+    nm: '页角', tags: ['editorial', 'calm'], w: 0.6,
+    when: function (c) { return PV.fx.decor > 0.5 && !c.ltr; },
+    apply: function (c) {
+      return add(c, el('jv-corner',
+        '<span class="pg">— ' + String((c.idx || 0) + 1).padStart(2, '0') + ' —</span>' +
+        '<span class="vt">' + String((c.text || '').slice(0, 6)) + '</span>'));
+    }
+  });
+})();
+
+/* PV 引擎 · 15 处理层扩容（⑤）
+ * treatment 分两类：apply 建层（多数只建一次，随滑块改透明度/强度），frame 每帧推。
+ * 一律挂在 #pvJv 上（整屏），不碰 folia 的 #pvTrack；全部 pointer-events:none。
+ */
+(function () {
+  'use strict';
+  var PV = window.PV;
+
+  function layerEl(cls) {
+    var L = PV.layer();
+    if (!L) return null;
+    var g = L.querySelector('.' + cls);
+    if (!g) {
+      g = document.createElement('div');
+      g.className = 'jv-t ' + cls;
+      L.appendChild(g);
+    }
+    return g;
+  }
+
+  /* ---------- scan CRT 扫描线滚动 ---------- */
+  PV.reg('treatment', 'scan', {
+    nm: '扫描线', tags: ['glitch', 'graphic', 'editorial'], w: 0.8,
+    when: function () { return PV.fx.texture > 0.25; },
+    apply: function () {
+      var g = layerEl('jv-scan');
+      if (g) g.style.opacity = (0.12 + 0.4 * PV.fx.texture).toFixed(3);
+      return null;
+    }
+  });
+
+  /* ---------- vig 暗角随能量呼吸 ---------- */
+  PV.reg('treatment', 'vig', {
+    nm: '暗角', tags: ['calm', 'emotional', 'graphic'], w: 0.9,
+    apply: function () {
+      var g = layerEl('jv-vig');
+      if (!g) return null;
+      var fr = function () {
+        var e = PV.audio.energy || 0;
+        g.style.opacity = (0.34 + 0.4 * (1 - e)).toFixed(3);
+      };
+      fr();
+      PV.onFrame(fr);
+      return function () { PV.offFrame(fr); };
+    }
+  });
+
+  /* ---------- punch 拍点轻闪（有节拍数据才中签） ---------- */
+  PV.reg('treatment', 'punch', {
+    nm: '拍闪', tags: ['pop', 'glitch', 'graphic'], w: 0.9,
+    when: function () { return !!PV.audio.beat; },
+    apply: function () {
+      var g = layerEl('jv-punch');
+      if (!g) return null;
+      var last = -1;
+      var fr = function () {
+        var b = PV.audio.beat;
+        if (!b) { g.style.opacity = '0'; return; }
+        if (b.index !== last) {
+          last = b.index;
+          g.style.opacity = String(0.1 + 0.22 * (PV.audio.energy || 0.5));
+        }
+        g.style.opacity = (Math.max(0, parseFloat(g.style.opacity || '0') - 0.035)).toFixed(3);
+      };
+      PV.onFrame(fr);
+      return function () { PV.offFrame(fr); };
+    }
+  });
+
+  /* ---------- edgeglow 边缘光随能量 ---------- */
+  PV.reg('treatment', 'edgeglow', {
+    nm: '缘光', tags: ['pop', 'emotional', 'glitch'], w: 0.8,
+    when: function () { return PV.audio.energy != null && PV.fx.chroma > 0.1; },
+    apply: function () {
+      var g = layerEl('jv-edge');
+      if (!g) return null;
+      var fr = function () {
+        var e = PV.audio.energy || 0;
+        g.style.opacity = (0.06 + 0.55 * e).toFixed(3);
+      };
+      fr();
+      PV.onFrame(fr);
+      return function () { PV.offFrame(fr); };
+    }
+  });
+
+  /* ---------- glitchbars 随机色块错位（glitch 推） ---------- */
+  PV.reg('treatment', 'glitchbars', {
+    nm: '故障条', tags: ['glitch', 'graphic'], w: 0.8,
+    when: function () { return PV.fx.glitch > 0.3; },
+    apply: function () {
+      var g = layerEl('jv-gbars');
+      if (!g) return null;
+      g.innerHTML = '<i></i><i></i><i></i><i></i>';
+      var bars = g.children, last = 0;
+      var fr = function () {
+        var now = performance.now();
+        if (now - last < 90) return;                 // ~11Hz 才像故障，60Hz 会糊成噪点
+        last = now;
+        var hot = PV.fx.glitch * (PV.audio.energy || 0.4);
+        for (var i = 0; i < bars.length; i++) {
+          var on = Math.random() < hot;
+          bars[i].style.opacity = on ? (0.15 + Math.random() * 0.5 * hot).toFixed(3) : '0';
+          bars[i].style.top = (Math.random() * 92).toFixed(1) + '%';
+          bars[i].style.height = (1 + Math.random() * 9 * hot).toFixed(1) + 'px';
+          bars[i].style.transform = 'translateX(' + ((Math.random() - 0.5) * 12 * hot).toFixed(1) + 'vw)';
+        }
+      };
+      PV.onFrame(fr);
+      return function () { PV.offFrame(fr); };
+    }
+  });
+
+  /* ---------- duotone 套色层（chroma 推） ---------- */
+  PV.reg('treatment', 'duotone', {
+    nm: '套色', tags: ['graphic', 'editorial', 'pop'], w: 0.6,
+    when: function () { return PV.fx.chroma > 0.45; },
+    apply: function () {
+      var g = layerEl('jv-duo');
+      if (g) g.style.opacity = (0.08 + 0.3 * PV.fx.chroma).toFixed(3);
+      return null;
+    }
+  });
+
+  /* ---------- softfocus 入场与驻留时的虚实 ---------- */
+  PV.reg('treatment', 'softfocus', {
+    nm: '柔焦', tags: ['calm', 'emotional'], w: 0.6,
+    when: function () { return PV.fx.texture > 0.45 && PV.fx.motion < 0.6; },
+    apply: function (c) {
+      if (!c.el) return null;
+      c.el.style.filter = 'blur(' + (0.2 + 0.5 * PV.fx.texture).toFixed(2) + 'px) saturate(1.06)';
+      return function () { if (c.el) c.el.style.filter = ''; };
+    }
+  });
+
+  /* ---------- dust 细尘（比 particles 更碎，texture 推） ---------- */
+  PV.reg('treatment', 'dust', {
+    nm: '细尘', tags: ['calm', 'emotional', 'editorial'], w: 0.7,
+    when: function () { return PV.fx.texture > 0.3; },
+    apply: function () {
+      var g = layerEl('jv-dust');
+      if (!g) return null;
+      if (!g.childElementCount) {
+        var h = '';
+        for (var i = 0; i < 26; i++) {
+          h += '<i style="left:' + (Math.random() * 98).toFixed(1) + '%;top:' + (Math.random() * 98).toFixed(1) +
+            '%;width:' + (1 + Math.random() * 2).toFixed(1) + 'px;height:' + (1 + Math.random() * 2).toFixed(1) +
+            'px;animation-duration:' + (5 + Math.random() * 9).toFixed(1) + 's;animation-delay:-' + (Math.random() * 9).toFixed(1) + 's"></i>';
+        }
+        g.innerHTML = h;
+      }
+      g.style.opacity = (0.14 + 0.5 * PV.fx.texture).toFixed(3);
+      return null;
+    }
+  });
+})();
+
+/* PV 引擎 · 16 衔接层扩容（⑤）
+ * 补三件：残影（上一段留半透明拖影）、三段切片擦入、由下推入。
+ */
+(function () {
+  'use strict';
+  var PV = window.PV;
+
+  function an(el, kf, opt) {
+    if (!el || !el.animate) return null;
+    var a = el.animate(kf, opt);
+    PV.addStop(function () { try { a.cancel(); } catch (e) { } });
+    return a;
+  }
+
+  /* 残影：上一段原地留一份半透明副本，新段同时进来 */
+  PV.reg('transition', 'trail', {
+    nm: '残影', tags: ['glitch', 'emotional', 'graphic'], w: 0.8,
+    when: function () { return PV.fx.motion > 0.3; },
+    play: function (c, prev, next, swap) {
+      if (prev) {
+        var g = prev.cloneNode(true);
+        g.className = prev.className + ' jv-trail';
+        g.setAttribute('aria-hidden', 'true');
+        if (g.style) g.style.opacity = '';
+        prev.parentNode.appendChild(g);
+        an(g, [{ opacity: 0.5 }, { opacity: 0, transform: 'translateY(-.6em) scale(1.03)' }],
+          { duration: 420, fill: 'forwards', easing: 'ease-out' });
+        var t = setTimeout(function () { if (g.parentNode) g.parentNode.removeChild(g); }, 480);
+        PV.addStop(function () { clearTimeout(t); if (g.parentNode) g.parentNode.removeChild(g); });
+      }
+      swap();
+      an(next, [{ opacity: 0 }, { opacity: 1 }], { duration: 260, fill: 'both', easing: 'ease-out' });
+    }
+  });
+
+  /* 三段横向切片依次擦入 */
+  PV.reg('transition', 'sliceIn', {
+    nm: '切三', tags: ['glitch', 'graphic', 'pop'], w: 0.7,
+    play: function (c, prev, next, swap) {
+      swap();
+      var h = ['inset(0 0 66.6% 0)', 'inset(33.3% 0 33.3% 0)', 'inset(66.6% 0 0 0)'];
+      var w = ['inset(0 100% 66.6% 0)', 'inset(33.3% 100% 33.3% 0)', 'inset(66.6% 100% 0 0)'];
+      for (var i = 0; i < 3; i++) {
+        (function (i) {
+          var b = document.createElement('div');
+          b.className = 'jv-slice-in';
+          b.style.clipPath = h[i];
+          b.appendChild(next.cloneNode(true));
+          b.firstChild.classList.add('show');
+          b.style.opacity = '1';
+          next.style.opacity = '0';
+          next.parentNode.insertBefore(b, next);
+          an(b, [{ clipPath: w[i], opacity: 1 }, { clipPath: h[i], opacity: 1, offset: 0.99 }, { clipPath: h[i], opacity: 0 }],
+            { duration: 300 + i * 90, delay: i * 60, fill: 'both', easing: 'cubic-bezier(.5,0,.2,1)' });
+          var t = setTimeout(function () {
+            next.style.opacity = '';
+            if (b.parentNode) b.parentNode.removeChild(b);
+          }, 470 + i * 90);
+          PV.addStop(function () { clearTimeout(t); if (b.parentNode) b.parentNode.removeChild(b); next.style.opacity = ''; });
+        })(i);
+      }
+    }
+  });
+
+  /* 由下推入，上一段同时被顶上去 */
+  PV.reg('transition', 'riseIn', {
+    nm: '顶入', tags: ['pop', 'graphic', 'calm'], w: 0.8,
+    play: function (c, prev, next, swap) {
+      swap();
+      var dist = Math.max(40, (c.stage ? c.stage.clientHeight : 400) * 0.16);
+      an(next, [{ transform: 'translateY(' + dist.toFixed(0) + 'px)', opacity: .2 }, { transform: 'none', opacity: 1 }],
+        { duration: 340 + 160 * PV.fx.motion, fill: 'both', easing: 'cubic-bezier(.18,.9,.28,1)' });
+      if (prev) an(prev, [{ transform: 'none', opacity: 1 }, { transform: 'translateY(' + (-dist * 0.8).toFixed(0) + 'px)', opacity: 0 }],
+        { duration: 300, fill: 'both', easing: 'ease-in' });
+    }
+  });
 })();
 
 })();
