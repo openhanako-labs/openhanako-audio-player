@@ -176,6 +176,7 @@ node tools/bump-build.mjs      # 构建号三处同步，开着的播放器卡�
 |---|---|---|---|
 | bpm-96 | 96 | 95.8 | PV 自建 analyser |
 | bpm-120 | 120 | 120.1 | PV 自建 analyser |
+| bpm-140 | 140 | 139.8 | PV 自建 analyser |
 | bpm-140 | 140 | 139.7 – 140.0 | **core 的 `__reactiveBins`** |
 
 ## 待填
