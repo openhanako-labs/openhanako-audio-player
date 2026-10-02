@@ -33,9 +33,9 @@ const manifest = JSON.parse(readFileSync(join(ROOT, 'manifest.json'), 'utf8'));
 const VER = manifest.version;
 
 /* 与 .github/workflows/package.yml 同一份排除规则——两边不一致就会出现「本地能装 CI 装不上」 */
-const EX_DIR = ['.git', '.github', 'dist', 'node_modules', '_extract', '_pack', '__pycache__', 'plugin-data', 'pv'];
+const EX_DIR = ['.git', '.github', 'dist', 'node_modules', '_extract', '_pack', '__pycache__', 'plugin-data', 'pv', '_applied'];
 const EX_FILE = ['.gitignore', '.gitattributes', 'LICENSE', 'SECURITY.md', 'CONTRIBUTING.md',
-  'COMMERCIAL-LICENSE.md', 'bus-queue.json', 'bus-state.json', 'test.html'];
+  'COMMERCIAL-LICENSE.md', 'bus-queue.json', 'bus-state.json', 'test.html', 'patches-audit.json'];
 const EX_SUFFIX = ['.env', '.bak', '.pyc', '.log'];
 function excluded(rel) {
   const parts = rel.split('/').filter(Boolean);

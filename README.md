@@ -48,10 +48,17 @@ pv/build.mjs         文字 PV 层构建（幂等，可反复重跑）
 pv/                  PV 层的源：src/ 部件 + css/ 样式，详见 pv/README.md
 pv/serve.mjs         本地静态服务（宿主浏览器不吃 file://）
 pv/make-test.mjs     生成 pv/test.html 预览台，不放歌也能逐版式看
-tools/inject-*.mjs   非 PV 功能的一次性注入脚本
-tools/fix-*.mjs      非 PV 修复脚本
+pv/release.mjs        出两个包：含 PV（hanako-audio-player）与不含 PV（…-lite）
+tools/audit-patches.mjs 清点已归档的补丁脚本（见下）
+tools/_applied/       一次性补丁脚本：已落地，不再执行
 tools/bump-build.mjs 构建号三处同步（_build.json + index.html + standalone.html）
 ```
+
+**核心 UI（非 PV）怎么改**：直接改 `ui/index.html`（与 `ui/standalone.html` 同步），再跑 `bump-build.mjs`。
+以前那批 `tools/inject-*.mjs` / `fix-*.mjs` 已全部归档到 `tools/_applied/`：它们的锚点被自己消费掉了，
+既跑不动也不必再跑。要确认它们真的都进了页面，跑 `node tools/audit-patches.mjs`——
+它逐脚本、逐锚点回到 html 里比对并分类（已落地 / 被 pv/ 取代 / 被后续补丁吃掉 / 待重放 / 解释不了）。
+2026-10-02 的清点结果：已落地 58、仍可重放 0、要人看 0。变更记录交给 git，不再造第二套可重放脚本。
 
 **三条铁律**：
 - `ui/index.html` 与 `ui/standalone.html` 是内容相同的双副本——改动必须同步，改完跑 `bump-build.mjs`
