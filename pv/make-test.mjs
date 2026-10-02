@@ -95,6 +95,8 @@ ${js}
   var line = 0, savedStyle = 'gold';
   /* 预览台没有 core 的频谱链，清掉那个开关免得白等 6 秒才自建图 */
   try { localStorage.removeItem('hana_audio_reactive'); } catch (e) { }
+  /* 预览台里 PV 自己接元素是安全的（这里没有 core 会输）；App 里这个开关默认 false */
+  PV.audioOwn = true;
   document.body.classList.add('jizura-mode');
   PV.setLyrics(LINES);
   PV.useStyle(savedStyle);
@@ -167,7 +169,7 @@ ${js}
   gBg.appendChild(swl); gBg.appendChild(sw); gBg.appendChild(swv);
 
   var gFx = group('滑块');
-  ['motion', 'glitch', 'chroma', 'texture', 'density'].forEach(function (k) {
+  ['motion', 'glitch', 'chroma', 'texture', 'density', 'decor'].forEach(function (k) {
     var s = document.createElement('input');
     s.type = 'range'; s.min = '0'; s.max = '1'; s.step = '0.05'; s.value = String(PV.fx[k]);
     var v = document.createElement('span'); v.className = 'fxv'; v.textContent = s.value;

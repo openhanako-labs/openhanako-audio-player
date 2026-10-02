@@ -5,9 +5,10 @@
  * 频谱摊到 window.__reactiveBins（零拷贝，同一个 buffer）。
  * 没有它（音频反应被关掉 / 独立预览台）才自建图。
  *
- * 归谁接 <audio>：core 与 PV 都靠 createMediaElementSource 接同一个元素，而一个元素只能接一次，
- * 谁先接谁赢。实测就是 PV 先接、把 core 的链顶掉了。所以只要用户开了音频反应，就让位给 core，
- * PV 只读它摊出来的频谱；等了 6s 频谱还没来（CORS 之类）才自建。
+ * 归谁接 <audio>：一个元素只能被 createMediaElementSource 接一次，而且接了不可逆——
+ * 谁先接谁赢，输了的一方再也听不见（实测就是 PV 先接、把 core 顶掉，然后 PV 拆桥，
+ * 两边都哑）。所以现在的规矩很硬：App 里 PV 绝不接元素，只读 core 摊到
+ * window.__reactiveBins 的频谱；自建图只在没有 core 的预览台里打开（PV.audioOwn）。
  *
  * 拍点检测：高通能量 → 自适应阈值的 onset → IOI 直方图定周期 → 相位锁定跟随。
  * 拍网格用歌自己的时钟（媒体时间），不用墙钟：拖进度条、暂停、变速都不该让相位漂走。
@@ -28,17 +29,19 @@
   Object.assign(PV.audio, A);
 
   /* ---------- 自建图 ----------
-   * 接 <audio> 是个危险动作：createMediaElementSource 一调，元素的声音就只能从图里出去。
-   * 图没跑起来 = 静音。实测就是这么把播放声弄没的（进 PV 但未播时抢接）。
-   * 三条硬规定：
-   *   1) 只在「正在播」时接——那一刻必然有用户手势，AudioContext 才可能真 running；
-   *   2) 接上后 1.5s 内到不了 running 就拆桥，把声音还给原生出口；
-   *   3) 退出 PV 一定拆桥。
+   * 接 <audio> 是个不可逆动作：createMediaElementSource 一调，元素的声音就**永久**改从图里出去，
+   * 之后 disconnect() / close() 都**无法把它还给原生出口**——上一版以为「拆桥=归还」，
+   * 错得很彻底：接完跑不起来再拆，得到的是一个绑在已关闭图上的元素，整页到关掉为止全部静音。
+   *
+   * 所以 App 里的铁只有一条：不接。拍点与能量全部从 core 的 window.__reactiveBins 读。
+   * 自建只留给没有 core 的预览台（pv/test.html 里显式开 PV.audioOwn = true）。
+   * 默认 false = 宁可不驱动拍点，也不能替用户把声音弄没。
    */
   var own = { actx: null, an: null, src: null, data: null, failed: false, err: null, since: 0, released: null };
-  PV.audioOwn = true;              // 设 false 就彻底不接元素，拍点驱动失效但绝对不会哑
+  PV.audioOwn = false;             // 设 true 才允许接元素（预览台专用）
 
   function releaseOwn(why) {
+    /* 注意：这里只能把自己的图拆掉，不能「归还」元素——绑定拆不掉。见上面注释。 */
     if (own.src) { try { own.src.disconnect(); } catch (e) { } own.src = null; }
     own.an = null; own.data = null; own.since = 0;
     if (own.actx) { try { own.actx.close(); } catch (e) { } own.actx = null; }
@@ -49,6 +52,19 @@
   PV.audioRelease = function () {
     releaseOwn('manual');
     own.failed = false; own.err = null; own.released = null;
+  };
+
+  /* 一句话回答「声音现在归谁」：截图里看到就能直接判。
+   *  core = core 接了元素，PV 只读它摊的频谱（App 里正常状态）
+   *  pv   = PV 自建图（只应该出现在预览台）
+   *  wait = 开播了但还没等到 core 的频谱
+   *  off  = 谁都没接：拍点不驱动，但声音一定正常 */
+  PV.audioChain = function () {
+    if (window.__reactiveReady || A.mode === 'host') return ':core';
+    if (A.mode === 'own') return ':pv';
+    var el = audioEl();
+    if (el && !el.paused && !el.ended && hostWanted()) return ':wait';
+    return ':off';
   };
 
   PV.audio.stats = function () {
@@ -89,8 +105,10 @@
   var hostWaitSince = 0;
   function mayBuildOwn() {
     var el = audioEl();
-    /* 铁律：没在播绝不接元素；总开关关了也不接 */
+    /* 铁律一：App 里不接。总开关默认 false，不因为「看起来能接」就自己打开 */
     if (!PV.audioOwn || !el || el.paused || el.ended) return false;
+    /* 铁律二：core 已经摊出频谱了，说明它接过了，绝对不抢 */
+    if (window.__reactiveBins || window.__reactiveReady) { A.mode = 'host'; return false; }
     if (!hostWanted()) return true;
     if (!hostWaitSince) hostWaitSince = performance.now();
     return performance.now() - hostWaitSince > 4000;   // 播了 4s 还没频谱，那条链负不了责，PV 自建

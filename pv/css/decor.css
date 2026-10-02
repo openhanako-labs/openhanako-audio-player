@@ -27,10 +27,14 @@
 .jv-target line { stroke: var(--jv-acc); stroke-width: 1; opacity: .5; }
 .jv-target .co { fill: var(--jv-fg); font-family: monospace; font-size: 9px; opacity: .4; letter-spacing: .1em; }
 
-.jv-barcode { inset: auto; top: 50%; transform: translateY(-50%); display: flex; gap: 2px; align-items: flex-end; height: 46%; }
+/* 条码：从「整块硬边竖条墙」收成一个边缘渐隐的小饰条。高度不再吃满 46%，
+ * 条高由 JS 逐根随机；mask 把上下左右抹掉，不然矩形边界本身就是那根「竖线」。 */
+.jv-barcode { inset: auto; top: 50%; transform: translateY(-50%); display: flex; gap: 2px; align-items: flex-end; height: 24%;
+  -webkit-mask-image: radial-gradient(120% 130% at 50% 50%, #000 46%, transparent 86%);
+  mask-image: radial-gradient(120% 130% at 50% 50%, #000 46%, transparent 86%); }
 .jv-barcode.l { left: 3.5%; }
 .jv-barcode.r { right: 3.5%; }
-.jv-barcode > i { position: static; background: var(--jv-fg); height: 100%; }
+.jv-barcode > i { position: static; background: var(--jv-fg); }
 
 .jv-arrows { display: flex; gap: 12px; align-items: center; color: var(--jv-acc); font-size: 15px; inset: auto; }
 .jv-arrows.top { top: 12%; left: 50%; transform: translateX(-50%); }

@@ -77,13 +77,22 @@
   });
 
   /* ---------- barcode 条码 ---------- */
+  /* 从随机池里摘出来了（sp）。两轮实测截图它都被当成「不知道哪里来的竖块」：
+   * 硬边矩形 + 22 根满高竖条 + 贴在舞台左右，看上去像 bug 不像设计。
+   * 预览台的「条码」按钮与 `PV.show(i,{decor:['barcode']})` 仍能用，
+   * 强词行（`*强调*` / 行末 !）也能抽到它（impact 件在强词时优先）。 */
   PV.reg('decor', 'barcode', {
-    nm: '条码', tags: ['graphic', 'editorial'], w: 0.6,
+    nm: '条码', tags: ['graphic', 'editorial'], w: 0.6, sp: 1,
     when: function () { return PV.fx.decor > 0.5; },
     apply: function (c) {
       var h = '', side = n(c, 2) < 1 ? 'l' : 'r';
-      for (var i = 0; i < 22; i++) h += '<i style="width:' + (1 + Math.round(n(c, 4))) + 'px;opacity:' + (0.35 + n(c, 0.5)).toFixed(2) + '"></i>';
-      return add(c, el('jv-barcode ' + side, h));
+      for (var i = 0; i < 22; i++) h += '<i style="width:' + (1 + Math.round(n(c, 4))) + 'px;' +
+        'height:' + (38 + Math.round(n(c, 62))) + '%;' +
+        'opacity:' + (0.3 + n(c, 0.5)).toFixed(2) + '"></i>';
+      var e = el('jv-barcode ' + side, h);
+      /* 强度真的接上 fx.decor：之前这个旋钮恒为 1，所以下面的写法等于没写 */
+      e.style.opacity = (0.22 + 0.5 * PV.fx.decor).toFixed(3);
+      return add(c, e);
     }
   });
 

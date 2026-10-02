@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1002223918";
+  window.__HANA_BUILD = "1002225712";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -3690,10 +3690,14 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 .jv-target line { stroke: var(--jv-acc); stroke-width: 1; opacity: .5; }
 .jv-target .co { fill: var(--jv-fg); font-family: monospace; font-size: 9px; opacity: .4; letter-spacing: .1em; }
 
-.jv-barcode { inset: auto; top: 50%; transform: translateY(-50%); display: flex; gap: 2px; align-items: flex-end; height: 46%; }
+/* 条码：从「整块硬边竖条墙」收成一个边缘渐隐的小饰条。高度不再吃满 46%，
+ * 条高由 JS 逐根随机；mask 把上下左右抹掉，不然矩形边界本身就是那根「竖线」。 */
+.jv-barcode { inset: auto; top: 50%; transform: translateY(-50%); display: flex; gap: 2px; align-items: flex-end; height: 24%;
+  -webkit-mask-image: radial-gradient(120% 130% at 50% 50%, #000 46%, transparent 86%);
+  mask-image: radial-gradient(120% 130% at 50% 50%, #000 46%, transparent 86%); }
 .jv-barcode.l { left: 3.5%; }
 .jv-barcode.r { right: 3.5%; }
-.jv-barcode > i { position: static; background: var(--jv-fg); height: 100%; }
+.jv-barcode > i { position: static; background: var(--jv-fg); }
 
 .jv-arrows { display: flex; gap: 12px; align-items: center; color: var(--jv-acc); font-size: 15px; inset: auto; }
 .jv-arrows.top { top: 12%; left: 50%; transform: translateX(-50%); }
@@ -11898,17 +11902,20 @@ injectPills();
   PV.glyph = function (t) { return t === ' ' ? '\u00A0' : t; };
 
   /* ---------- 演出强度 ---------- */
-  PV.fx = { motion: 0.6, glitch: 0.2, chroma: 0.2, decor: 1, density: 0.7, texture: 0.2, bgSwitch: 0 };
+  PV.fx = { motion: 0.6, glitch: 0.2, chroma: 0.2, decor: 0.5, density: 0.7, texture: 0.2, bgSwitch: 0 };
 
   /* ---------- 气氛：决不是换皮，是换抽签分布 + 换滑块 ---------- */
+  /* decor 这一列是后补的：先前没有一档气氛设过它，于是它恒等于1，
+   * 所有「decor > 0.5 才进池」的门槛全部恒真，装饰抽得像筛子漏——
+   * 用户连着两轮截图中那个成块硬边竖条就是这么来的。旋钮就得是旋钮。 */
   PV.mood = null;
-  [['glitch', '故障', { motion: 0.9, glitch: 0.9, chroma: 0.8, texture: 0.7, density: 0.8 }],
-   ['calm', '静', { motion: 0.25, glitch: 0, chroma: 0.1, texture: 0.3, density: 0.4 }],
-   ['pop', '流行', { motion: 0.85, glitch: 0.15, chroma: 0.25, texture: 0.2, density: 0.6 }],
-   ['graphic', '平面', { motion: 0.5, glitch: 0.1, chroma: 0.2, texture: 0.1, density: 0.5 }],
-   ['editorial', '编辑', { motion: 0.35, glitch: 0, chroma: 0.05, texture: 0.15, density: 0.45 }],
-   ['emotional', '情绪', { motion: 0.55, glitch: 0.2, chroma: 0.3, texture: 0.35, density: 0.5 }],
-   ['horror', '恐怖', { motion: 0.7, glitch: 0.75, chroma: 0.5, texture: 0.8, density: 0.55 }]
+  [['glitch', '故障', { motion: 0.9, glitch: 0.9, chroma: 0.8, texture: 0.7, density: 0.8, decor: 0.85 }],
+   ['calm', '静', { motion: 0.25, glitch: 0, chroma: 0.1, texture: 0.3, density: 0.4, decor: 0.2 }],
+   ['pop', '流行', { motion: 0.85, glitch: 0.15, chroma: 0.25, texture: 0.2, density: 0.6, decor: 0.6 }],
+   ['graphic', '平面', { motion: 0.5, glitch: 0.1, chroma: 0.2, texture: 0.1, density: 0.5, decor: 0.7 }],
+   ['editorial', '编辑', { motion: 0.35, glitch: 0, chroma: 0.05, texture: 0.15, density: 0.45, decor: 0.5 }],
+   ['emotional', '情绪', { motion: 0.55, glitch: 0.2, chroma: 0.3, texture: 0.35, density: 0.5, decor: 0.45 }],
+   ['horror', '恐怖', { motion: 0.7, glitch: 0.75, chroma: 0.5, texture: 0.8, density: 0.55, decor: 0.75 }]
   ].forEach(function (m) {
     PV.reg('mood', m[0], { nm: m[1], fx: m[2] });
   });
@@ -12102,13 +12109,17 @@ injectPills();
     /* decor / treatment 可叠 0..n 件；外部传字符串 = 只用那一件 */
     function stack(group) {
       var raw = opts[group];
+      /* 点名（字符串 / 数组）只过 fit，不过 when：
+       * when 是「抽签时的门槛」（ decor 不够大就别自己跳出来），
+       * 而用户按下「条码」那颗钮就是指定它，拦在他面前只会变成“点了没反应”。
+       * （预览台上装饰与处理两排按钮全部走这条路，之前被 texture/decor 门槛默默滤掉过。） */
       if (typeof raw === 'string') {
         return [raw].map(function (k) { return PV.part(group, k); })
-          .filter(function (d) { return d && (!d.when || d.when(ctx)); });
+          .filter(function (d) { return d && (!d.fit || d.fit(ctx)); });
       }
       if (Array.isArray(raw)) {
         return raw.map(function (k) { return typeof k === 'string' ? PV.part(group, k) : k; })
-          .filter(function (d) { return d && (!d.when || d.when(ctx)); });
+          .filter(function (d) { return d && (!d.fit || d.fit(ctx)); });
       }
       var base = (PV.defaults[group] || []).slice();
       var want = group === 'decor' ? PV.decorMax : PV.treatMax;
@@ -12213,7 +12224,8 @@ injectPills();
 
     if (S.tag) S.tag.textContent = 'LAYOUT · ' + plan.layout.nm + (plan.face ? ' · ' + plan.face.nm : '') +
       (PV.mood ? ' · ' + PV.mood : '') +
-      (S.cuts && S.cuts.length > 1 ? ' · ' + (S.cutI + 1) + '/' + S.cuts.length : '');
+      (S.cuts && S.cuts.length > 1 ? ' · ' + (S.cutI + 1) + '/' + S.cuts.length : '') +
+      (PV.audioChain ? ' · 音' + PV.audioChain() : '');
     if (S.ghosts.up) S.ghosts.up.textContent = i > 0 && S.lyrics[i - 1] ? PV.plain(S.lyrics[i - 1].text) : '';
     if (S.ghosts.dn) S.ghosts.dn.textContent = i < S.lyrics.length - 1 && S.lyrics[i + 1] ? PV.plain(S.lyrics[i + 1].text) : '';
     PV.dispatch('pv:cut', plan);
@@ -13585,9 +13597,10 @@ injectPills();
  * 频谱摊到 window.__reactiveBins（零拷贝，同一个 buffer）。
  * 没有它（音频反应被关掉 / 独立预览台）才自建图。
  *
- * 归谁接 <audio>：core 与 PV 都靠 createMediaElementSource 接同一个元素，而一个元素只能接一次，
- * 谁先接谁赢。实测就是 PV 先接、把 core 的链顶掉了。所以只要用户开了音频反应，就让位给 core，
- * PV 只读它摊出来的频谱；等了 6s 频谱还没来（CORS 之类）才自建。
+ * 归谁接 <audio>：一个元素只能被 createMediaElementSource 接一次，而且接了不可逆——
+ * 谁先接谁赢，输了的一方再也听不见（实测就是 PV 先接、把 core 顶掉，然后 PV 拆桥，
+ * 两边都哑）。所以现在的规矩很硬：App 里 PV 绝不接元素，只读 core 摊到
+ * window.__reactiveBins 的频谱；自建图只在没有 core 的预览台里打开（PV.audioOwn）。
  *
  * 拍点检测：高通能量 → 自适应阈值的 onset → IOI 直方图定周期 → 相位锁定跟随。
  * 拍网格用歌自己的时钟（媒体时间），不用墙钟：拖进度条、暂停、变速都不该让相位漂走。
@@ -13608,17 +13621,19 @@ injectPills();
   Object.assign(PV.audio, A);
 
   /* ---------- 自建图 ----------
-   * 接 <audio> 是个危险动作：createMediaElementSource 一调，元素的声音就只能从图里出去。
-   * 图没跑起来 = 静音。实测就是这么把播放声弄没的（进 PV 但未播时抢接）。
-   * 三条硬规定：
-   *   1) 只在「正在播」时接——那一刻必然有用户手势，AudioContext 才可能真 running；
-   *   2) 接上后 1.5s 内到不了 running 就拆桥，把声音还给原生出口；
-   *   3) 退出 PV 一定拆桥。
+   * 接 <audio> 是个不可逆动作：createMediaElementSource 一调，元素的声音就**永久**改从图里出去，
+   * 之后 disconnect() / close() 都**无法把它还给原生出口**——上一版以为「拆桥=归还」，
+   * 错得很彻底：接完跑不起来再拆，得到的是一个绑在已关闭图上的元素，整页到关掉为止全部静音。
+   *
+   * 所以 App 里的铁只有一条：不接。拍点与能量全部从 core 的 window.__reactiveBins 读。
+   * 自建只留给没有 core 的预览台（pv/test.html 里显式开 PV.audioOwn = true）。
+   * 默认 false = 宁可不驱动拍点，也不能替用户把声音弄没。
    */
   var own = { actx: null, an: null, src: null, data: null, failed: false, err: null, since: 0, released: null };
-  PV.audioOwn = true;              // 设 false 就彻底不接元素，拍点驱动失效但绝对不会哑
+  PV.audioOwn = false;             // 设 true 才允许接元素（预览台专用）
 
   function releaseOwn(why) {
+    /* 注意：这里只能把自己的图拆掉，不能「归还」元素——绑定拆不掉。见上面注释。 */
     if (own.src) { try { own.src.disconnect(); } catch (e) { } own.src = null; }
     own.an = null; own.data = null; own.since = 0;
     if (own.actx) { try { own.actx.close(); } catch (e) { } own.actx = null; }
@@ -13629,6 +13644,19 @@ injectPills();
   PV.audioRelease = function () {
     releaseOwn('manual');
     own.failed = false; own.err = null; own.released = null;
+  };
+
+  /* 一句话回答「声音现在归谁」：截图里看到就能直接判。
+   *  core = core 接了元素，PV 只读它摊的频谱（App 里正常状态）
+   *  pv   = PV 自建图（只应该出现在预览台）
+   *  wait = 开播了但还没等到 core 的频谱
+   *  off  = 谁都没接：拍点不驱动，但声音一定正常 */
+  PV.audioChain = function () {
+    if (window.__reactiveReady || A.mode === 'host') return ':core';
+    if (A.mode === 'own') return ':pv';
+    var el = audioEl();
+    if (el && !el.paused && !el.ended && hostWanted()) return ':wait';
+    return ':off';
   };
 
   PV.audio.stats = function () {
@@ -13669,8 +13697,10 @@ injectPills();
   var hostWaitSince = 0;
   function mayBuildOwn() {
     var el = audioEl();
-    /* 铁律：没在播绝不接元素；总开关关了也不接 */
+    /* 铁律一：App 里不接。总开关默认 false，不因为「看起来能接」就自己打开 */
     if (!PV.audioOwn || !el || el.paused || el.ended) return false;
+    /* 铁律二：core 已经摊出频谱了，说明它接过了，绝对不抢 */
+    if (window.__reactiveBins || window.__reactiveReady) { A.mode = 'host'; return false; }
     if (!hostWanted()) return true;
     if (!hostWaitSince) hostWaitSince = performance.now();
     return performance.now() - hostWaitSince > 4000;   // 播了 4s 还没频谱，那条链负不了责，PV 自建
@@ -14241,13 +14271,22 @@ injectPills();
   });
 
   /* ---------- barcode 条码 ---------- */
+  /* 从随机池里摘出来了（sp）。两轮实测截图它都被当成「不知道哪里来的竖块」：
+   * 硬边矩形 + 22 根满高竖条 + 贴在舞台左右，看上去像 bug 不像设计。
+   * 预览台的「条码」按钮与 `PV.show(i,{decor:['barcode']})` 仍能用，
+   * 强词行（`*强调*` / 行末 !）也能抽到它（impact 件在强词时优先）。 */
   PV.reg('decor', 'barcode', {
-    nm: '条码', tags: ['graphic', 'editorial'], w: 0.6,
+    nm: '条码', tags: ['graphic', 'editorial'], w: 0.6, sp: 1,
     when: function () { return PV.fx.decor > 0.5; },
     apply: function (c) {
       var h = '', side = n(c, 2) < 1 ? 'l' : 'r';
-      for (var i = 0; i < 22; i++) h += '<i style="width:' + (1 + Math.round(n(c, 4))) + 'px;opacity:' + (0.35 + n(c, 0.5)).toFixed(2) + '"></i>';
-      return add(c, el('jv-barcode ' + side, h));
+      for (var i = 0; i < 22; i++) h += '<i style="width:' + (1 + Math.round(n(c, 4))) + 'px;' +
+        'height:' + (38 + Math.round(n(c, 62))) + '%;' +
+        'opacity:' + (0.3 + n(c, 0.5)).toFixed(2) + '"></i>';
+      var e = el('jv-barcode ' + side, h);
+      /* 强度真的接上 fx.decor：之前这个旋钮恒为 1，所以下面的写法等于没写 */
+      e.style.opacity = (0.22 + 0.5 * PV.fx.decor).toFixed(3);
+      return add(c, e);
     }
   });
 

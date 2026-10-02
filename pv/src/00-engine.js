@@ -62,17 +62,20 @@
   PV.glyph = function (t) { return t === ' ' ? '\u00A0' : t; };
 
   /* ---------- 演出强度 ---------- */
-  PV.fx = { motion: 0.6, glitch: 0.2, chroma: 0.2, decor: 1, density: 0.7, texture: 0.2, bgSwitch: 0 };
+  PV.fx = { motion: 0.6, glitch: 0.2, chroma: 0.2, decor: 0.5, density: 0.7, texture: 0.2, bgSwitch: 0 };
 
   /* ---------- 气氛：决不是换皮，是换抽签分布 + 换滑块 ---------- */
+  /* decor 这一列是后补的：先前没有一档气氛设过它，于是它恒等于1，
+   * 所有「decor > 0.5 才进池」的门槛全部恒真，装饰抽得像筛子漏——
+   * 用户连着两轮截图中那个成块硬边竖条就是这么来的。旋钮就得是旋钮。 */
   PV.mood = null;
-  [['glitch', '故障', { motion: 0.9, glitch: 0.9, chroma: 0.8, texture: 0.7, density: 0.8 }],
-   ['calm', '静', { motion: 0.25, glitch: 0, chroma: 0.1, texture: 0.3, density: 0.4 }],
-   ['pop', '流行', { motion: 0.85, glitch: 0.15, chroma: 0.25, texture: 0.2, density: 0.6 }],
-   ['graphic', '平面', { motion: 0.5, glitch: 0.1, chroma: 0.2, texture: 0.1, density: 0.5 }],
-   ['editorial', '编辑', { motion: 0.35, glitch: 0, chroma: 0.05, texture: 0.15, density: 0.45 }],
-   ['emotional', '情绪', { motion: 0.55, glitch: 0.2, chroma: 0.3, texture: 0.35, density: 0.5 }],
-   ['horror', '恐怖', { motion: 0.7, glitch: 0.75, chroma: 0.5, texture: 0.8, density: 0.55 }]
+  [['glitch', '故障', { motion: 0.9, glitch: 0.9, chroma: 0.8, texture: 0.7, density: 0.8, decor: 0.85 }],
+   ['calm', '静', { motion: 0.25, glitch: 0, chroma: 0.1, texture: 0.3, density: 0.4, decor: 0.2 }],
+   ['pop', '流行', { motion: 0.85, glitch: 0.15, chroma: 0.25, texture: 0.2, density: 0.6, decor: 0.6 }],
+   ['graphic', '平面', { motion: 0.5, glitch: 0.1, chroma: 0.2, texture: 0.1, density: 0.5, decor: 0.7 }],
+   ['editorial', '编辑', { motion: 0.35, glitch: 0, chroma: 0.05, texture: 0.15, density: 0.45, decor: 0.5 }],
+   ['emotional', '情绪', { motion: 0.55, glitch: 0.2, chroma: 0.3, texture: 0.35, density: 0.5, decor: 0.45 }],
+   ['horror', '恐怖', { motion: 0.7, glitch: 0.75, chroma: 0.5, texture: 0.8, density: 0.55, decor: 0.75 }]
   ].forEach(function (m) {
     PV.reg('mood', m[0], { nm: m[1], fx: m[2] });
   });
@@ -266,13 +269,17 @@
     /* decor / treatment 可叠 0..n 件；外部传字符串 = 只用那一件 */
     function stack(group) {
       var raw = opts[group];
+      /* 点名（字符串 / 数组）只过 fit，不过 when：
+       * when 是「抽签时的门槛」（ decor 不够大就别自己跳出来），
+       * 而用户按下「条码」那颗钮就是指定它，拦在他面前只会变成“点了没反应”。
+       * （预览台上装饰与处理两排按钮全部走这条路，之前被 texture/decor 门槛默默滤掉过。） */
       if (typeof raw === 'string') {
         return [raw].map(function (k) { return PV.part(group, k); })
-          .filter(function (d) { return d && (!d.when || d.when(ctx)); });
+          .filter(function (d) { return d && (!d.fit || d.fit(ctx)); });
       }
       if (Array.isArray(raw)) {
         return raw.map(function (k) { return typeof k === 'string' ? PV.part(group, k) : k; })
-          .filter(function (d) { return d && (!d.when || d.when(ctx)); });
+          .filter(function (d) { return d && (!d.fit || d.fit(ctx)); });
       }
       var base = (PV.defaults[group] || []).slice();
       var want = group === 'decor' ? PV.decorMax : PV.treatMax;
@@ -377,7 +384,8 @@
 
     if (S.tag) S.tag.textContent = 'LAYOUT · ' + plan.layout.nm + (plan.face ? ' · ' + plan.face.nm : '') +
       (PV.mood ? ' · ' + PV.mood : '') +
-      (S.cuts && S.cuts.length > 1 ? ' · ' + (S.cutI + 1) + '/' + S.cuts.length : '');
+      (S.cuts && S.cuts.length > 1 ? ' · ' + (S.cutI + 1) + '/' + S.cuts.length : '') +
+      (PV.audioChain ? ' · 音' + PV.audioChain() : '');
     if (S.ghosts.up) S.ghosts.up.textContent = i > 0 && S.lyrics[i - 1] ? PV.plain(S.lyrics[i - 1].text) : '';
     if (S.ghosts.dn) S.ghosts.dn.textContent = i < S.lyrics.length - 1 && S.lyrics[i + 1] ? PV.plain(S.lyrics[i + 1].text) : '';
     PV.dispatch('pv:cut', plan);
