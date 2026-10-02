@@ -45,7 +45,7 @@
   });
 
   PV.reg('layout', 'scatter', {
-    nm: '散落', tags: ['emotional', 'graphic'], w: 0.9,
+    nm: '散落', tags: ['emotional', 'graphic'], w: 0.9, spread: 1,
     pre: function (c) { c.stagger = 55; },
     render: function (c) {
       return PV.spans(c, {
@@ -147,7 +147,7 @@
   });
 
   PV.reg('layout', 'cad', {
-    nm: '星散', tags: ['emotional', 'calm'], w: 0.9,
+    nm: '星散', tags: ['emotional', 'calm'], w: 0.9, spread: 1,
     pre: function (c) { c.stagger = 60; },
     render: function (c) {
       // 词/字种子散落 + 微旋转 + 漂浮几何；发光交给 treatment 层的逐字扫光

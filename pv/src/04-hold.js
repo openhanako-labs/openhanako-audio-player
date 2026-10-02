@@ -69,10 +69,12 @@
 
   PV.reg('hold', 'drift', {
     nm: '漂移', tags: ['graphic', 'editorial', 'calm'], w: 0.8,
-    apply: function (c) { c._x0 = c.el.getBoundingClientRect().left; },
+    /* 写 --drift-* 而不是 style.translate：那个位置已经给装配守卫占了，
+     * 两个写手抢同一个属性就会互相闪。 */
     frame: function (c) {
       var d = 1.4 + 3.6 * PV.fx.motion;
-      c.el.style.translate = (Math.sin(c.lt * 0.34) * d).toFixed(2) + 'px ' + (Math.cos(c.lt * 0.27) * d * 0.6).toFixed(2) + 'px';
+      c.el.style.setProperty('--drift-x', (Math.sin(c.lt * 0.34) * d).toFixed(2) + 'px');
+      c.el.style.setProperty('--drift-y', (Math.cos(c.lt * 0.27) * d * 0.6).toFixed(2) + 'px');
     }
   });
 

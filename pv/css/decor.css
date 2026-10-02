@@ -3,10 +3,12 @@
  * 全部 horizontal-tb + pointer-events:none —— 竖写版式会把子层的文字方向一起带走（①踩过）。
  */
 
-.jv-d, .jv-t { pointer-events: none; writing-mode: horizontal-tb; }
+.jv-d, .jv-fx { pointer-events: none; writing-mode: horizontal-tb; }
 .jv-d { position: absolute; inset: 0; z-index: 1; }
 .jv-d > * { position: absolute; }
-.jv-t { position: absolute; inset: 0; z-index: 6; }
+/* 整屏处理层叫 .jv-fx 不叫 .jv-t——.jv-t 从 ② 开始就是逐字 token 的类名，
+ * 重名会把每个字拉成绝对定位铺满舞台（体检拓出来的，⑤ 自己埋的雷）。 */
+.jv-fx { position: absolute; inset: 0; z-index: 6; }
 
 /* ---------- decor ---------- */
 .jv-frame .e { inset: 4.5% 5%; border: 1px solid var(--jv-fg); opacity: .35; }

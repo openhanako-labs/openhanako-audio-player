@@ -28,6 +28,10 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
   display: flex; align-items: center; justify-content: center;
   padding: 36px;
   opacity: 0; transition: opacity .45s ease;
+  /* 装配守卫（--fx/--fy/--fk）与保持层（--drift-*）各占一个独立属性，
+   * 谁也不写 transform，所以镜头/呼吸/抖动能和它们共存 */
+  translate: calc(var(--fx, 0px) + var(--drift-x, 0px)) calc(var(--fy, 0px) + var(--drift-y, 0px));
+  scale: var(--fk, 1);
 }
 .jv-line.show { opacity: 1; }
 .jv-line.jv-out { opacity: 0; }

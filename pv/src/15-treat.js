@@ -12,7 +12,7 @@
     var g = L.querySelector('.' + cls);
     if (!g) {
       g = document.createElement('div');
-      g.className = 'jv-t ' + cls;
+      g.className = 'jv-fx ' + cls;
       L.appendChild(g);
     }
     return g;

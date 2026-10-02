@@ -21,6 +21,7 @@
   PV.autoSplit = true;
   PV.maxCutChars = 13;      // 超过这个字数才考虑自动切
   PV.maxCuts = 3;
+  PV.minCutMs = 900;         // 一段的最短可用时长（比最硬的入场 500ms 加上阅读时间再宽一点）
 
   var MARK = /[，。、！？；：,.?;:…—–)」』”’]/;
   function isSpace(t) { return /^\s+$/.test(t); }
@@ -129,6 +130,29 @@
       cuts[k].t0 = Math.max(lo, Math.min(hi, sn2));
       cuts[k - 1].t1 = Math.min(cuts[k].t0, Math.max(cuts[k - 1].t0 + 400, cuts[k - 1].t1));
     }
+    cuts[cuts.length - 1].t1 = Math.max(cuts[cuts.length - 1].t1, t1);
+
+    /* 段不能切得比入场还短：实测英文长句能切出 340ms 的段，
+     * 而最硬的入场也要 500ms——段比入场短就没有“出完”这一说。
+     * 不靠调小 stagger 压（挤到 4ms 以下字就糊成一排），而是往回合并。 */
+    var MIN = PV.minCutMs || 900;
+    while (cuts.length > 1) {
+      var minI = -1, minV = 1e9;
+      for (var q = 0; q < cuts.length; q++) {
+        var d = cuts[q].t1 - cuts[q].t0;
+        if (d < minV) { minV = d; minI = q; }
+      }
+      if (minV >= MIN) break;
+      var joinWith = minI === 0 ? 1 : minI - 1;
+      var keep = cuts[Math.min(minI, joinWith)], eat = cuts[Math.max(minI, joinWith)];
+      keep.t1 = eat.t1;
+      keep.tokens = keep.tokens.concat(eat.tokens);
+      keep.text = (keep.text + eat.text).replace(/\s+/g, ' ').trim();
+      keep.n = cuts.length - 1;
+      cuts.splice(Math.max(minI, joinWith), 1);
+      if (keep.n !== cuts.length) cuts.forEach(function (x, k) { x.i = k; x.n = cuts.length; });
+    }
+    for (var z = 1; z < cuts.length; z++) { cuts[z].t0 = cuts[z - 1].t1; cuts[z - 1].t1 = cuts[z].t0; }
     cuts[cuts.length - 1].t1 = Math.max(cuts[cuts.length - 1].t1, t1);
     return cuts;
   };

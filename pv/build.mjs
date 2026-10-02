@@ -24,7 +24,8 @@ const JS_ORDER = [
   'src/06-camera.js', 'src/07-transition.js', 'src/08-decor.js',
   'src/09-chrome.js', 'src/10-api.js', 'src/11-audio.js',
   'src/13-syntax.js', 'src/12-cuts.js',
-  'src/14-decor.js', 'src/15-treat.js', 'src/16-trans.js', 'src/17-faces.js'
+  'src/14-decor.js', 'src/15-treat.js', 'src/16-trans.js', 'src/17-faces.js',
+  'src/18-audit.js'
 ];
 
 const CSS_B = '/* ===== PV:BEGIN 文字PV引擎（pv/ 目录构建产物，勿手改） ===== */';

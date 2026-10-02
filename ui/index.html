@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1002203230";
+  window.__HANA_BUILD = "1002213851";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -3412,6 +3412,10 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
   display: flex; align-items: center; justify-content: center;
   padding: 36px;
   opacity: 0; transition: opacity .45s ease;
+  /* 装配守卫（--fx/--fy/--fk）与保持层（--drift-*）各占一个独立属性，
+   * 谁也不写 transform，所以镜头/呼吸/抖动能和它们共存 */
+  translate: calc(var(--fx, 0px) + var(--drift-x, 0px)) calc(var(--fy, 0px) + var(--drift-y, 0px));
+  scale: var(--fk, 1);
 }
 .jv-line.show { opacity: 1; }
 .jv-line.jv-out { opacity: 0; }
@@ -3662,10 +3666,12 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
  * 全部 horizontal-tb + pointer-events:none —— 竖写版式会把子层的文字方向一起带走（①踩过）。
  */
 
-.jv-d, .jv-t { pointer-events: none; writing-mode: horizontal-tb; }
+.jv-d, .jv-fx { pointer-events: none; writing-mode: horizontal-tb; }
 .jv-d { position: absolute; inset: 0; z-index: 1; }
 .jv-d > * { position: absolute; }
-.jv-t { position: absolute; inset: 0; z-index: 6; }
+/* 整屏处理层叫 .jv-fx 不叫 .jv-t——.jv-t 从 ② 开始就是逐字 token 的类名，
+ * 重名会把每个字拉成绝对定位铺满舞台（体检拓出来的，⑤ 自己埋的雷）。 */
+.jv-fx { position: absolute; inset: 0; z-index: 6; }
 
 /* ---------- decor ---------- */
 .jv-frame .e { inset: 4.5% 5%; border: 1px solid var(--jv-fg); opacity: .35; }
@@ -11895,7 +11901,7 @@ injectPills();
   var S = {
     lyrics: [], idx: -1, style: null, stage: null, layer: null, track: null,
     cur: null, lastLayout: '', stops: [], tag: null, ghosts: { up: null, dn: null },
-    cuts: null, cutI: 0
+    cuts: null, cutI: 0, cutsLine: -1
   };
   PV.S = S;
 
@@ -11930,7 +11936,7 @@ injectPills();
     return layer;
   };
 
-  PV.setLyrics = function (l) { S.lyrics = l || []; };
+  PV.setLyrics = function (l) { S.lyrics = l || []; S.cuts = null; S.cutI = 0; S.cutsLine = -1; };
 
   /* ---------- ctx：所有层读同一个上下文 ---------- */
   PV.makeCtx = function (i, txt) {
@@ -12011,8 +12017,13 @@ injectPills();
   PV.planLine = function (i, opts) {
     opts = opts || {};
     var line = PV.lineAt(i);
-    /* ④ 分 cut：不保留时重算（切分依赖字数与当时的拍子，重算才会跟着变） */
-    if (!opts.keepCuts || !S.cuts) S.cuts = (PV.splitLine ? PV.splitLine(line, i) : null) || [];
+    /* ④ 分 cut：不保留时重算（切分依赖字数与当时的拍子，重算才会跟着变）。
+     * 注意缓存是按行存的：跳行时必须重切，沿用上一行的 cuts 会把 cutI 归到
+     * 一个根本不存在的段上（实测：planLine(5,{cutI:1}) 拿到的是上一行的 0 段）。 */
+    if (!opts.keepCuts || !S.cuts || S.cutsLine !== i) {
+      S.cuts = (PV.splitLine ? PV.splitLine(line, i) : null) || [];
+      S.cutsLine = i;
+    }
     if (!S.cuts.length) S.cutI = 0;
     var cutI = opts.keepCuts ? Math.max(0, Math.min((opts.cutI == null ? S.cutI : opts.cutI), (S.cuts || []).length - 1)) : 0;
     S.cutI = cutI;
@@ -12035,6 +12046,18 @@ injectPills();
       || (opts.layout ? PV.part('layout', opts.layout) : PV.choose('layout', ctx, opts));
     if (!lay) lay = PV.part('layout', 'center');
     if (lay.pre) lay.pre(ctx);
+    var enterPart = PV.choose('enter', ctx, opts) || PV.part('enter', PV.defaults.enter);
+    /* stagger 要按本段可用时长收：长句拆段后每段只有一秒上下，
+     * 而「固定 45ms × 字数 + 入场时长」会比整段还长——尾字刚出完就换行，看着像卡了一下。
+     * 入场最多占本段 62%，剩下留给驻留与阅读。*/
+    if (enterPart) {
+      var availMs = Math.max(0, (ctx.t1 || 0) - (ctx.t0 || 0));
+      var nt = ctx.tokens.length, so = enterPart.staggerOf || 1;
+      if (availMs > 320 && nt > 1) {
+        var gapMax = (availMs * 0.62 - (enterPart.dur || 400)) / (nt - 1);
+        if (gapMax > 4 && ctx.stagger * so > gapMax) ctx.stagger = +(gapMax / so).toFixed(1);
+      }
+    }
     /* ⑥ 字体：风格可以钉死（新闻就该黑体），没钉就按气氛/强调抽；
      * auto 风格不抢字体——那是“跟 App 主题”的意思，连字体一起跟才对 */
     var fc = PV.rollFace ? PV.rollFace(ctx, opts) : null;
@@ -12063,7 +12086,7 @@ injectPills();
     return {
       layout: lay,
       face: fc,
-      enter: PV.choose('enter', ctx, opts) || PV.part('enter', PV.defaults.enter),
+      enter: enterPart,
       hold: PV.choose('hold', ctx, opts) || PV.part('hold', PV.defaults.hold),
       exit: PV.choose('exit', ctx, opts) || PV.part('exit', PV.defaults.exit),
       transition: PV.choose('transition', ctx, opts) || PV.part('transition', PV.defaults.transition),
@@ -12100,7 +12123,7 @@ injectPills();
     el.className = 'jv-line jv-' + plan.layout.key;
     el.innerHTML = plan.layout.render ? (plan.layout.render(ctx) || '') : '';
     var toks = Array.prototype.slice.call(el.querySelectorAll('.jv-t'));
-    ctx.el = el; ctx.tokensEls = toks; ctx.track = S.track; ctx.stage = S.stage;
+    ctx.el = el; ctx.tokensEls = toks; ctx.track = S.track; ctx.stage = S.stage; ctx.layout = plan.layout;
     return { el: el, ctx: ctx, toks: toks };
   };
 
@@ -12162,12 +12185,104 @@ injectPills();
   function applyIn(plan, made) {
     if (plan.face && PV.useFace) PV.useFace(plan.face);
     else if (PV.clearFace) PV.clearFace();
+    /* 守卫先跑：此时只有版式写好的位置与旋转，还没有任何动画 transform，
+     * 量到的就是落点。守卫自己只写 left/top 与 --fx/--fy/--fk，
+     * 后面的登场/保持/镜头层照旧动 transform，互不抢占。 */
+    fitGuard(made.ctx);
     if (plan.enter && plan.enter.apply) plan.enter.apply(made.ctx, made.toks);
     if (plan.hold && plan.hold.apply) { var sh = plan.hold.apply(made.ctx, made.el); if (sh) PV.addStop(sh); }
     if (plan.camera && plan.camera.apply) { var sc = plan.camera.apply(made.ctx, S.track); if (sc) PV.addStop(sc); }
     plan.decor.forEach(function (d) { if (d.apply) { var s = d.apply(made.ctx, made.el); if (s) PV.addStop(s); } });
     plan.treatment.forEach(function (d) { if (d.apply) { var s2 = d.apply(made.ctx, made.el); if (s2) PV.addStop(s2); } });
   }
+
+  /* ---------- 装配守卫 ----------
+   * 两件分开做，因为是两个层面的错：
+   *  a) 散落类版式（件上标 spread:1）按百分比定位字，从不看字有多宽——长拉丁词把右边界顶出去。
+   *  b) 整行超宽/超高（nowrap 长拉丁、竖写超长句）：缩 scale 再拉回边界。
+   *
+   * 只量 getBoundingClientRect，不再自己算 offsetLeft + 旋转包围盒。
+   * 试过算：判定说 0 越界，真实矩形却漏出 17px——因为 token 的 offsetParent
+   * 可能是版式自己的相对定位层，偏移原点与舞台差着一层 padding；这种语义账
+   * 靠推是推不准的，浏览器算好的矩形就是答案。
+   *
+   * 三条约束：
+   *  · 守卫跑在 enter.apply 之前——那时还没有任何动画 transform，量到的是落点。
+   *  · 每次先把 --fx/--fy/--fk 抹掉再量，否则上一轮的位移会被这一轮量进去（不幂等，
+   *    实测 --fk 会一路缩到 0.58）。
+   *  · 只写 left/top 与 --fx/--fy/--fk，绝不碰 transform：那是版式（旋转）与镜头的地盘。 */
+  function fitGuard(c) {
+    var stage = c.stage || PV.stage(), el = c.el;
+    if (!stage || !el) return;
+    var sb = stage.getBoundingClientRect();
+    if (sb.width < 40 || sb.height < 40) return;
+    var PAD = 12;
+    el.style.removeProperty('--fx'); el.style.removeProperty('--fy'); el.style.removeProperty('--fk');
+
+    var toks = Array.prototype.slice.call(el.querySelectorAll('.jv-w'));
+    if (!toks.length) return;
+
+    function rects() {
+      var minL = 1e9, maxR = -1e9, minT = 1e9, maxB = -1e9;
+      toks.forEach(function (w) {
+        var r = w.getBoundingClientRect();
+        if (!r.width && !r.height) return;
+        minL = Math.min(minL, r.left); maxR = Math.max(maxR, r.right);
+        minT = Math.min(minT, r.top); maxB = Math.max(maxB, r.bottom);
+      });
+      if (minL > maxR) return null;
+      return { minL: minL, maxR: maxR, minT: minT, maxB: maxB };
+    }
+
+    /* a) 散落类：字是绝对定位的，直接把越界的字往回挪（挪在 left/top 上，不动 transform）。
+     * 挪完再量一次，避免"一个字的挪动把并集推到另一头"。 */
+    if (c.layout && c.layout.spread) {
+      for (var pass = 0; pass < 2; pass++) {
+        var moved = 0;
+        toks.forEach(function (w) {
+          var s = w.style;
+          if (!s.left && !s.top) return;
+          var r = w.getBoundingClientRect();
+          var dX = 0, dY = 0;
+          if (r.right > sb.right - PAD) dX = (sb.right - PAD) - r.right;
+          else if (r.left < sb.left + PAD) dX = (sb.left + PAD) - r.left;
+          if (r.bottom > sb.bottom - PAD) dY = (sb.bottom - PAD) - r.bottom;
+          else if (r.top < sb.top + PAD) dY = (sb.top + PAD) - r.top;
+          if (!dX && !dY) return;
+          moved++;
+          if (dX) s.left = (w.offsetLeft + dX) + 'px';
+          if (dY) s.top = (w.offsetTop + dY) + 'px';
+        });
+        if (!moved) break;
+      }
+    }
+
+    /* b) 整行并集还是出界：先缩，缩完剩下的再平移 */
+    var u = rects();
+    if (!u) return;
+    var lo = sb.left + PAD, hi = sb.right - PAD, vt = sb.top + PAD, vb = sb.bottom - PAD;
+    var k = Math.min(1, (hi - lo) / Math.max(1, u.maxR - u.minL), (vb - vt) / Math.max(1, u.maxB - u.minT));
+    k = Math.max(0.5, k);
+    var ox = Math.max(0, u.maxR * 1 - hi) + Math.min(0, u.minL - lo);
+    if (k < 0.999) {
+      el.style.setProperty('--fk', k.toFixed(3));
+      /* 缩放绕元素中心，所以缩放后的边界要按中心重算，不能简单乘 k */
+      var cxm = (u.minL + u.maxR) / 2, cym = (u.minT + u.maxB) / 2;
+      var hw = (u.maxR - u.minL) / 2 * k, hh = (u.maxB - u.minT) / 2 * k;
+      var s2 = stage.getBoundingClientRect();
+      var ncx = s2.left + s2.width / 2 + (cxm - (s2.left + s2.width / 2)) * k;
+      var ncy = s2.top + s2.height / 2 + (cym - (s2.top + s2.height / 2)) * k;
+      ox = Math.max(0, ncx + hw - hi) + Math.min(0, ncx - hw - lo);
+      var oy = Math.max(0, ncy + hh - vb) + Math.min(0, ncy - hh - vt);
+      if (ox) el.style.setProperty('--fx', ox.toFixed(1) + 'px');
+      if (oy) el.style.setProperty('--fy', oy.toFixed(1) + 'px');
+    } else {
+      var oy2 = Math.max(0, u.maxB - vb) + Math.min(0, u.minT - vt);
+      if (ox) el.style.setProperty('--fx', ox.toFixed(1) + 'px');
+      if (oy2) el.style.setProperty('--fy', oy2.toFixed(1) + 'px');
+    }
+  }
+  PV.fitGuard = fitGuard;
 
     /* ---------- 全局帧循环 ----------
    * 一条 rAF 喂所有 frame 型消费者：音频驱动→ 气氛偏置→ 本 cut 的 hold / camera / treatment。
@@ -12196,7 +12311,7 @@ injectPills();
   PV.empty = function (msg) {
     if (!PV.mount()) return;
     stopAll();
-    S.cur = null; S.idx = -1; S.cuts = null; S.cutI = 0; S.cuts = null; S.cutI = 0;
+    S.cur = null; S.idx = -1; S.cuts = null; S.cutI = 0; S.cutsLine = -1; S.cuts = null; S.cutI = 0;
     S.track.innerHTML = '<div class="jv-line jv-center show"><div class="cur" style="opacity:.4">' + (msg || '暂无歌词') + '</div></div>';
   };
 
@@ -12334,7 +12449,7 @@ injectPills();
   });
 
   PV.reg('layout', 'scatter', {
-    nm: '散落', tags: ['emotional', 'graphic'], w: 0.9,
+    nm: '散落', tags: ['emotional', 'graphic'], w: 0.9, spread: 1,
     pre: function (c) { c.stagger = 55; },
     render: function (c) {
       return PV.spans(c, {
@@ -12436,7 +12551,7 @@ injectPills();
   });
 
   PV.reg('layout', 'cad', {
-    nm: '星散', tags: ['emotional', 'calm'], w: 0.9,
+    nm: '星散', tags: ['emotional', 'calm'], w: 0.9, spread: 1,
     pre: function (c) { c.stagger = 60; },
     render: function (c) {
       // 词/字种子散落 + 微旋转 + 漂浮几何；发光交给 treatment 层的逐字扫光
@@ -12524,25 +12639,25 @@ injectPills();
     });
   }
 
-  PV.reg('enter', 'none', { nm: '直出', apply: function () { } });
+  PV.reg('enter', 'none', { nm: '直出', dur: 0, staggerOf: 1, apply: function () { } });
 
   /* 旧实现唯一的入场：逐字淡入 + 上移一个 em（jzWin → rise，参数原样） */
   PV.reg('enter', 'rise', {
-    nm: '升起', tags: ['calm', 'pop', 'graphic', 'editorial'], w: 1.3,
+    nm: '升起', tags: ['calm', 'pop', 'graphic', 'editorial'], w: 1.3, dur: 500, staggerOf: 1,
     apply: function (c, els) {
       each(c, els, [{ opacity: 0, transform: 'translateY(.5em)' }, { opacity: 1, transform: 'none' }], { duration: 500 });
     }
   });
 
   PV.reg('enter', 'fade', {
-    nm: '淡入', tags: ['calm', 'emotional'], w: 0.9,
+    nm: '淡入', tags: ['calm', 'emotional'], w: 0.9, dur: 620, staggerOf: 0.5,
     apply: function (c, els) {
       each(c, els, [{ opacity: 0 }, { opacity: 1 }], { duration: 620, easing: 'ease-out' }, Math.max(18, (c.stagger || 45) * 0.5));
     }
   });
 
   PV.reg('enter', 'drop', {
-    nm: '落下', tags: ['pop', 'graphic'], w: 1,
+    nm: '落下', tags: ['pop', 'graphic'], w: 1, dur: 560, staggerOf: 1,
     apply: function (c, els) {
       each(c, els, [
         { opacity: 0, transform: 'translateY(-.7em) scale(1.12)' },
@@ -12553,7 +12668,7 @@ injectPills();
   });
 
   PV.reg('enter', 'zoomIn', {
-    nm: '放大落定', tags: ['emotional', 'pop'], w: 0.9,
+    nm: '放大落定', tags: ['emotional', 'pop'], w: 0.9, dur: 480, staggerOf: 0.45,
     apply: function (c, els) {
       each(c, els, [{ opacity: 0, transform: 'scale(1.85)' }, { opacity: 1, transform: 'scale(1)' }],
         { duration: 480, easing: 'cubic-bezier(.16,.9,.3,1)' }, Math.max(14, (c.stagger || 45) * 0.45));
@@ -12561,7 +12676,7 @@ injectPills();
   });
 
   PV.reg('enter', 'wipe', {
-    nm: '擦出', tags: ['editorial', 'graphic'], w: 0.9,
+    nm: '擦出', tags: ['editorial', 'graphic'], w: 0.9, dur: 420, staggerOf: 0.6,
     fit: function (c) { return c.tokens.length <= 26; },
     apply: function (c, els) {
       each(c, els, [{ opacity: 0, clipPath: 'inset(0 100% 0 0)' }, { opacity: 1, clipPath: 'inset(0 0 0 0)' }],
@@ -12570,7 +12685,7 @@ injectPills();
   });
 
   PV.reg('enter', 'blur', {
-    nm: '聚焦', tags: ['calm', 'emotional'], w: 0.8,
+    nm: '聚焦', tags: ['calm', 'emotional'], w: 0.8, dur: 540, staggerOf: 0.55,
     when: function () { return PV.fx.motion >= 0; },
     apply: function (c, els) {
       each(c, els, [{ opacity: 0, filter: 'blur(9px)' }, { opacity: 1, filter: 'blur(0)' }],
@@ -12580,7 +12695,7 @@ injectPills();
 
   /* 砸入：紧 stagger + 缩放过冲，整行像被拍到屏幕上 */
   PV.reg('enter', 'slam', {
-    nm: '砸入', tags: ['pop', 'graphic', 'glitch'], w: 1,
+    nm: '砸入', tags: ['pop', 'graphic', 'glitch'], w: 1, dur: 260, staggerOf: 0.4,
     apply: function (c, els) {
       each(c, els, [
         { opacity: 0, transform: 'scale(2.1) rotate(-2deg)' },
@@ -12593,7 +12708,7 @@ injectPills();
   /* 乱码定格：先滚本行自己的字 + 符号，逐字落定 */
   var SYM = '＊＋◇○△□※';
   PV.reg('enter', 'scramble', {
-    nm: '乱码定格', tags: ['glitch', 'graphic'], w: 0.8,
+    nm: '乱码定格', tags: ['glitch', 'graphic'], w: 0.8, dur: 90, staggerOf: 1,
     fit: function (c) { return c.tokens.length <= 24; },
     apply: function (c, els) {
       var pool = (c.text || '').replace(/\s/g, '').split('').concat(SYM.split(''));
@@ -12689,10 +12804,12 @@ injectPills();
 
   PV.reg('hold', 'drift', {
     nm: '漂移', tags: ['graphic', 'editorial', 'calm'], w: 0.8,
-    apply: function (c) { c._x0 = c.el.getBoundingClientRect().left; },
+    /* 写 --drift-* 而不是 style.translate：那个位置已经给装配守卫占了，
+     * 两个写手抢同一个属性就会互相闪。 */
     frame: function (c) {
       var d = 1.4 + 3.6 * PV.fx.motion;
-      c.el.style.translate = (Math.sin(c.lt * 0.34) * d).toFixed(2) + 'px ' + (Math.cos(c.lt * 0.27) * d * 0.6).toFixed(2) + 'px';
+      c.el.style.setProperty('--drift-x', (Math.sin(c.lt * 0.34) * d).toFixed(2) + 'px');
+      c.el.style.setProperty('--drift-y', (Math.cos(c.lt * 0.27) * d * 0.6).toFixed(2) + 'px');
     }
   });
 
@@ -13815,6 +13932,7 @@ injectPills();
   PV.autoSplit = true;
   PV.maxCutChars = 13;      // 超过这个字数才考虑自动切
   PV.maxCuts = 3;
+  PV.minCutMs = 900;         // 一段的最短可用时长（比最硬的入场 500ms 加上阅读时间再宽一点）
 
   var MARK = /[，。、！？；：,.?;:…—–)」』”’]/;
   function isSpace(t) { return /^\s+$/.test(t); }
@@ -13923,6 +14041,29 @@ injectPills();
       cuts[k].t0 = Math.max(lo, Math.min(hi, sn2));
       cuts[k - 1].t1 = Math.min(cuts[k].t0, Math.max(cuts[k - 1].t0 + 400, cuts[k - 1].t1));
     }
+    cuts[cuts.length - 1].t1 = Math.max(cuts[cuts.length - 1].t1, t1);
+
+    /* 段不能切得比入场还短：实测英文长句能切出 340ms 的段，
+     * 而最硬的入场也要 500ms——段比入场短就没有“出完”这一说。
+     * 不靠调小 stagger 压（挤到 4ms 以下字就糊成一排），而是往回合并。 */
+    var MIN = PV.minCutMs || 900;
+    while (cuts.length > 1) {
+      var minI = -1, minV = 1e9;
+      for (var q = 0; q < cuts.length; q++) {
+        var d = cuts[q].t1 - cuts[q].t0;
+        if (d < minV) { minV = d; minI = q; }
+      }
+      if (minV >= MIN) break;
+      var joinWith = minI === 0 ? 1 : minI - 1;
+      var keep = cuts[Math.min(minI, joinWith)], eat = cuts[Math.max(minI, joinWith)];
+      keep.t1 = eat.t1;
+      keep.tokens = keep.tokens.concat(eat.tokens);
+      keep.text = (keep.text + eat.text).replace(/\s+/g, ' ').trim();
+      keep.n = cuts.length - 1;
+      cuts.splice(Math.max(minI, joinWith), 1);
+      if (keep.n !== cuts.length) cuts.forEach(function (x, k) { x.i = k; x.n = cuts.length; });
+    }
+    for (var z = 1; z < cuts.length; z++) { cuts[z].t0 = cuts[z - 1].t1; cuts[z - 1].t1 = cuts[z].t0; }
     cuts[cuts.length - 1].t1 = Math.max(cuts[cuts.length - 1].t1, t1);
     return cuts;
   };
@@ -14185,7 +14326,7 @@ injectPills();
     var g = L.querySelector('.' + cls);
     if (!g) {
       g = document.createElement('div');
-      g.className = 'jv-t ' + cls;
+      g.className = 'jv-fx ' + cls;
       L.appendChild(g);
     }
     return g;
@@ -14546,6 +14687,151 @@ injectPills();
     if (st && st.face) { var pin = PV.part('face', st.face); if (pin) return pin; }
     if (PV.faceManual) { var mf = PV.part('face', PV.faceManual); if (mf) return mf; }
     return PV.choose('face', ctx, opts) || PV.part('face', 'hei');
+  };
+})();
+
+/* PV 引擎 · 18 装配体检
+ *
+ * 层和件堆到一百多之后，真正没人管的是**几何**：
+ *   - 版式的 fit() 只看字数，不看这行字在舞台上会不会顶出边界；
+ *   - 逐字入场时长 = stagger × 字数 + duration，长句经常超过本段时长——
+ *     字还没出完就换行，看起来像卡了一下；
+ *   - 小字（注釈/HUD）压在正文上没人管碰撞。
+ *
+ * 所以这里做一个纯几何的体检：关掉入场/保持/镜头（否则量到的是动画中间态），
+ * 逐个 版式 × 样例行 渲染，量四类问题。跑一次约 20×N 帧，几十毫秒级。
+ *
+ * 用法：PV.audit()            返回 {溢出, 入场超时, 挤压, 空段}
+ *       PV.audit({quiet:true}) 只返回计数（控制台刷屏时用）
+ */
+(function () {
+  'use strict';
+  var PV = window.PV;
+
+  /* 真实歌词会遇到的形状：短、中、长、超长、拉丁、混合、带空格、带记号 */
+  PV.AUDIT_LINES = [
+    '夜',
+    '夜明けの色を',
+    '夜明けの色を 覚えてる',
+    '就算前面是深渊也别回头',
+    '就算前面是深渊也别回头，我一直都在这里等',
+    '就算前面是深渊也别回头我一直都在这里等从没有想过要放手',
+    'We are the champions, my friends',
+    'Standing in the rain of a thousand burning suns',
+    '风也/停了/星也落了',
+    '2026 年的夏夜，蝉声和吉他一起响',
+    '*烧成灰也要亮一下*|现场版',
+    '永字八法草龍龜_SN1234@#'
+  ];
+
+  function rectIn(inner, box) {
+    var r = inner.getBoundingClientRect();
+    return r.left >= box.left - 1 && r.right <= box.right + 1 &&
+      r.top >= box.top - 1 && r.bottom <= box.bottom + 1;
+  }
+  function overArea(inner, box) {
+    var r = inner.getBoundingClientRect();
+    var w = Math.max(0, Math.min(r.right, box.right) - Math.max(r.left, box.left));
+    var h = Math.max(0, Math.min(r.bottom, box.bottom) - Math.max(r.top, box.top));
+    var outW = Math.max(0, r.width - w), outH = Math.max(0, r.height - h);
+    return Math.round(outW * r.height + outH * r.width);
+  }
+
+  PV.audit = function (opts) {
+    opts = opts || {};
+    var L = PV.lyrics();
+    var lines = opts.lines || PV.AUDIT_LINES.map(function (t) { return { text: t }; });
+    var out = { 溢出: [], 入场超时: [], 空段: [], 边缘挤压: [], 样本: lines.length, 跳过: 0 };
+    var skipped = 0;
+    var box;
+
+    /* 入场时长用件上声明的 dur 与 staggerOf 算，不靠猜 */
+    function enterCost(enter, ctx) {
+      var st = ctx.stagger == null ? 45 : ctx.stagger;
+      var n = ctx.tokens.length;
+      return (enter && enter.dur || 400) + st * (enter && enter.staggerOf || 1) * Math.max(0, n - 1);
+    }
+
+    var keepIdx = PV.curIdx();
+    PV.setLyrics(lines);
+    try {
+      for (var li = 0; li < lines.length; li++) {
+        var cuts = PV.splitLine(lines[li], li) || [];
+        if (!cuts.length && (lines[li].text || '').trim()) out.空段.push(li + ':' + lines[li].text.slice(0, 10));
+        for (var ci = 0; ci < cuts.length; ci++) {
+          var avail = cuts[ci].t1 - cuts[ci].t0;
+          PV.parts('layout').forEach(function (lay) {
+            if (lay.sp) return;
+            /* 体检是强制每套版式吃每一行，但 fit() 本来就会拒掉一部分组合
+             * （比如 22 字塞竖写）——那些在真实配牌里抽不到，报出来是假问题。
+             * 先按 fit 筛一遍，只量可达的组合。 */
+            var probe = PV.makeCtx(li, cuts[ci].text);
+            probe.tokens = cuts[ci].tokens; probe.cutN = cuts.length; probe.cutI = ci;
+            probe.t0 = cuts[ci].t0; probe.t1 = cuts[ci].t1;
+            probe.ltr = PV.hasLatin(cuts[ci].text);
+            if (lay.pre) lay.pre(probe);
+            if (lay.fit && !lay.fit(probe)) { skipped++; return; }
+            var p = null;
+            try {
+              p = PV.show(li, {
+                force: true, keepCuts: true, cutI: ci, layout: lay.key,
+                enter: 'none', hold: 'none', exit: 'none', transition: 'cut', camera: 'none',
+                decor: [], treatment: []
+              });
+            } catch (e) {
+              out.溢出.push(lay.key + '@' + li + ' 抛错 ' + e.message); return;
+            }
+            if (!p) return;
+            var stage = PV.stage();
+            if (!stage) return;
+            box = stage.getBoundingClientRect();
+            var toks = p.ctx.tokensEls || [];
+            if (!toks.length && lay.key !== 'ring' && lay.key !== 'interlude') {
+              out.空段.push(lay.key + '@' + li + ' 无 token'); return;
+            }
+            var worst = 0, first = null;
+            toks.forEach(function (el) {
+              if (!rectIn(el, box)) {
+                var a = overArea(el, box);
+                if (a > worst) { worst = a; first = el.textContent; }
+              }
+            });
+            if (worst > 40) out.溢出.push(lay.key + '@' + li + '「' + (first || '') + '」溢出 ' + worst + 'px²');
+            /* 贴边：任何 token 距边界 < 6px 记一笔，攒久了画面很挤 */
+            var tight = 0;
+            toks.forEach(function (el) {
+              var r = el.getBoundingClientRect();
+              if (r.left - box.left < 6 || box.right - r.right < 6) tight++;
+            });
+            if (tight && tight >= Math.min(4, toks.length)) out.边缘挤压.push(lay.key + '@' + li + ' 贴边 ' + tight + ' 字');
+
+            /* 入场跑不完本段：拿基准登场件（升起）重算一次配牌（不碰 DOM），
+             * 看引擎把 stagger 收完之后还有多长——收不下的才是真问题。 */
+            var tp = PV.planLine(li, {
+              keepCuts: true, cutI: ci, layout: lay.key,
+              enter: 'rise', hold: 'none', exit: 'none', transition: 'cut', camera: 'none',
+              decor: [], treatment: []
+            });
+            var cost = tp ? enterCost(tp.enter, tp.ctx) : 0;
+            if (cost > avail * 0.9) {
+              out.入场超时.push(lay.key + '@' + li + ' 入场 ' + Math.round(cost) + 'ms，本段 ' + Math.round(avail) + 'ms（阈值 90%）');
+            }
+          });
+        }
+      }
+    } finally {
+      PV.setLyrics(L);
+      if (keepIdx >= 0) PV.show(keepIdx, { force: true });
+    }
+    out.跳过 = skipped;
+    out.可达组合 = out.可达组合 || (21 - 2) * lines.length;
+    if (opts.quiet) {
+      return {
+        溢出: out.溢出.length, 入场超时: out.入场超时.length,
+        空段: out.空段.length, 边缘挤压: out.边缘挤压.length
+      };
+    }
+    return out;
   };
 })();
 
