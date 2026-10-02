@@ -19,6 +19,17 @@
     var tag = document.createElement('div');
     tag.className = 'jv-tag';
     tag.textContent = 'LAYOUT · —';
+    /* 读数不是界面：平时淡到一边，重掷/点它就回到全量。
+     * 点一下循环：全量 → 只留版式名 → 关掉（PV.tagOn=false 也强制关）。*/
+    tag.title = '配牌读数：版式·字体·外观·背景·气氛·第几段·音频链。点一下切换详略';
+    tag.dataset.mode = 'full';
+    tag.addEventListener('click', function (e) {
+      e.stopPropagation();
+      tag.dataset.mode = tag.dataset.mode === 'full' ? 'brief' : (tag.dataset.mode === 'brief' ? 'off' : 'full');
+      PV.tagOn = tag.dataset.mode !== 'off';
+      PV.applyTag(PV.lastPlan());
+    });
+    tag.addEventListener('dblclick', function (e) { e.stopPropagation(); });
     layer.appendChild(tag);
 
     var dice = document.createElement('button');

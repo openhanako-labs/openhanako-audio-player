@@ -49,7 +49,7 @@
     opts = opts || {};
     var L = PV.lyrics();
     var lines = opts.lines || PV.AUDIT_LINES.map(function (t) { return { text: t }; });
-    var out = { 溢出: [], 入场超时: [], 空段: [], 边缘挤压: [], 样本: lines.length, 跳过: 0 };
+    var out = { 溢出: [], 入场超时: [], 空段: [], 边缘挤压: [], 入场挤压: [], 样本: lines.length, 跳过: 0 };
     var skipped = 0;
     var box;
 
@@ -57,7 +57,10 @@
     function enterCost(enter, ctx) {
       var st = ctx.stagger == null ? 45 : ctx.stagger;
       var n = ctx.tokens.length;
-      return (enter && enter.dur || 400) + st * (enter && enter.staggerOf || 1) * Math.max(0, n - 1);
+      /* 乘上引擎给本段算的 tempo：件声明的 dur 是理想值，真跑起来会被缩，
+       * 不乘就会拿理想值去比真实窗口，报出来的全是假超时 */
+      var tp = ctx.tempo == null ? 1 : ctx.tempo;
+      return ((enter && enter.dur || 400) + st * (enter && enter.staggerOf || 1) * Math.max(0, n - 1)) * Math.min(1, tp);
     }
 
     var keepIdx = PV.curIdx();
@@ -153,10 +156,28 @@
               enter: 'rise', hold: 'none', exit: 'none', transition: 'cut', camera: 'none',
               decor: [], treatment: []
             });
+            /* 时间不能只测 rise：⑫ 一下多了 12 件登场，只测默认那件就等于
+             * 新件的时长没人管。登场的 dur/staggerOf 都在件上声明，
+             * 这里不碰 DOM，拿同一套算式逐件算一遍——错了就是真错，不是量具错。*/
+            var es = opts.eachEnter === false ? [PV.part('enter', 'rise')] : PV.parts('enter');
+            es.forEach(function (ep) {
+              if (!ep) return;
+              var ectx = tp ? tp.ctx : null;
+              var cost = enterCost(ep, ectx);
+              if (cost > avail * 0.9) {
+                out.入场超时.push(lay.key + '@' + li + ' 入场[' + ep.key + '] ' +
+                  Math.round(cost) + 'ms，本段 ' + Math.round(avail) + 'ms（阈值 90%）[seed ' + sd + ']' + F);
+              }
+              /* tempo 收到 0.45 以下，字几乎同时出来——逐字入场已经没了。
+               * 超时那项现在由引擎保证（收完必然落在预算里），能看出问题的反而是这个数。*/
+              if (ectx && ectx.tempo != null && ectx.tempo < 0.45) {
+                out.入场挤压.push(lay.key + '@' + li + ' 入场[' + ep.key + '] tempo=' +
+                  ectx.tempo.toFixed(2) + '，' + (ectx.tokens ? ectx.tokens.length : '?') + ' 字挤在 ' +
+                  Math.round(avail) + 'ms 里 [seed ' + sd + ']' + F);
+              }
+            });
             var cost = tp ? enterCost(tp.enter, tp.ctx) : 0;
-            if (cost > avail * 0.9) {
-              out.入场超时.push(lay.key + '@' + li + ' 入场 ' + Math.round(cost) + 'ms，本段 ' + Math.round(avail) + 'ms（阈值 90%）[seed ' + sd + ']' + F);
-            }
+            void cost;   /* 上面逐件算过了，这里不再单独报 rise，免得同一件事记两笔 */
           });
         }
       }

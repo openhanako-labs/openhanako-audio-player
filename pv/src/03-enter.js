@@ -6,7 +6,9 @@
   'use strict';
   var PV = window.PV;
 
-  /* 统一跑一条动画并登记取消 */
+  /* 统一跑一条动画并登记取消。
+   * c.tempo 是引擎算的时长收缩系数（本段太短时一并缩时长），不读它就等于
+   * 引擎收了个空——件自己该多快还多快。 */
   function ani(c, el, kf, opt) {
     if (!el.animate) {                         // 极端降级：直接终态
       Object.keys(kf[kf.length - 1] || {}).forEach(function (p) {
@@ -14,6 +16,8 @@
       });
       return;
     }
+    if (opt && opt.duration != null && c && c.tempo && c.tempo < 1)
+      opt = Object.assign({}, opt, { duration: Math.max(90, Math.round(opt.duration * c.tempo)) });
     var a = el.animate(kf, opt);
     PV.addStop(function () { try { a.cancel(); } catch (e) { } });
   }

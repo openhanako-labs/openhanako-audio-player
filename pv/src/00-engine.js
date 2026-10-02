@@ -87,7 +87,7 @@
     PV.mood = p ? p.key : null;
     if (p && p.fx) Object.keys(p.fx).forEach(function (k) { PV.fx[k] = p.fx[k]; });
     if (PV._fxBaseChanged) PV._fxBaseChanged();      // ③ 的强度调制以这套为基准
-    if (PV.S.tag) PV.S.tag.textContent = 'LAYOUT · ' + (PV.lastLayout() || '—') + (PV.mood ? ' · ' + PV.mood : '');
+    if (PV.S.tag) PV.applyTag({ layout: { nm: PV.lastLayout() || '—' }, mood: PV.mood });
     return PV.mood;
   };
 
@@ -259,13 +259,24 @@
     var enterPart = PV.choose('enter', ctx, opts) || PV.part('enter', PV.defaults.enter);
     /* stagger 要按本段可用时长收：长句拆段后每段只有一秒上下，
      * 而「固定 45ms × 字数 + 入场时长」会比整段还长——尾字刚出完就换行，看着像卡了一下。
-     * 入场最多占本段 62%，剩下留给驻留与阅读。*/
+     * 入场最多占本段 62%，剩下留给驻留与阅读。
+     *
+     * 这里原先只收 stagger，而且 `gapMax > 4` 一不过就干脆不收——实测 900ms 的段配 19 个字，
+     * rise 要 1310ms 才走完（引擎算了个超支的结论就交差了）。光收间隔解决不了：
+     * 间隔收到 0 字都叠在一起了时长还是超。所以改成**同时收 tempo**：
+     * 时长与间隔按同一个系数缩，保证成本刚好落在预算里。*/
     if (enterPart) {
       var availMs = Math.max(0, (ctx.t1 || 0) - (ctx.t0 || 0));
       var nt = ctx.tokens.length, so = enterPart.staggerOf || 1;
-      if (availMs > 320 && nt > 1) {
-        var gapMax = (availMs * 0.62 - (enterPart.dur || 400)) / (nt - 1);
-        if (gapMax > 4 && ctx.stagger * so > gapMax) ctx.stagger = +(gapMax / so).toFixed(1);
+      var dur0 = enterPart.dur || 400;
+      ctx.tempo = 1;
+      if (availMs > 120 && nt >= 1) {
+        var cost0 = dur0 + (ctx.stagger || 45) * so * Math.max(0, nt - 1);
+        var budget = availMs * 0.62;
+        if (cost0 > budget) {
+          ctx.tempo = +(budget / cost0).toFixed(3);
+          ctx.stagger = +((ctx.stagger || 45) * ctx.tempo).toFixed(1);
+        }
       }
     }
     /* ⑥ 字体：风格可以钉死（新闻就该黑体），没钉就按气氛/强调抽；
@@ -391,15 +402,41 @@
     else swap();
     if (!made.el.parentNode) swap();      // 衔接件没调 swap 时的兜底
 
-    if (S.tag) S.tag.textContent = 'LAYOUT · ' + plan.layout.nm + (plan.face ? ' · ' + plan.face.nm : '') +
-      (plan.look && plan.look.key !== 'none' ? ' · ' + plan.look.nm : '') +
-      (PV.mood ? ' · ' + PV.mood : '') +
-      (S.cuts && S.cuts.length > 1 ? ' · ' + (S.cutI + 1) + '/' + S.cuts.length : '') +
-      (PV.audioChain ? ' · 音' + PV.audioChain() : '');
+    PV.applyTag(plan);
+    PV.lastPlan = function () { return plan; };   /* 读数被点开时拿回当前配牌用 */
     if (S.ghosts.up) S.ghosts.up.textContent = i > 0 && S.lyrics[i - 1] ? PV.plain(S.lyrics[i - 1].text) : '';
     if (S.ghosts.dn) S.ghosts.dn.textContent = i < S.lyrics.length - 1 && S.lyrics[i + 1] ? PV.plain(S.lyrics[i + 1].text) : '';
     PV.dispatch('pv:cut', plan);
     return plan;
+  };
+
+  /* ---------- 配牌读数（.jv-tag）----------
+   * 这行字是调试用的，不是演出的一部分：所以它要么淡着，要么听你点。
+   * mode: full（全量）/ brief（只留版式）/ off（关掉）；空闲 1.4s 自动淡到一边。*/
+  var tagTimer = null;
+  PV.tagOn = true;
+  PV.lastPlan = function () { return null; };
+  PV.applyTag = function (plan) {
+    var t = PV.S.tag;
+    if (!t) return;
+    var mode = t.dataset.mode || 'full';
+    if (!PV.tagOn || mode === 'off') { t.style.display = 'none'; return; }
+    t.style.display = '';
+    if (!plan) { t.textContent = 'LAYOUT · —'; return; }
+    var nm = function (x) { return x && x.nm ? x.nm : ''; };
+    var bits = ['LAYOUT', nm(plan.layout) || (plan.mood ? plan.mood : '—')];
+    if (mode === 'full') {
+      if (plan.face) bits.push(nm(plan.face));
+      if (plan.look && plan.look.key !== 'none') bits.push(nm(plan.look));
+      if (plan.bg) bits.push(nm(plan.bg));
+      if (PV.mood) bits.push(PV.mood);
+      if (PV.S.cuts && PV.S.cuts.length > 1) bits.push((PV.S.cutI + 1) + '/' + PV.S.cuts.length);
+      if (PV.audioChain) bits.push('音' + PV.audioChain().slice(1));
+    }
+    t.textContent = bits.join(' · ');
+    t.classList.remove('dim');
+    if (tagTimer) clearTimeout(tagTimer);
+    tagTimer = setTimeout(function () { t.classList.add('dim'); }, 1400);
   };
 
   function applyIn(plan, made) {

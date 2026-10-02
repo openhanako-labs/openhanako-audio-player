@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1003000723";
+  window.__HANA_BUILD = "1003003216";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -3716,8 +3716,16 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 .jv-tag {
   position: absolute; top: 10px; left: 12px; z-index: 30;
   font-family: monospace; font-size: 9px; letter-spacing: .12em;
-  color: var(--jv-fg); opacity: .55; pointer-events: none;
+  color: var(--jv-fg); opacity: .55;
+  /* 原本 pointer-events:none，点不动。现在它自己就是一个开关：
+   * 点一下循环 全量 → 只留版式 → 关掉，所以得能吃事件（但不能挡操作：只有文字那一小条可点）*/
+  pointer-events: auto; cursor: pointer; padding: 4px 6px; margin: -4px -6px;
+  transition: opacity .5s ease;
 }
+.jv-tag:hover { opacity: .95; }
+/* 空闲 1.4s 后淡到一边：读数是给调参的，不是给看歌词时盯着的 */
+.jv-tag.dim { opacity: .2; }
+.jv-tag.dim:hover { opacity: .8; }
 
 .jv-dice {
   position: absolute; top: 10px; right: 12px; z-index: 30;
@@ -12232,7 +12240,7 @@ injectPills();
     PV.mood = p ? p.key : null;
     if (p && p.fx) Object.keys(p.fx).forEach(function (k) { PV.fx[k] = p.fx[k]; });
     if (PV._fxBaseChanged) PV._fxBaseChanged();      // ③ 的强度调制以这套为基准
-    if (PV.S.tag) PV.S.tag.textContent = 'LAYOUT · ' + (PV.lastLayout() || '—') + (PV.mood ? ' · ' + PV.mood : '');
+    if (PV.S.tag) PV.applyTag({ layout: { nm: PV.lastLayout() || '—' }, mood: PV.mood });
     return PV.mood;
   };
 
@@ -12404,13 +12412,24 @@ injectPills();
     var enterPart = PV.choose('enter', ctx, opts) || PV.part('enter', PV.defaults.enter);
     /* stagger 要按本段可用时长收：长句拆段后每段只有一秒上下，
      * 而「固定 45ms × 字数 + 入场时长」会比整段还长——尾字刚出完就换行，看着像卡了一下。
-     * 入场最多占本段 62%，剩下留给驻留与阅读。*/
+     * 入场最多占本段 62%，剩下留给驻留与阅读。
+     *
+     * 这里原先只收 stagger，而且 `gapMax > 4` 一不过就干脆不收——实测 900ms 的段配 19 个字，
+     * rise 要 1310ms 才走完（引擎算了个超支的结论就交差了）。光收间隔解决不了：
+     * 间隔收到 0 字都叠在一起了时长还是超。所以改成**同时收 tempo**：
+     * 时长与间隔按同一个系数缩，保证成本刚好落在预算里。*/
     if (enterPart) {
       var availMs = Math.max(0, (ctx.t1 || 0) - (ctx.t0 || 0));
       var nt = ctx.tokens.length, so = enterPart.staggerOf || 1;
-      if (availMs > 320 && nt > 1) {
-        var gapMax = (availMs * 0.62 - (enterPart.dur || 400)) / (nt - 1);
-        if (gapMax > 4 && ctx.stagger * so > gapMax) ctx.stagger = +(gapMax / so).toFixed(1);
+      var dur0 = enterPart.dur || 400;
+      ctx.tempo = 1;
+      if (availMs > 120 && nt >= 1) {
+        var cost0 = dur0 + (ctx.stagger || 45) * so * Math.max(0, nt - 1);
+        var budget = availMs * 0.62;
+        if (cost0 > budget) {
+          ctx.tempo = +(budget / cost0).toFixed(3);
+          ctx.stagger = +((ctx.stagger || 45) * ctx.tempo).toFixed(1);
+        }
       }
     }
     /* ⑥ 字体：风格可以钉死（新闻就该黑体），没钉就按气氛/强调抽；
@@ -12536,15 +12555,41 @@ injectPills();
     else swap();
     if (!made.el.parentNode) swap();      // 衔接件没调 swap 时的兜底
 
-    if (S.tag) S.tag.textContent = 'LAYOUT · ' + plan.layout.nm + (plan.face ? ' · ' + plan.face.nm : '') +
-      (plan.look && plan.look.key !== 'none' ? ' · ' + plan.look.nm : '') +
-      (PV.mood ? ' · ' + PV.mood : '') +
-      (S.cuts && S.cuts.length > 1 ? ' · ' + (S.cutI + 1) + '/' + S.cuts.length : '') +
-      (PV.audioChain ? ' · 音' + PV.audioChain() : '');
+    PV.applyTag(plan);
+    PV.lastPlan = function () { return plan; };   /* 读数被点开时拿回当前配牌用 */
     if (S.ghosts.up) S.ghosts.up.textContent = i > 0 && S.lyrics[i - 1] ? PV.plain(S.lyrics[i - 1].text) : '';
     if (S.ghosts.dn) S.ghosts.dn.textContent = i < S.lyrics.length - 1 && S.lyrics[i + 1] ? PV.plain(S.lyrics[i + 1].text) : '';
     PV.dispatch('pv:cut', plan);
     return plan;
+  };
+
+  /* ---------- 配牌读数（.jv-tag）----------
+   * 这行字是调试用的，不是演出的一部分：所以它要么淡着，要么听你点。
+   * mode: full（全量）/ brief（只留版式）/ off（关掉）；空闲 1.4s 自动淡到一边。*/
+  var tagTimer = null;
+  PV.tagOn = true;
+  PV.lastPlan = function () { return null; };
+  PV.applyTag = function (plan) {
+    var t = PV.S.tag;
+    if (!t) return;
+    var mode = t.dataset.mode || 'full';
+    if (!PV.tagOn || mode === 'off') { t.style.display = 'none'; return; }
+    t.style.display = '';
+    if (!plan) { t.textContent = 'LAYOUT · —'; return; }
+    var nm = function (x) { return x && x.nm ? x.nm : ''; };
+    var bits = ['LAYOUT', nm(plan.layout) || (plan.mood ? plan.mood : '—')];
+    if (mode === 'full') {
+      if (plan.face) bits.push(nm(plan.face));
+      if (plan.look && plan.look.key !== 'none') bits.push(nm(plan.look));
+      if (plan.bg) bits.push(nm(plan.bg));
+      if (PV.mood) bits.push(PV.mood);
+      if (PV.S.cuts && PV.S.cuts.length > 1) bits.push((PV.S.cutI + 1) + '/' + PV.S.cuts.length);
+      if (PV.audioChain) bits.push('音' + PV.audioChain().slice(1));
+    }
+    t.textContent = bits.join(' · ');
+    t.classList.remove('dim');
+    if (tagTimer) clearTimeout(tagTimer);
+    tagTimer = setTimeout(function () { t.classList.add('dim'); }, 1400);
   };
 
   function applyIn(plan, made) {
@@ -13035,7 +13080,9 @@ injectPills();
   'use strict';
   var PV = window.PV;
 
-  /* 统一跑一条动画并登记取消 */
+  /* 统一跑一条动画并登记取消。
+   * c.tempo 是引擎算的时长收缩系数（本段太短时一并缩时长），不读它就等于
+   * 引擎收了个空——件自己该多快还多快。 */
   function ani(c, el, kf, opt) {
     if (!el.animate) {                         // 极端降级：直接终态
       Object.keys(kf[kf.length - 1] || {}).forEach(function (p) {
@@ -13043,6 +13090,8 @@ injectPills();
       });
       return;
     }
+    if (opt && opt.duration != null && c && c.tempo && c.tempo < 1)
+      opt = Object.assign({}, opt, { duration: Math.max(90, Math.round(opt.duration * c.tempo)) });
     var a = el.animate(kf, opt);
     PV.addStop(function () { try { a.cancel(); } catch (e) { } });
   }
@@ -13773,6 +13822,17 @@ injectPills();
     var tag = document.createElement('div');
     tag.className = 'jv-tag';
     tag.textContent = 'LAYOUT · —';
+    /* 读数不是界面：平时淡到一边，重掷/点它就回到全量。
+     * 点一下循环：全量 → 只留版式名 → 关掉（PV.tagOn=false 也强制关）。*/
+    tag.title = '配牌读数：版式·字体·外观·背景·气氛·第几段·音频链。点一下切换详略';
+    tag.dataset.mode = 'full';
+    tag.addEventListener('click', function (e) {
+      e.stopPropagation();
+      tag.dataset.mode = tag.dataset.mode === 'full' ? 'brief' : (tag.dataset.mode === 'brief' ? 'off' : 'full');
+      PV.tagOn = tag.dataset.mode !== 'off';
+      PV.applyTag(PV.lastPlan());
+    });
+    tag.addEventListener('dblclick', function (e) { e.stopPropagation(); });
     layer.appendChild(tag);
 
     var dice = document.createElement('button');
@@ -15247,7 +15307,7 @@ injectPills();
     opts = opts || {};
     var L = PV.lyrics();
     var lines = opts.lines || PV.AUDIT_LINES.map(function (t) { return { text: t }; });
-    var out = { 溢出: [], 入场超时: [], 空段: [], 边缘挤压: [], 样本: lines.length, 跳过: 0 };
+    var out = { 溢出: [], 入场超时: [], 空段: [], 边缘挤压: [], 入场挤压: [], 样本: lines.length, 跳过: 0 };
     var skipped = 0;
     var box;
 
@@ -15255,7 +15315,10 @@ injectPills();
     function enterCost(enter, ctx) {
       var st = ctx.stagger == null ? 45 : ctx.stagger;
       var n = ctx.tokens.length;
-      return (enter && enter.dur || 400) + st * (enter && enter.staggerOf || 1) * Math.max(0, n - 1);
+      /* 乘上引擎给本段算的 tempo：件声明的 dur 是理想值，真跑起来会被缩，
+       * 不乘就会拿理想值去比真实窗口，报出来的全是假超时 */
+      var tp = ctx.tempo == null ? 1 : ctx.tempo;
+      return ((enter && enter.dur || 400) + st * (enter && enter.staggerOf || 1) * Math.max(0, n - 1)) * Math.min(1, tp);
     }
 
     var keepIdx = PV.curIdx();
@@ -15351,10 +15414,28 @@ injectPills();
               enter: 'rise', hold: 'none', exit: 'none', transition: 'cut', camera: 'none',
               decor: [], treatment: []
             });
+            /* 时间不能只测 rise：⑫ 一下多了 12 件登场，只测默认那件就等于
+             * 新件的时长没人管。登场的 dur/staggerOf 都在件上声明，
+             * 这里不碰 DOM，拿同一套算式逐件算一遍——错了就是真错，不是量具错。*/
+            var es = opts.eachEnter === false ? [PV.part('enter', 'rise')] : PV.parts('enter');
+            es.forEach(function (ep) {
+              if (!ep) return;
+              var ectx = tp ? tp.ctx : null;
+              var cost = enterCost(ep, ectx);
+              if (cost > avail * 0.9) {
+                out.入场超时.push(lay.key + '@' + li + ' 入场[' + ep.key + '] ' +
+                  Math.round(cost) + 'ms，本段 ' + Math.round(avail) + 'ms（阈值 90%）[seed ' + sd + ']' + F);
+              }
+              /* tempo 收到 0.45 以下，字几乎同时出来——逐字入场已经没了。
+               * 超时那项现在由引擎保证（收完必然落在预算里），能看出问题的反而是这个数。*/
+              if (ectx && ectx.tempo != null && ectx.tempo < 0.45) {
+                out.入场挤压.push(lay.key + '@' + li + ' 入场[' + ep.key + '] tempo=' +
+                  ectx.tempo.toFixed(2) + '，' + (ectx.tokens ? ectx.tokens.length : '?') + ' 字挤在 ' +
+                  Math.round(avail) + 'ms 里 [seed ' + sd + ']' + F);
+              }
+            });
             var cost = tp ? enterCost(tp.enter, tp.ctx) : 0;
-            if (cost > avail * 0.9) {
-              out.入场超时.push(lay.key + '@' + li + ' 入场 ' + Math.round(cost) + 'ms，本段 ' + Math.round(avail) + 'ms（阈值 90%）[seed ' + sd + ']' + F);
-            }
+            void cost;   /* 上面逐件算过了，这里不再单独报 rise，免得同一件事记两笔 */
           });
         }
       }
@@ -16018,6 +16099,318 @@ injectPills();
     render: function (c) {
       return '<div class="hz"><div class="hzstrip"></div><div class="hztxt">' + PV.spans(c) +
         '</div><div class="hzstrip b"></div></div>';
+    }
+  });
+})();
+
+/* PV 引擎 · 23 登场扩充（⑪ enter +12）
+ *
+ * 规矩不变（见 03-enter.js）：只动内层 i.jv-t，全部 WAAPI，fill:both 停稳在终态。
+ * 一件都不能碰 text-shadow / color 这类涂装——那是 ⑩ 外观层用 CSS 写的，
+ * 动画的优先级压过普通作者样式，进场一写就把外观永久盖掉了（这个雷在 ⑦ 之前踩过一次，
+ * 那次是 transform）。所以这里只用 transform / opacity / filter / clip-path。
+ *
+ * dur 与 staggerOf 必须写准：体检的「入场超时」用它算总时长，
+ * 少写一点就等于骗过守卫，实机上字还在动下一段就来了。
+ */
+(function () {
+  'use strict';
+  var PV = window.PV;
+
+  function ani(c, el, kf, opt) {
+    /* 同 03-enter：读本段的 tempo，段太短就连时长一起缩，不缩就等于引擎白收了一刀 */
+    if (opt && opt.duration != null && c && c.tempo && c.tempo < 1)
+      opt = Object.assign({}, opt, { duration: Math.max(90, Math.round(opt.duration * c.tempo)) });
+    var a = el.animate(kf, opt);
+    PV.addStop(function () { try { a.cancel(); } catch (e) { } });
+  }
+  function each(c, els, kf, opt, stagger) {
+    var st = c.stagger == null ? 45 : c.stagger;
+    if (stagger != null) st = stagger * (c.tempo || 1);
+    var o = Object.assign({ fill: 'both', easing: 'cubic-bezier(.22,1,.36,1)' }, opt || {});
+    els.forEach(function (el, i) { o.delay = i * st; ani(c, el, kf, o); });
+  }
+  function M(k) { return (k || 1) * (0.7 + 0.6 * PV.fx.motion); }   // 强度调制：静=慢而轻，故障=快而狠
+
+  PV.reg('enter', 'flip', {
+    nm: '翻入', tags: ['graphic', 'pop', 'glitch'], w: 0.8, dur: 460, staggerOf: 0.8,
+    apply: function (c, els) {
+      each(c, els, [
+        { opacity: 0, transform: 'perspective(500px) rotateX(-92deg)' },
+        { opacity: 1, transform: 'perspective(500px) rotateX(0deg)' }
+      ], { duration: M(460), easing: 'cubic-bezier(.2,.9,.3,1.1)' });
+    }
+  });
+
+  PV.reg('enter', 'spin', {
+    nm: '旋入', tags: ['pop', 'graphic', 'emotional'], w: 0.7, dur: 520, staggerOf: 0.7,
+    when: function () { return PV.fx.motion > 0.35; },
+    apply: function (c, els) {
+      each(c, els, [
+        { opacity: 0, transform: 'rotate(-140deg) scale(.3)' },
+        { opacity: 1, transform: 'rotate(0deg) scale(1)' }
+      ], { duration: M(520) });
+    }
+  });
+
+  PV.reg('enter', 'slideL', {
+    nm: '左滑入', tags: ['editorial', 'graphic', 'pop'], w: 0.8, dur: 380, staggerOf: 0.55,
+    apply: function (c, els) {
+      var step = 0.55 + PV.rnd(0.5);
+      each(c, els, [
+        { opacity: 0, transform: 'translateX(-' + (step).toFixed(2) + 'em)' },
+        { opacity: 1, transform: 'translateX(0)' }
+      ], { duration: M(380), easing: 'cubic-bezier(.16,1,.3,1)' });
+    }
+  });
+
+  PV.reg('enter', 'slideR', {
+    nm: '右滑入', tags: ['editorial', 'graphic'], w: 0.7, dur: 380, staggerOf: 0.55,
+    apply: function (c, els) {
+      var step = 0.55 + PV.rnd(0.5);
+      each(c, els, [
+        { opacity: 0, transform: 'translateX(' + step.toFixed(2) + 'em)' },
+        { opacity: 1, transform: 'translateX(0)' }
+      ], { duration: M(380), easing: 'cubic-bezier(.16,1,.3,1)' });
+    }
+  });
+
+  PV.reg('enter', 'skewIn', {
+    nm: '斜切入', tags: ['glitch', 'graphic', 'pop'], w: 0.7, dur: 420, staggerOf: 0.6,
+    when: function () { return PV.fx.glitch > 0.1; },
+    apply: function (c, els) {
+      each(c, els, [
+        { opacity: 0, transform: 'skewX(26deg) translateX(-.6em)' },
+        { opacity: 1, transform: 'skewX(0deg) translateX(0)' }
+      ], { duration: M(420) });
+    }
+  });
+
+  PV.reg('enter', 'pop', {
+    nm: '弹入', tags: ['pop', 'emotional'], w: 0.8, dur: 520, staggerOf: 0.75,
+    apply: function (c, els) {
+      each(c, els, [
+        { opacity: 0, transform: 'scale(.4)' },
+        { opacity: 1, transform: 'scale(1.14)', offset: 0.62 },
+        { opacity: 1, transform: 'scale(1)' }
+      ], { duration: M(520), easing: 'cubic-bezier(.3,1.4,.5,1)' });
+    }
+  });
+
+  PV.reg('enter', 'maskUp', {
+    nm: '幕升', tags: ['editorial', 'calm', 'emotional'], w: 0.8, dur: 520, staggerOf: 0.4,
+    apply: function (c, els) {
+      each(c, els, [
+        { clipPath: 'inset(100% 0 0 0)' },
+        { clipPath: 'inset(0% 0 0 0)' }
+      ], { duration: M(520) });
+    }
+  });
+
+  PV.reg('enter', 'maskDown', {
+    nm: '幕落', tags: ['editorial', 'graphic'], w: 0.6, dur: 480, staggerOf: 0.35,
+    apply: function (c, els) {
+      each(c, els, [
+        { clipPath: 'inset(0 0 100% 0)' },
+        { clipPath: 'inset(0 0 0% 0)' }
+      ], { duration: M(480) });
+    }
+  });
+
+  PV.reg('enter', 'jitterIn', {
+    nm: '抖定', tags: ['glitch', 'horror'], w: 0.7, dur: 460, staggerOf: 0.5,
+    when: function () { return PV.fx.glitch > 0.25; },
+    apply: function (c, els) {
+      each(c, els, [
+        { opacity: 0, transform: 'translate(-4px,3px)' },
+        { opacity: .7, transform: 'translate(3px,-2px)' },
+        { opacity: .85, transform: 'translate(-2px,-3px)' },
+        { opacity: 1, transform: 'translate(0,0)' }
+      ], { duration: M(460), easing: 'steps(4,end)' });
+    }
+  });
+
+  PV.reg('enter', 'unfold', {
+    nm: '展开', tags: ['graphic', 'editorial', 'calm'], w: 0.7, dur: 460, staggerOf: 0.6,
+    apply: function (c, els) {
+      each(c, els, [
+        { opacity: 0, transform: 'scaleY(.04)' },
+        { opacity: 1, transform: 'scaleY(1)' }
+      ], { duration: M(460), transformOrigin: '50% 100%' });
+    }
+  });
+
+  PV.reg('enter', 'swingIn', {
+    nm: '摆入', tags: ['emotional', 'pop', 'calm'], w: 0.6, dur: 640, staggerOf: 0.7,
+    apply: function (c, els) {
+      each(c, els, [
+        { opacity: 0, transform: 'rotate(-24deg) translateY(-.4em)' },
+        { opacity: 1, transform: 'rotate(9deg)', offset: 0.55 },
+        { opacity: 1, transform: 'rotate(-3deg)', offset: 0.8 },
+        { opacity: 1, transform: 'rotate(0deg)' }
+      ], { duration: M(640), transformOrigin: '50% 0%' });
+    }
+  });
+
+  PV.reg('enter', 'waveIn', {
+    nm: '浪入', tags: ['pop', 'emotional', 'graphic'], w: 0.7, dur: 560, staggerOf: 1,
+    fit: function (c) { return c.tokens.length <= 26; },
+    apply: function (c, els) {
+      each(c, els, [
+        { opacity: 0, transform: 'translateY(1.4em)' },
+        { opacity: 1, transform: 'translateY(-.22em)', offset: 0.7 },
+        { opacity: 1, transform: 'translateY(0)' }
+      ], { duration: M(560) });
+    }
+  });
+})();
+
+/* PV 引擎 · 24 退场扩充（⑫ exit +10）
+ *
+ * 契约同 05-exit.js：play(ctx, el, drop)，收尾**必须**调 drop()，否则上一行永远赖在台上。
+ * drop 一律走 after() 注册成 stop——退出 PV 时会被取消，不留悬挂的定时器。
+ * 同样只动 transform / opacity / clip-path / filter，不写 text-shadow 与颜色（⑩ 外观层的地盘）。
+ *
+ * 每件都自己声明 dur：引擎靠它算「退场还没走完就来下一段」的超时。
+ */
+(function () {
+  'use strict';
+  var PV = window.PV;
+
+  function tk(el) { return Array.prototype.slice.call(el.querySelectorAll('.jv-t')); }
+  function after(ms, fn) { var t = setTimeout(fn, ms); return function () { clearTimeout(t); }; }
+  function M(k) { return (k || 1) * (0.7 + 0.6 * PV.fx.motion); }
+
+  function whole(el, kf, dur, ease) {
+    el.classList.add('jv-out');
+    if (el.animate) el.animate(kf, { duration: dur, fill: 'both', easing: ease || 'ease-in' });
+    return dur;
+  }
+
+  PV.reg('exit', 'driftUp', {
+    nm: '上浮', tags: ['calm', 'emotional'], w: 0.8, dur: 460,
+    play: function (c, el, drop) {
+      var d = whole(el, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-1.1em)' }], M(460));
+      PV.addStop(after(d + 30, drop));
+    }
+  });
+
+  PV.reg('exit', 'driftSide', {
+    nm: '侧飘', tags: ['editorial', 'graphic', 'pop'], w: 0.8, dur: 420,
+    play: function (c, el, drop) {
+      var dir = PV.rnd(1) < 0.5 ? -1 : 1;
+      var d = whole(el, [
+        { opacity: 1, transform: 'none' },
+        { opacity: 0, transform: 'translateX(' + (dir * 2.2).toFixed(2) + 'em)' }
+      ], M(420));
+      PV.addStop(after(d + 30, drop));
+    }
+  });
+
+  PV.reg('exit', 'shrink', {
+    nm: '收缩', tags: ['calm', 'editorial', 'graphic'], w: 0.7, dur: 400,
+    play: function (c, el, drop) {
+      var d = whole(el, [
+        { opacity: 1, transform: 'scale(1)' },
+        { opacity: 0, transform: 'scale(.72)' }
+      ], M(400));
+      PV.addStop(after(d + 30, drop));
+    }
+  });
+
+  PV.reg('exit', 'rollOut', {
+    nm: '旋出', tags: ['pop', 'graphic', 'emotional'], w: 0.7, dur: 520,
+    when: function () { return PV.fx.motion > 0.3; },
+    play: function (c, el, drop) {
+      var dir = PV.rnd(1) < 0.5 ? -1 : 1;
+      var d = whole(el, [
+        { opacity: 1, transform: 'rotate(0deg) scale(1)' },
+        { opacity: 0, transform: 'rotate(' + (dir * 26).toFixed(0) + 'deg) scale(.8) translateY(.5em)' }
+      ], M(520));
+      PV.addStop(after(d + 30, drop));
+    }
+  });
+
+  PV.reg('exit', 'wipeOut', {
+    nm: '擦出', tags: ['graphic', 'editorial'], w: 0.7, dur: 440,
+    play: function (c, el, drop) {
+      el.classList.add('jv-out');
+      if (el.animate) el.animate([
+        { clipPath: 'inset(0 0 0 0)', opacity: 1 },
+        { clipPath: 'inset(0 100% 0 0)', opacity: 1 }
+      ], { duration: M(440), fill: 'both', easing: 'ease-in' });
+      PV.addStop(after(M(440) + 30, drop));
+    }
+  });
+
+  PV.reg('exit', 'flipOut', {
+    nm: '折出', tags: ['graphic', 'glitch', 'pop'], w: 0.6, dur: 460,
+    play: function (c, el, drop) {
+      var d = whole(el, [
+        { opacity: 1, transform: 'perspective(500px) rotateX(0deg)' },
+        { opacity: 0, transform: 'perspective(500px) rotateX(88deg)' }
+      ], M(460));
+      PV.addStop(after(d + 30, drop));
+    }
+  });
+
+  PV.reg('exit', 'blurOut', {
+    nm: '化开', tags: ['emotional', 'calm'], w: 0.7, dur: 560,
+    play: function (c, el, drop) {
+      var d = whole(el, [
+        { opacity: 1, filter: 'blur(0px)', transform: 'scale(1)' },
+        { opacity: 0, filter: 'blur(' + (6 + PV.fx.motion * 10).toFixed(1) + 'px)', transform: 'scale(1.06)' }
+      ], M(560));
+      PV.addStop(after(d + 30, drop));
+    }
+  });
+
+  /* 逐字倒序退：最后一个字先走，读起来像被抽走 */
+  PV.reg('exit', 'reverseFade', {
+    nm: '倒序退', tags: ['editorial', 'calm', 'emotional'], w: 0.6, dur: 420,
+    play: function (c, el, drop) {
+      var els = tk(el), step = Math.max(14, 420 / Math.max(1, els.length)) * 0.5;
+      el.classList.add('jv-out');
+      els.forEach(function (e, i) {
+        if (!e.animate) return;
+        e.animate([{ opacity: 1 }, { opacity: 0 }],
+          { duration: M(300), delay: (els.length - 1 - i) * step, fill: 'both', easing: 'ease-in' });
+      });
+      PV.addStop(after(M(300) + step * els.length + 40, drop));
+    }
+  });
+
+  PV.reg('exit', 'crumble', {
+    nm: '碎落', tags: ['horror', 'glitch', 'emotional'], w: 0.7, dur: 620,
+    when: function () { return PV.fx.motion > 0.3; },
+    fit: function (c) { return c.tokens.length <= 34; },
+    play: function (c, el, drop) {
+      var els = tk(el), d = M(560);
+      el.classList.add('jv-out');
+      els.forEach(function (e, i) {
+        if (!e.animate) return;
+        var dx = (PV.rnd(1) - 0.5) * 26, rot = (PV.rnd(1) - 0.5) * 40;
+        e.animate([
+          { opacity: 1, transform: 'none' },
+          { opacity: 0, transform: 'translate(' + dx.toFixed(1) + 'px, 1.6em) rotate(' + rot.toFixed(0) + 'deg)' }
+        ], { duration: d, delay: i * 12, fill: 'both', easing: 'cubic-bezier(.4,0,.7,1)' });
+      });
+      PV.addStop(after(d + els.length * 12 + 40, drop));
+    }
+  });
+
+  /* 甩出去：整行带残影加速横移，落在强拍行上最狠 */
+  PV.reg('exit', 'whipOut', {
+    nm: '甩出', tags: ['pop', 'glitch', 'graphic'], w: 0.7, dur: 360,
+    when: function () { return PV.fx.motion > 0.45; },
+    play: function (c, el, drop) {
+      var dir = PV.rnd(1) < 0.5 ? -1 : 1;
+      var d = whole(el, [
+        { opacity: 1, transform: 'none' },
+        { opacity: 0.9, transform: 'translateX(' + (dir * 0.4).toFixed(2) + 'em) skewX(' + (dir * 8) + 'deg)', offset: 0.3 },
+        { opacity: 0, transform: 'translateX(' + (dir * 8).toFixed(1) + 'em) skewX(' + (dir * 18) + 'deg)' }
+      ], M(340), 'cubic-bezier(.5,0,.9,.4)');
+      PV.addStop(after(d + 20, drop));
     }
   });
 })();
