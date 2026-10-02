@@ -1,0 +1,21 @@
+/* PV 引擎 · ⑥ 字体层样式
+ * 两个变量：--jv-face（本段的主字体栈）、--jv-mono（等宽，打字版式与小字用）。
+ * 版式自带的 letter-spacing 比这里更具体，会盖过字体自带的字距——这是故意的：
+ * 竖写要 .35em、纵压要 .14em，那些是版式的形状，不该被字体拽回去。
+ */
+
+.jv-line { font-family: var(--jv-face, inherit); }
+.jv-line .cur, .jv-line .bandrow, .jv-line .capbar, .jv-line .pl, .jv-line .sk,
+.jv-line .cd, .jv-line .dt, .jv-line .ct, .jv-line .tagbox, .jv-line .tt,
+.jv-line .big, .jv-line .sm, .jv-line .prev, .jv-line .next {
+  font-weight: var(--jv-face-weight, inherit);
+}
+
+/* 打字版式永远等宽，不参与字体抽签 */
+.jv-type, .jv-type .jv-w, .jv-type .jv-t { font-family: var(--jv-mono, monospace); }
+
+/* 注釈 / HUD / 刻度 / 页角 / 底纹数字这类小字要可读，也别用行楷 */
+.jv-note, .jv-hud, .jv-ticks, .jv-corner .pg, .jv-bignum {
+  font-family: var(--jv-mono, monospace);
+  font-weight: 400;
+}

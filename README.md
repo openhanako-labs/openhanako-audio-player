@@ -58,6 +58,31 @@ tools/bump-build.mjs 构建号三处同步（_build.json + index.html + standalo
 - 主 script 是一整个大 IIFE——需要访问内部变量的代码必须注入到 IIFE 内部（以现有代码为锚点），独立 script 块只能做纯 DOM/CSS 操作
 - **文字 PV 不再走 `tools/inject-*`**：改 `pv/src`、`pv/css`，然后 `node pv/build.mjs`。`ui/index.html` 里 `PV:BEGIN/END` 之间的内容是构建产物，手改会被下次构建冲掉
 
+## 发布：两个版本（含 PV / 不含 PV）
+
+```bash
+node pv/release.mjs            # 出两个包到 dist/full 与 dist/lite
+node pv/release.mjs --check     # 只验不打
+node pv/release.mjs --keep     # 留下解压目录，直接跑包里的 html 验一看
+```
+
+| | 完整版 | lite 版 |
+|---|---|---|
+| 包名 | `hanako-audio-player-<ver>.zip` | `hanako-audio-player-lite-<ver>-lite.zip` |
+| `manifest.id` | `hanako-audio-player` | `hanako-audio-player-lite` |
+| 顶栁 | 标准 / PV / 歌词 | 标准 / 歌词 |
+| 体积 | 0.40 MB | 0.32 MB |
+
+**lite 不是另一套代码**：同一份 html 去掉 PV 标记块与 `<html data-pv="1">` 就是 lite。
+核心里那五个 PV 接入点全部由 `pv/build.mjs` 的声明式钩子注入，并且都带可用性判断——
+没 PV 块时三档自动降成两档，不会死在中间档（实测过）。
+
+所以**改完 PV 要重新出包**：`node pv/build.mjs && node pv/release.mjs`。
+只改 lite 不重跑构建的话，两边的核心钩子会不一致。
+
+推 tag 就同时出两个 GitHub Release（`v0.8.0` 与 `v0.8.0-lite`），CI 会先校 `pv/build.mjs` 的幂等性。
+两个包 id 不同，可以同时装。包内不带 `pv/`、`*.mjs`、测试音与任何凭据。
+
 > 为什么：旧的 `inject-*.mjs` 链用一次性 `replaceOnce`，锚点被自己替换后就不能重跑（`inject-jizura.mjs` 在 HEAD 上已必然抛「命中 0 次」），html 漂出了脚本能复现的范围。PV 层改成幂等流水线：拆旧块 → 剥遗留 → 接钩子 → 插新块 → 写盘前四项自锁，不对就拒写。迁移前的脚本留在 `pv/_legacy/` 只读存档。
 
 ## 致谢

@@ -9,7 +9,7 @@
   'use strict';
   var PV = window.PV || (window.PV = {});
 
-  var GROUPS = ['mood', 'style', 'layout', 'enter', 'hold', 'exit', 'decor', 'treatment', 'camera', 'transition'];
+  var GROUPS = ['mood', 'style', 'face', 'layout', 'enter', 'hold', 'exit', 'decor', 'treatment', 'camera', 'transition'];
   var reg = {}, order = {};
   GROUPS.forEach(function (g) { reg[g] = {}; order[g] = []; });
 
@@ -241,6 +241,10 @@
       || (opts.layout ? PV.part('layout', opts.layout) : PV.choose('layout', ctx, opts));
     if (!lay) lay = PV.part('layout', 'center');
     if (lay.pre) lay.pre(ctx);
+    /* ⑥ 字体：风格可以钉死（新闻就该黑体），没钉就按气氛/强调抽；
+     * auto 风格不抢字体——那是“跟 App 主题”的意思，连字体一起跟才对 */
+    var fc = PV.rollFace ? PV.rollFace(ctx, opts) : null;
+    if (ctx.style && ctx.style.id === 'auto' && !PV.faceManual) fc = null;
     /* decor / treatment 可叠 0..n 件；外部传字符串 = 只用那一件 */
     function stack(group) {
       var raw = opts[group];
@@ -264,6 +268,7 @@
     }
     return {
       layout: lay,
+      face: fc,
       enter: PV.choose('enter', ctx, opts) || PV.part('enter', PV.defaults.enter),
       hold: PV.choose('hold', ctx, opts) || PV.part('hold', PV.defaults.hold),
       exit: PV.choose('exit', ctx, opts) || PV.part('exit', PV.defaults.exit),
@@ -351,7 +356,8 @@
     else swap();
     if (!made.el.parentNode) swap();      // 衔接件没调 swap 时的兜底
 
-    if (S.tag) S.tag.textContent = 'LAYOUT · ' + plan.layout.nm + (PV.mood ? ' · ' + PV.mood : '') +
+    if (S.tag) S.tag.textContent = 'LAYOUT · ' + plan.layout.nm + (plan.face ? ' · ' + plan.face.nm : '') +
+      (PV.mood ? ' · ' + PV.mood : '') +
       (S.cuts && S.cuts.length > 1 ? ' · ' + (S.cutI + 1) + '/' + S.cuts.length : '');
     if (S.ghosts.up) S.ghosts.up.textContent = i > 0 && S.lyrics[i - 1] ? PV.plain(S.lyrics[i - 1].text) : '';
     if (S.ghosts.dn) S.ghosts.dn.textContent = i < S.lyrics.length - 1 && S.lyrics[i + 1] ? PV.plain(S.lyrics[i + 1].text) : '';
@@ -360,6 +366,8 @@
   };
 
   function applyIn(plan, made) {
+    if (plan.face && PV.useFace) PV.useFace(plan.face);
+    else if (PV.clearFace) PV.clearFace();
     if (plan.enter && plan.enter.apply) plan.enter.apply(made.ctx, made.toks);
     if (plan.hold && plan.hold.apply) { var sh = plan.hold.apply(made.ctx, made.el); if (sh) PV.addStop(sh); }
     if (plan.camera && plan.camera.apply) { var sc = plan.camera.apply(made.ctx, S.track); if (sc) PV.addStop(sc); }

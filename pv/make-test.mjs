@@ -73,7 +73,7 @@ ${css}
 window.__errs = [];
 window.onerror = function (m, s, l, c) {
   window.__errs.push(m + ' @' + l + ':' + c);
-  document.getElementById('err').textContent = window.__errs.join('\n');
+  document.getElementById('err').textContent = window.__errs.join('\\n');
 };
 </script>
 <script>
@@ -139,6 +139,22 @@ ${js}
     });
   });
 
+  var gFace = group('字体');
+  btn(gFace, '自动（跟 App）', function () { PV.setFaceManual(false); PV.show(line, { force: true }); show(); });
+  PV.parts('face').forEach(function (f) {
+    var tag = f.hit.length ? f.hit.join(' → ') : (f.unknown.length ? '只能靠汉字判：' + f.unknown.join(' ') : '本机判不到任何一个候选');
+    var b = btn(gFace, f.nm, function () {
+      PV.setFaceManual(f.key); PV.show(line, { force: true }); show();
+    });
+    b.title = f.nm + ' · ' + tag + (f.miss.length ? ' ｜本机无：' + f.miss.join(' ') : '');
+    if (!f.hit.length && !f.unknown.length) { b.style.opacity = '.4'; }
+  });
+  var fr = document.createElement('span'); fr.className = 'stat';
+  fr.textContent = '本机可用 ' + PV.parts('face').reduce(function (a, f) { return a + f.hit.length; }, 0) +
+    ' 族 / 共 ' + PV.parts('face').reduce(function (a, f) { return a + f.hit.length + f.miss.length; }, 0) +
+    ' 候选（量不到的已保留在栏里，由 CSS 自己跳）';
+  gFace.appendChild(fr);
+
   var gFx = group('滑块');
   ['motion', 'glitch', 'chroma', 'texture', 'density'].forEach(function (k) {
     var s = document.createElement('input');
@@ -180,7 +196,7 @@ ${js}
     if (!p) return;
     var ci = PV.cutsInfo ? PV.cutsInfo() : { cut: 0, n: 1 };
     planEl.textContent = 'cut ' + (ci.cut + 1) + '/' + ci.n + '  ⟵  ' +
-      [p.layout.key, p.enter.key, p.hold.key, p.exit.key, p.transition.key, p.camera.key,
+      [p.layout.key, p.face ? 'face:' + p.face.key : 'face:—', p.enter.key, p.hold.key, p.exit.key, p.transition.key, p.camera.key,
       'decor[' + p.decor.map(function (d) { return d.key; }).join(',') + ']',
       'treat[' + p.treatment.map(function (d) { return d.key; }).join(',') + ']'].join(' / ');
     var ct = document.getElementById('cutPlan');

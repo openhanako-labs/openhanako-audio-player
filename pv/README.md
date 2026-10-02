@@ -10,6 +10,7 @@
 |---|---|---|---|
 | `mood` | 气氛：换抽签偏置 + 换一组 fx 预设 | 7 | — |
 | `style` | 配色（含 `auto` 跟随主题） | 9 | auto |
+| `face` | 字体（⑥，12 套本机字体栈） | 12 | 风格钉死优先，否则抽签；auto 不抢 |
 | `layout` | 字在画面上的位置与形态 | 21 | 抽签 |
 | `enter` | 逐字怎么进来 | 9 | `rise`（= 旧 jzWin） |
 | `hold` | 进来之后怎么活着 | 7 | `none` |
@@ -19,7 +20,7 @@
 | `decor` | 可叠 0..n 的附加图形 | 18 | `particles` |
 | `treatment` | 逐字 / 整屏处理 | 11 | `sweep` |
 
-共 109 件。叠加上限：`PV.decorMax = 2`、`PV.treatMax = 1`（在默认那几件之外再抽几件）。实测手拉满五件处理会把字完全淹掉，**上限比数量重要**。
+共 121 件。叠加上限：`PV.decorMax = 2`、`PV.treatMax = 1`（在默认那几件之外再抽几件）。实测手拉满五件处理会把字完全淹掉，**上限比数量重要**。
 
 默认件就是 ① 之前旧实现的行为，所以不抽签时画面一模一样；变了的是**其余各层现在真的有事可做**。
 
@@ -127,8 +128,10 @@ PV 渲染在自己的 `#pvJv` 层里，**不写 folia 的 `#pvTrack`**：退出 
 
 ```
 node pv/build.mjs              # 幂等，可反复跑；写盘前自锁，不对就拒写
-node pv/make-test.mjs          # 生成 pv/test.html
-node pv/serve.mjs 8778         # 宿主浏览器不吃 file://
+node pv/make-test.mjs          # 生成 pv/test.html（预览台，逐层逐件点着看）
+node pv/serve.mjs 8778         # 宿主浏览器不吃 file:// 时用
+node pv/make-fixtures.mjs      # 合成拍点测试音（ffmpeg，测③④用）
+node pv/release.mjs            # 出两个包：dist/full 含 PV、dist/lite 不含
 node tools/bump-build.mjs      # 构建号三处同步，开着的播放器卡片自己热重载
 ```
 
@@ -241,10 +244,41 @@ JIZURA 的行内记号现在同样吃：
 
 实测：72 件（enter/hold/exit/transition/camera/decor/treatment）× 7 行 = 504 次渲染，异常 0。
 
+## ⑥ 字体表（pv/src/17-faces.js + css/fonts.css）
+
+离线优先：不拉 Google Fonts，只用本机已装字体。`face` 是一层（12 件），默认不抢——`auto` 风格连字体一起让给 App。
+
+**一个变量搞定中英混排**：一条 `font-family` 里拉丁 display 在前、中文 display 在后、generic 收尾。CSS 逐字往下找：Impact 没有汉字，汉字就顺到下一个族——不必拆两个变量。
+
+**探测只用于报告，不删栏**。踩过两层：
+1. 基线不能用裸 `monospace`，要用一个必然不存在的族名——否则黑体/宋体这类与系统回退走宽相同的字体会被误杀（实测误杀 SimHei）。
+2. 改了基线之后仍有一类量不出来：CJK 字体的汉字进宽恒为 1em，只有**拉丁段**能区分。所以本机 Chrome 认 `华文隶书`/`等线`/`微软雅黑`/`方正舒体`，却认不了 `SimHei`/`SimSun`/`KaiTi`/`YouYuan`——**英文名与本地化名不等价**，栈里两种都得带。
+
+风格可以钉死字体（`style.face`）：新闻→黑体、墨与朱→行楷、金夜→宋体、蒸汽→圆体、合成80s→西洋黑。优先级：本段指定 > 风格钉死 > 手动锁定 > 气氛抽签。
+
+自检：`PV.facesReport()`（命中/未命中清单）、`PV.faceHas('Impact')`、`PV.setFaceManual('kai')`（`'auto'` 解除）。标签栏会显示当前字体名。
+
+## 两版发布（含 PV / 不含 PV）
+
+`node pv/release.mjs` 一次出两个包：`dist/full/`（`hanako-audio-player`）与 `dist/lite/`（`hanako-audio-player-lite`）。
+
+**lite 不是另一套代码**：同一份 html 去掉两个 PV 标记块与 `<html data-pv="1">`。核心里那五个 PV 接入点全部由 `pv/build.mjs` 的 `HOOKS` 声明式注入，每条都要求锚点恰好命中一次，且都带可用性判断：
+
+| 钩子 | 作用 |
+|---|---|
+| `renderPv 分支` / `pvSync 分支` | `window.PV&&PV.available` 不在就不走 PV |
+| 三档循环可降级 | 中间档进不去 → 标准↔歌词 两档循环 |
+| 按钮提示可降级 | 标题不再写「点击进 PV」 |
+| 胶囊按可用性出档 | 靠 `document.documentElement.dataset.pv==='1'` 判 |
+
+最后一条本来写的也是 `window.PV&&PV.available`，结果三档被误降成两档——**胶囊比 PV 块先执行**，那时 `window.PV` 还不存在。所以得用构建期就写好的标记，不能拿运行时对象判。
+
+包内不带 `pv/`、`tools/*.mjs`、测试音、预览台；但 `tools/*.js` 是运行时依赖（`lib/register-tools.js` 在 import），不能剔。CI 发 tag 前先校 `pv/build.mjs` 跑两遍字节一致。
+
 ## 待填
 
+- ⑥ 已做：12 套本机字体栈 + 风格钉死 + 探测只当报告。还欠的是打包字体（woff2 子集）——现在完全依赖本机装了什么，换台机器会退化。
 - ⑤ 已做到 decor 18 / treatment 11 / transition 12；JIZURA 那边是 layout 184 + enter 125 + decor 130 + fx 69……数量上仍是零头，但层已经齐了，剩下的是一类一类往里填。
-- ⑥ 没有字体表，PV 跟 App 字体：版式的「字体性格」缺位。
 - `exit` 的 `slice` 与 `transition` 的 `sliceIn` 都是文字复制品近似，不是真的遮罩切片。
 - ⑥ 没有字体表，PV 跟 App 字体。
 - `exit` 的 `slice` 是文字复制品近似，不是真的切片遮罩。

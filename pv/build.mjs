@@ -17,14 +17,14 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PV = dirname(fileURLToPath(import.meta.url));
 const TARGETS = ['ui/index.html', 'ui/standalone.html'];
 
-const CSS_ORDER = ['css/base.css', 'css/layouts.css', 'css/chrome.css', 'css/parts.css', 'css/decor.css'];
+const CSS_ORDER = ['css/base.css', 'css/layouts.css', 'css/chrome.css', 'css/parts.css', 'css/decor.css', 'css/fonts.css'];
 const JS_ORDER = [
   'src/00-engine.js', 'src/01-styles.js', 'src/02-layouts.js',
   'src/03-enter.js', 'src/04-hold.js', 'src/05-exit.js',
   'src/06-camera.js', 'src/07-transition.js', 'src/08-decor.js',
   'src/09-chrome.js', 'src/10-api.js', 'src/11-audio.js',
   'src/13-syntax.js', 'src/12-cuts.js',
-  'src/14-decor.js', 'src/15-treat.js', 'src/16-trans.js'
+  'src/14-decor.js', 'src/15-treat.js', 'src/16-trans.js', 'src/17-faces.js'
 ];
 
 const CSS_B = '/* ===== PV:BEGIN 文字PV引擎（pv/ 目录构建产物，勿手改） ===== */';
@@ -44,6 +44,48 @@ const LEGACY_JS_ANCHORS = [
 /* 核心接线锚点：把闭包里的 renderPv/pvSync/_pvIdx/lrcData 暴露给 PV 层 */
 const CORE_ANCHOR = 'var _pvLineEls=[];';
 const CORE_HOOK = CORE_ANCHOR + '\n  window.__pvCore={render:function(){renderPv()},sync:function(i){pvSync(i)},idx:function(){return _pvIdx},lrc:function(){return lrcData}};';
+
+/* 声明式核心钩子：每条都要求锚点恰好命中一次，幂等可重放。
+ * 为什么要入构建：lite 包不带 PV 块，核心必须在 window.PV 不存在时自己降级——
+ * 这种判断写在 html 里手改一次就没人能复现，正是刚拆掉的那种补丁链。 */
+const AVAIL = 'window.PV&&PV.available';
+const HOOKS = [
+  {
+    id: 'renderPv 分支',
+    from: "  function renderPv(){\n    if(document.body.classList.contains('jizura-mode')){",
+    to: "  function renderPv(){\n    if(" + AVAIL + "&&document.body.classList.contains('jizura-mode')){"
+  },
+  {
+    id: 'pvSync 分支',
+    from: "  function pvSync(idx){\n    if(document.body.classList.contains('jizura-mode')){",
+    to: "  function pvSync(idx){\n    if(" + AVAIL + "&&document.body.classList.contains('jizura-mode')){"
+  },
+  {
+    id: '三档循环可降级',
+    from: "      }else if(hasLyr && !hasJiz){",
+    to: "      }else if(hasLyr && !hasJiz && (" + AVAIL + ")){"
+  },
+  {
+    id: '按钮提示可降级',
+    from: "      var hasLyr=document.body.classList.contains('lyrics-mode');\n      var hasJiz=document.body.classList.contains('jizura-mode');\n      if(hasJiz){",
+    to: "      var hasLyr=document.body.classList.contains('lyrics-mode');\n      var hasJiz=(" + AVAIL + "&&document.body.classList.contains('jizura-mode'));\n      if(hasJiz){"
+  },
+  {
+    id: '胶囊按可用性出档',
+    from: [
+      "  [['标准',0],['PV',2],['歌词',1]].forEach(function(it){",
+      "  [['标准',0],['PV',2],['歌词',1]].filter(function(it){ return it[1]!==2 || (window.PV&&PV.available); }).forEach(function(it){"
+    ],
+    /* 胶囊比 PV 块早执行，拿 window.PV 判永远是 false（实测三档被误降成两档）——
+     * 所以用构建期就写好的标记：带 PV 块的包有 data-pv="1"，lite 包没这个属性。 */
+    to: "  [['标准',0],['PV',2],['歌词',1]].filter(function(it){ return it[1]!==2 || document.documentElement.dataset.pv==='1'; }).forEach(function(it){"
+  },
+  {
+    id: '构建期 PV 标记',
+    from: ['<html lang="zh-CN">', '<html lang="zh">'],
+    to: '<html lang="zh-CN" data-pv="1">'
+  }
+];
 
 const ARGS = process.argv.slice(2);
 const CHECK = ARGS.includes('--check');
@@ -149,7 +191,7 @@ for (const rel of TARGETS) {
   const p = join(ROOT, rel);
   let html = read(p);
   const before = html.length;
-  const migrated = { legacyCss: 0, legacyJs: 0, coreHook: false, strippedBlocks: 0 };
+  const migrated = { legacyCss: 0, legacyJs: 0, coreHook: false, hooks: 0, strippedBlocks: 0 };
 
   /* ① 先拆掉所有旧 PV 块，让「剥遗留」面对一个没有 PV 内容的现场 */
   const b0 = allIndex(html, CSS_B).length + allIndex(html, JS_B).length;
@@ -182,6 +224,19 @@ for (const rel of TARGETS) {
     migrated.coreHook = true;
   }
 
+  /* ④b 降级钩子：没打上的打上，打过的跳过；from 可以是旧形列表（钩子自已进化时要能升级） */
+  HOOKS.forEach((h) => {
+    if (html.includes(h.to)) return;
+    const alts = Array.isArray(h.from) ? h.from : [h.from];
+    const hit = alts.find((a) => count(html, a) === 1);
+    if (hit == null) {
+      const counts = alts.map((a) => count(html, a)).join('/');
+      die(`${rel}: 钩子「${h.id}」锚点命中 ${counts}（需要其中一条恰好 1 次），拒写`);
+    }
+    html = html.split(hit).join(h.to);
+    migrated.hooks++;
+  });
+
   /* ⑤ 插入新块 */
   html = insertAt(html, '</style>', CSS_BLOCK, rel, '样式结尾');
   html = insertAt(html, '</body>', JS_BLOCK, rel, 'body 结尾');
@@ -195,7 +250,7 @@ for (const rel of TARGETS) {
   if (!html.includes('.jz-gpill')) die(`${rel}: 播放列表的 .jz-gpill 被误删，拒写`);
 
   const d = (html.length - before) / 1024;
-  log.push(`${rel}: ${before / 1024 | 0} KB → ${(html.length / 1024).toFixed(1)} KB（${d >= 0 ? '+' : ''}${d.toFixed(1)} KB）｜拆旧块 ${migrated.strippedBlocks} 处｜剥遗留 CSS ${migrated.legacyCss} 条 / JS ${migrated.legacyJs} 块`);
+  log.push(`${rel}: ${before / 1024 | 0} KB → ${(html.length / 1024).toFixed(1)} KB（${d >= 0 ? '+' : ''}${d.toFixed(1)} KB）｜拆旧块 ${migrated.strippedBlocks} 处｜剥遗留 CSS ${migrated.legacyCss} 条 / JS ${migrated.legacyJs} 块｜降级钩子 ${migrated.hooks} 条`);
   if (DBG) console.error(`[dbg] ${rel} CB=${nCB} CE=${nCE} JB=${nJB} JE=${nJE} len=${html.length}`);
 
   if (CHECK) log.push(`${rel}: （--check）${JSON.stringify(migrated)}`);

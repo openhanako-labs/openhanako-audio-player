@@ -8,14 +8,14 @@
 
   var STYLES = [
     { id: 'auto', nm: '自动', sp: 1 },
-    { id: 'gold', nm: '金夜', bg: '#0A0907', fg: '#F3E7C4', sub: '#B39A62', acc: '#D4AF37' },
-    { id: 'ocean', nm: '深海', bg: '#031A2E', fg: '#E4FAFF', sub: '#7FB2C8', acc: '#1FD2E6' },
-    { id: 'sakura', nm: '夜樱', bg: '#26091B', fg: '#FCE8F0', sub: '#D69DB6', acc: '#FF86B0' },
-    { id: 'vapor', nm: '蒸汽', bg: '#3A2A6E', fg: '#FFFFFF', sub: '#D6C8FF', acc: '#FF8FD8' },
-    { id: 'synth80', nm: '合成80s', bg: '#0B0414', fg: '#FF4FD8', sub: '#A98BFF', acc: '#22E6FF' },
-    { id: 'newsprint', nm: '新闻', bg: '#E6E5E0', fg: '#111111', sub: '#4E4E4C', acc: '#D8141B', light: 1 },
-    { id: 'kraft', nm: '牛皮纸', bg: '#C49A6C', fg: '#1A1410', sub: '#46301E', acc: '#B8361B', light: 1 },
-    { id: 'sumi', nm: '墨与朱', bg: '#EFE5CF', fg: '#16130F', sub: '#5E574C', acc: '#B83A22', light: 1 }
+    { id: 'gold', nm: '金夜', bg: '#0A0907', fg: '#F3E7C4', sub: '#B39A62', acc: '#D4AF37', face: 'song' },
+    { id: 'ocean', nm: '深海', bg: '#031A2E', fg: '#E4FAFF', sub: '#7FB2C8', acc: '#1FD2E6', face: 'hei' },
+    { id: 'sakura', nm: '夜樱', bg: '#26091B', fg: '#FCE8F0', sub: '#D69DB6', acc: '#FF86B0', face: 'kai' },
+    { id: 'vapor', nm: '蒸汽', bg: '#3A2A6E', fg: '#FFFFFF', sub: '#D6C8FF', acc: '#FF8FD8', face: 'yuan' },
+    { id: 'synth80', nm: '合成80s', bg: '#0B0414', fg: '#FF4FD8', sub: '#A98BFF', acc: '#22E6FF', face: 'blk' },
+    { id: 'newsprint', nm: '新闻', bg: '#E6E5E0', fg: '#111111', sub: '#4E4E4C', acc: '#D8141B', light: 1, face: 'hei' },
+    { id: 'kraft', nm: '牛皮纸', bg: '#C49A6C', fg: '#1A1410', sub: '#46301E', acc: '#B8361B', light: 1, face: 'shu' },
+    { id: 'sumi', nm: '墨与朱', bg: '#EFE5CF', fg: '#16130F', sub: '#5E574C', acc: '#B83A22', light: 1, face: 'xing' }
   ];
 
   STYLES.forEach(function (s) { PV.reg('style', s.id, s); });

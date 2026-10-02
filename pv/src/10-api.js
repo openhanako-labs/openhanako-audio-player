@@ -27,6 +27,7 @@
     if (!PV.style()) PV.useStyle('auto');
     PV.markStyle();
     PV.startLoop();
+    if (PV.applyMonoStack) PV.applyMonoStack();     // ⑥ 等宽链给 type 版式与小字用
     if (PV.audioStart) PV.audioStart();          // ③ 音频驱动：跟着 PV 开，不单独常驻
     if (!PV._booted) {
       PV._booted = true;
@@ -89,7 +90,6 @@
      * 现在直接请核心重画，退出后不会停在上一句 PV。 */
     if (c && c.render) c.render();
   };
-
   PV.toggle = function () {
     if (PV.active()) PV.exit(); else PV.enter();
   };
@@ -117,7 +117,10 @@
   requestAnimationFrame(function () { try { PV.boot(); } catch (e) { } });
 
   /* 控制台与自检 */
-  PV.version = 'pv-registry/0.3';
+  PV.version = 'pv-registry/0.6';
+  /* 核心靠这两个字段判断能不能用 PV：没 PV 块时 window.PV 不存在，
+   * 三档胶囊与循环自动降级成两档——lite 包就是「不带 PV 块」，不用改核心 */
+  PV.available = true;
   PV.selftest = function () {
     var out = { version: PV.version, groups: PV.stats(), mounted: !!PV.layer() };
     out.demo = [];

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-pv="1">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -3745,6 +3745,28 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 /* ---------- transition ---------- */
 .jv-trail { opacity: .5; pointer-events: none; mix-blend-mode: screen; }
 .jv-slice-in { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 36px; pointer-events: none; }
+
+/* PV 引擎 · ⑥ 字体层样式
+ * 两个变量：--jv-face（本段的主字体栈）、--jv-mono（等宽，打字版式与小字用）。
+ * 版式自带的 letter-spacing 比这里更具体，会盖过字体自带的字距——这是故意的：
+ * 竖写要 .35em、纵压要 .14em，那些是版式的形状，不该被字体拽回去。
+ */
+
+.jv-line { font-family: var(--jv-face, inherit); }
+.jv-line .cur, .jv-line .bandrow, .jv-line .capbar, .jv-line .pl, .jv-line .sk,
+.jv-line .cd, .jv-line .dt, .jv-line .ct, .jv-line .tagbox, .jv-line .tt,
+.jv-line .big, .jv-line .sm, .jv-line .prev, .jv-line .next {
+  font-weight: var(--jv-face-weight, inherit);
+}
+
+/* 打字版式永远等宽，不参与字体抽签 */
+.jv-type, .jv-type .jv-w, .jv-type .jv-t { font-family: var(--jv-mono, monospace); }
+
+/* 注釈 / HUD / 刻度 / 页角 / 底纹数字这类小字要可读，也别用行楷 */
+.jv-note, .jv-hud, .jv-ticks, .jv-corner .pg, .jv-bignum {
+  font-family: var(--jv-mono, monospace);
+  font-weight: 400;
+}
 
 /* ===== PV:END ===== */
 </style><script>
@@ -10245,7 +10267,7 @@ function doPlaylistImport(){
         // 标准 → PV
         openPanel();
         apply(true);
-      }else if(hasLyr && !hasJiz){
+      }else if(hasLyr && !hasJiz && (window.PV&&PV.available)){
         // PV → 歌词
         document.body.classList.add('jizura-mode');
         btn.style.color='var(--accent)';
@@ -10261,7 +10283,7 @@ function doPlaylistImport(){
     });
     function updateBtnIcon(){
       var hasLyr=document.body.classList.contains('lyrics-mode');
-      var hasJiz=document.body.classList.contains('jizura-mode');
+      var hasJiz=(window.PV&&PV.available&&document.body.classList.contains('jizura-mode'));
       if(hasJiz){
         btn.style.color='var(--accent)';
         btn.title='PV 模式（文字PV）— 点击退出';
@@ -10424,7 +10446,7 @@ function doPlaylistImport(){
   var _pvLineEls=[];
   window.__pvCore={render:function(){renderPv()},sync:function(i){pvSync(i)},idx:function(){return _pvIdx},lrc:function(){return lrcData}};
   function renderPv(){
-    if(document.body.classList.contains('jizura-mode')){
+    if(window.PV&&PV.available&&document.body.classList.contains('jizura-mode')){
       window._jizuraLrcData=lrcData;
       if(window.renderJizuraInit)window.renderJizuraInit();
       return;
@@ -10484,7 +10506,7 @@ function doPlaylistImport(){
     return Math.max(0, r*r*(3-2*r));
   }
   function pvSync(idx){
-    if(document.body.classList.contains('jizura-mode')){
+    if(window.PV&&PV.available&&document.body.classList.contains('jizura-mode')){
       window._jizuraLrcData=lrcData;
       if(window.renderJizuraLine)window.renderJizuraLine(idx);
       return;
@@ -11713,7 +11735,7 @@ var actions=document.querySelector('.header-actions');
 if(header&&actions&&!document.getElementById('modeCaps')){
   var caps=document.createElement('div');
   caps.className='mode-caps';caps.id='modeCaps';
-  [['标准',0],['PV',2],['歌词',1]].forEach(function(it){
+  [['标准',0],['PV',2],['歌词',1]].filter(function(it){ return it[1]!==2 || document.documentElement.dataset.pv==='1'; }).forEach(function(it){
     var b=document.createElement('button');
     b.className='mc';b.textContent=it[0];b.dataset.m=it[1];
     b.onclick=function(){setMode(it[1]);syncCaps();};
@@ -11781,7 +11803,7 @@ injectPills();
   'use strict';
   var PV = window.PV || (window.PV = {});
 
-  var GROUPS = ['mood', 'style', 'layout', 'enter', 'hold', 'exit', 'decor', 'treatment', 'camera', 'transition'];
+  var GROUPS = ['mood', 'style', 'face', 'layout', 'enter', 'hold', 'exit', 'decor', 'treatment', 'camera', 'transition'];
   var reg = {}, order = {};
   GROUPS.forEach(function (g) { reg[g] = {}; order[g] = []; });
 
@@ -12013,6 +12035,10 @@ injectPills();
       || (opts.layout ? PV.part('layout', opts.layout) : PV.choose('layout', ctx, opts));
     if (!lay) lay = PV.part('layout', 'center');
     if (lay.pre) lay.pre(ctx);
+    /* ⑥ 字体：风格可以钉死（新闻就该黑体），没钉就按气氛/强调抽；
+     * auto 风格不抢字体——那是“跟 App 主题”的意思，连字体一起跟才对 */
+    var fc = PV.rollFace ? PV.rollFace(ctx, opts) : null;
+    if (ctx.style && ctx.style.id === 'auto' && !PV.faceManual) fc = null;
     /* decor / treatment 可叠 0..n 件；外部传字符串 = 只用那一件 */
     function stack(group) {
       var raw = opts[group];
@@ -12036,6 +12062,7 @@ injectPills();
     }
     return {
       layout: lay,
+      face: fc,
       enter: PV.choose('enter', ctx, opts) || PV.part('enter', PV.defaults.enter),
       hold: PV.choose('hold', ctx, opts) || PV.part('hold', PV.defaults.hold),
       exit: PV.choose('exit', ctx, opts) || PV.part('exit', PV.defaults.exit),
@@ -12123,7 +12150,8 @@ injectPills();
     else swap();
     if (!made.el.parentNode) swap();      // 衔接件没调 swap 时的兜底
 
-    if (S.tag) S.tag.textContent = 'LAYOUT · ' + plan.layout.nm + (PV.mood ? ' · ' + PV.mood : '') +
+    if (S.tag) S.tag.textContent = 'LAYOUT · ' + plan.layout.nm + (plan.face ? ' · ' + plan.face.nm : '') +
+      (PV.mood ? ' · ' + PV.mood : '') +
       (S.cuts && S.cuts.length > 1 ? ' · ' + (S.cutI + 1) + '/' + S.cuts.length : '');
     if (S.ghosts.up) S.ghosts.up.textContent = i > 0 && S.lyrics[i - 1] ? PV.plain(S.lyrics[i - 1].text) : '';
     if (S.ghosts.dn) S.ghosts.dn.textContent = i < S.lyrics.length - 1 && S.lyrics[i + 1] ? PV.plain(S.lyrics[i + 1].text) : '';
@@ -12132,6 +12160,8 @@ injectPills();
   };
 
   function applyIn(plan, made) {
+    if (plan.face && PV.useFace) PV.useFace(plan.face);
+    else if (PV.clearFace) PV.clearFace();
     if (plan.enter && plan.enter.apply) plan.enter.apply(made.ctx, made.toks);
     if (plan.hold && plan.hold.apply) { var sh = plan.hold.apply(made.ctx, made.el); if (sh) PV.addStop(sh); }
     if (plan.camera && plan.camera.apply) { var sc = plan.camera.apply(made.ctx, S.track); if (sc) PV.addStop(sc); }
@@ -12195,14 +12225,14 @@ injectPills();
 
   var STYLES = [
     { id: 'auto', nm: '自动', sp: 1 },
-    { id: 'gold', nm: '金夜', bg: '#0A0907', fg: '#F3E7C4', sub: '#B39A62', acc: '#D4AF37' },
-    { id: 'ocean', nm: '深海', bg: '#031A2E', fg: '#E4FAFF', sub: '#7FB2C8', acc: '#1FD2E6' },
-    { id: 'sakura', nm: '夜樱', bg: '#26091B', fg: '#FCE8F0', sub: '#D69DB6', acc: '#FF86B0' },
-    { id: 'vapor', nm: '蒸汽', bg: '#3A2A6E', fg: '#FFFFFF', sub: '#D6C8FF', acc: '#FF8FD8' },
-    { id: 'synth80', nm: '合成80s', bg: '#0B0414', fg: '#FF4FD8', sub: '#A98BFF', acc: '#22E6FF' },
-    { id: 'newsprint', nm: '新闻', bg: '#E6E5E0', fg: '#111111', sub: '#4E4E4C', acc: '#D8141B', light: 1 },
-    { id: 'kraft', nm: '牛皮纸', bg: '#C49A6C', fg: '#1A1410', sub: '#46301E', acc: '#B8361B', light: 1 },
-    { id: 'sumi', nm: '墨与朱', bg: '#EFE5CF', fg: '#16130F', sub: '#5E574C', acc: '#B83A22', light: 1 }
+    { id: 'gold', nm: '金夜', bg: '#0A0907', fg: '#F3E7C4', sub: '#B39A62', acc: '#D4AF37', face: 'song' },
+    { id: 'ocean', nm: '深海', bg: '#031A2E', fg: '#E4FAFF', sub: '#7FB2C8', acc: '#1FD2E6', face: 'hei' },
+    { id: 'sakura', nm: '夜樱', bg: '#26091B', fg: '#FCE8F0', sub: '#D69DB6', acc: '#FF86B0', face: 'kai' },
+    { id: 'vapor', nm: '蒸汽', bg: '#3A2A6E', fg: '#FFFFFF', sub: '#D6C8FF', acc: '#FF8FD8', face: 'yuan' },
+    { id: 'synth80', nm: '合成80s', bg: '#0B0414', fg: '#FF4FD8', sub: '#A98BFF', acc: '#22E6FF', face: 'blk' },
+    { id: 'newsprint', nm: '新闻', bg: '#E6E5E0', fg: '#111111', sub: '#4E4E4C', acc: '#D8141B', light: 1, face: 'hei' },
+    { id: 'kraft', nm: '牛皮纸', bg: '#C49A6C', fg: '#1A1410', sub: '#46301E', acc: '#B8361B', light: 1, face: 'shu' },
+    { id: 'sumi', nm: '墨与朱', bg: '#EFE5CF', fg: '#16130F', sub: '#5E574C', acc: '#B83A22', light: 1, face: 'xing' }
   ];
 
   STYLES.forEach(function (s) { PV.reg('style', s.id, s); });
@@ -13283,6 +13313,7 @@ injectPills();
     if (!PV.style()) PV.useStyle('auto');
     PV.markStyle();
     PV.startLoop();
+    if (PV.applyMonoStack) PV.applyMonoStack();     // ⑥ 等宽链给 type 版式与小字用
     if (PV.audioStart) PV.audioStart();          // ③ 音频驱动：跟着 PV 开，不单独常驻
     if (!PV._booted) {
       PV._booted = true;
@@ -13345,7 +13376,6 @@ injectPills();
      * 现在直接请核心重画，退出后不会停在上一句 PV。 */
     if (c && c.render) c.render();
   };
-
   PV.toggle = function () {
     if (PV.active()) PV.exit(); else PV.enter();
   };
@@ -13373,7 +13403,10 @@ injectPills();
   requestAnimationFrame(function () { try { PV.boot(); } catch (e) { } });
 
   /* 控制台与自检 */
-  PV.version = 'pv-registry/0.3';
+  PV.version = 'pv-registry/0.6';
+  /* 核心靠这两个字段判断能不能用 PV：没 PV 块时 window.PV 不存在，
+   * 三档胶囊与循环自动降级成两档——lite 包就是「不带 PV 块」，不用改核心 */
+  PV.available = true;
   PV.selftest = function () {
     var out = { version: PV.version, groups: PV.stats(), mounted: !!PV.layer() };
     out.demo = [];
@@ -14371,6 +14404,149 @@ injectPills();
         { duration: 300, fill: 'both', easing: 'ease-in' });
     }
   });
+})();
+
+/* PV 引擎 · 17 字体表（⑥）
+ *
+ * 离线优先：不引 Google Fonts，只用本机已装字体。两件事分开：
+ *
+ * 1) 组栈。一条 font-family 里「拉丁 display 在前、中文 display 在后、generic 收尾」。
+ *    CSS 是一个字一个字往下找的：Impact 没有汉字，汉字就顺到下一个族去——所以一个变量
+ *    同时拿到英文的冲击感和中文的骨架，不必拆两套。
+ *
+ * 2) 探测（只做报告，不参与删栈）。这里踩过两个坑，都记下来：
+ *    · 基线不能用裸 monospace，要用一个必然不存在的族名——否则黑体/宋体这类
+ *      与系统回退走宽相同的字体会被判成「没装」（实测误杀 SimHei）。
+ *    · 就算换了基线，**中文字体本质上量不出来**：所有 CJK 字体的汉字进宽都是 1em，
+ *      '永字八法' 换任何中文字体宽度都不变。只有拉丁部分能区分。
+ *      所以探测是三态：true（拉丁段有差异）/ false（无差异）/ null（只能靠汉字判，未知）。
+ *    结论：探测只用来在面板上告诉你「这个字体大概率在不在」，栈永远带全部候选——
+ *    没装的族 CSS 自己跳，拿一个会误判的探测去删栈只会把好字体静默丢掉。
+ *
+ * 字体是一层（group 'face'），参与气氛与强调偏置；风格可以钉死自己的字体
+ * （新闻体就该黑体，不该被随机带走）。auto 风格连字体一起让给 App，不抢。
+ */
+(function () {
+  'use strict';
+  var PV = window.PV;
+
+  /* key, 名字, 中文栈, 拉丁栈, 字重, 字距, 气氛
+   * 中文栈里英文名与本地化名都带：实测这台 Chrome 认「华文隶书」「等线」「微软雅黑」，
+   * 却认不了 SimHei / SimSun / KaiTi / YouYuan——只写一种名字会静默掉回退。*/
+  var DEF = [
+    ['hei', '黑体', ['Microsoft YaHei', '微软雅黑', 'DengXian', '等线', 'SimHei', '黑体', 'PingFang SC'], ['Arial Black', 'Impact', 'Franklin Gothic Heavy'], 800, '.02em', ['pop', 'graphic', 'glitch', 'horror']],
+    ['song', '宋体', ['STSong', '华文宋体', 'SimSun', '宋体', 'Songti SC', 'Noto Serif SC'], ['Georgia', 'Cambria'], 700, '.06em', ['editorial', 'calm', 'emotional']],
+    ['kai', '楷体', ['STKaiti', '华文楷体', 'KaiTi', '楷体', 'KaiTi_GB2312', '楷体_GB2312'], ['Cambria', 'Georgia'], 600, '.12em', ['calm', 'emotional', 'editorial']],
+    ['li', '隶书', ['STLishu', '华文隶书', 'LiSu', '隶书'], ['Cambria', 'Bodoni MT'], 700, '.14em', ['emotional', 'editorial', 'horror']],
+    ['xing', '行楷', ['STXingkai', '华文行楷'], ['Harlow Solid Italic', 'Brush Script MT'], 600, '.10em', ['emotional', 'calm']],
+    ['yuan', '圆体', ['STHupo', '华文琥珀', 'YouYuan', '幼圆', 'Microsoft YaHei'], ['Tw Cen MT', 'Berlin Sans FB'], 700, '.05em', ['pop', 'calm']],
+    ['cai', '彩云', ['STCaiYun', '华文彩云', 'STZhongsong', '华文中宋'], ['Rockwell', 'Copperplate Gothic Light'], 700, '.16em', ['pop', 'emotional']],
+    ['shu', '舒体', ['FZShuTi', '方正舒体', 'FZYaoTi', '方正姚体'], ['Rockwell', 'Bookman Old Style'], 700, '.06em', ['pop', 'graphic']],
+    ['blk', '西洋黑', ['Microsoft YaHei', '微软雅黑', 'SimHei', '黑体'], ['Impact', 'Franklin Gothic Heavy', 'Arial Black'], 900, '-.01em', ['glitch', 'graphic', 'pop', 'horror']],
+    ['scr', '西洋饰', ['SimHei', '黑体', 'Microsoft YaHei'], ['Bodoni MT', 'Copperplate Gothic Light', 'Elephant'], 700, '.10em', ['editorial', 'graphic']],
+    ['goth', '哥特', ['Yu Gothic', 'Malgun Gothic', 'Microsoft JhengHei', '等线'], ['Bahnschrift', 'Franklin Gothic Demi'], 700, '.04em', ['glitch', 'graphic']],
+    ['mono', '等宽', ['DengXian', '等线', 'Microsoft YaHei'], ['Consolas', 'Cascadia Mono', 'Courier New'], 700, '.02em', ['glitch', 'editorial', 'graphic']]
+  ];
+
+  var ctx2d = null, cache = {};
+  function widths(f) {
+    if (!ctx2d) ctx2d = document.createElement('canvas').getContext('2d');
+    ctx2d.font = '64px ' + f;
+    /* 只用拉丁段判：汉字进宽对所有 CJK 字体都是 1em，量了也白量 */
+    return ctx2d.measureText('AWMWwm@123&fl').width;
+  }
+  function baseW() { if (cache.__b == null) cache.__b = widths('"__no_such_face_zzq__", monospace'); return cache.__b; }
+
+  /* true 有 / false 没有 / null 判不了（该族只在中文段出现，或它与回退同宽） */
+  function has(fam) {
+    if (cache[fam] != null) return cache[fam];
+    cache[fam] = Math.abs(widths('"' + fam + '", monospace') - baseW()) > 0.6;
+    return cache[fam];
+  }
+  PV.faceHas = has;
+
+  function look(fam) {
+    /* 中文名也能量：'永' 这类汉字在任何中文字体里都是 1em，但本地化族名
+     * 能否解析可以从拉丁段差异看出——量不出差异就当未知，不删栈 */
+    return has(fam);
+  }
+
+  function stack(cjk, lat) {
+    return lat.concat(cjk).map(function (f) { return '"' + f + '"'; }).join(',') + ',sans-serif';
+  }
+
+  DEF.forEach(function (d) {
+    var all = d[2].concat(d[3]);
+    var hit = [], miss = [], unk = [];
+    all.forEach(function (f) {
+      var v = look(f);
+      if (v === true) hit.push(f); else if (v === false) miss.push(f); else unk.push(f);
+    });
+    PV.reg('face', d[0], {
+      nm: d[1], tags: d[6], w: 1,
+      weight: d[4], track: d[5],
+      mono: d[0] === 'mono',
+      cjk: d[2], latin: d[3],
+      hit: hit, miss: miss, unknown: unk,
+      stack: stack(d[2], d[3])
+    });
+  });
+
+  PV.facesReport = function () {
+    return PV.parts('face').map(function (f) {
+      return f.key + ' ' + f.nm + '：判到 ' + f.hit.length + '、判无 ' + f.miss.length + '、判不了 ' + f.unknown.length +
+        (f.hit.length ? '（' + f.hit.join(' ') + '）' : '');
+    });
+  };
+
+  /* ---------- 应用 ---------- */
+  var cur = null;
+  PV.face = function (f) { if (f) cur = f; return cur; };
+
+  PV.useFace = function (f) {
+    if (typeof f === 'string') f = PV.part('face', f);
+    if (!f) return PV.clearFace();
+    cur = f;
+    var st = PV.stage();
+    if (!st) return f;
+    st.style.setProperty('--jv-face', f.stack);
+    st.style.setProperty('--jv-face-weight', String(f.weight));
+    st.style.setProperty('--jv-face-track', f.track);
+    return f;
+  };
+  PV.clearFace = function () {
+    cur = null;
+    var st = PV.stage();
+    if (st) {
+      st.style.removeProperty('--jv-face');
+      st.style.removeProperty('--jv-face-weight');
+      st.style.removeProperty('--jv-face-track');
+    }
+    return null;
+  };
+  PV.applyMonoStack = function () {
+    var st = PV.stage(), m = PV.part('face', 'mono');
+    if (st && m) st.style.setProperty('--jv-mono', m.stack);
+  };
+
+  PV.faceManual = false;                 // false = 参与抽签；字符串 = 钉死某个 face key
+  PV.setFaceManual = function (k) {
+    if (!k || k === 'auto') { PV.faceManual = false; PV.clearFace(); return null; }
+    var f = PV.part('face', k);
+    if (!f) return null;
+    PV.faceManual = k;
+    PV.useFace(f);
+    return f;
+  };
+
+  /* 抽签优先级：本段指定 > 风格钉死 > 手动锁定 > 气氛/强调加权 */
+  PV.rollFace = function (ctx, opts) {
+    if (opts.face) return PV.part('face', opts.face);
+    var st = ctx.style;
+    if (st && st.face) { var pin = PV.part('face', st.face); if (pin) return pin; }
+    if (PV.faceManual) { var mf = PV.part('face', PV.faceManual); if (mf) return mf; }
+    return PV.choose('face', ctx, opts) || PV.part('face', 'hei');
+  };
 })();
 
 })();

@@ -1,4 +1,9 @@
 name: Package & Release
+# 一次 tag 出两个 release：
+#   v0.8.0        → hanako-audio-player-0.8.0.zip        （含文字 PV 演出层）
+#   v0.8.0-lite   → hanako-audio-player-lite-0.8.0-lite.zip（不含 PV，胶囊只有标准/歌词）
+# 两个包的 manifest.id 不同，可以并存安装；lite 不是另一套代码，
+# 而是同一份 html 去掉 PV 标记块与 data-pv 属性——核心钩子自带 window.PV 判断，会自动降级。
 
 on:
   push:
@@ -19,51 +24,66 @@ jobs:
       - name: 校验清单
         run: |
           set -e
-          echo "manifest:"
           cat manifest.json | head -20
           test -f index.js
           test -f ui/index.html
           test -f ui/_build.json
           test -f manifest.json
+          test -f pv/build.mjs
+          test -f pv/release.mjs
+          # 构建必须可重放：跑两遍，字节不一样就是有人在手改产物
+          node pv/build.mjs
+          h1=$(sha256sum ui/index.html | cut -d' ' -f1)
+          node pv/build.mjs
+          h2=$(sha256sum ui/index.html | cut -d' ' -f1)
+          [ "$h1" = "$h2" ] || { echo "✗ pv/build.mjs 不幂等，拒绝发布"; exit 1; }
+          git diff --exit-code ui/ >/dev/null 2>&1 || echo "::warning::产物与提交内容不同，请本地跑 node pv/build.mjs 后提交"
 
-      - name: 打包
+      - name: 打包（full + lite）
         run: |
           set -e
-          # 目录名必须一字不差等于 manifest.id —— 这是 Hana 的安装合同。
-          ID=$(grep -oP '"id"\s*:\s*"\K[^"]+' manifest.json | head -1)
-          VER=$(grep -oP '"version"\s*:\s*"\K[^"]+' manifest.json | head -1)
-          echo "id=$ID version=$VER"
-          mkdir -p "dist/$ID"
-          # 只带运行需要的东西：文档、本地数据、凭据一律不进包
-          rsync -a \
-            --exclude='.git*' \
-            --exclude='.github' \
-            --exclude='dist' \
-            --exclude='node_modules' \
-            --exclude='LICENSE' \
-            --exclude='SECURITY.md' \
-            --exclude='CONTRIBUTING.md' \
-            --exclude='COMMERCIAL-LICENSE.md' \
-            --exclude='*.env' \
-            --exclude='*.bak' \
-            --exclude='*.bak-*' \
-            --exclude='*.log' \
-            ./ "dist/$ID/"
-          cd dist && zip -qr "$ID-$VER.zip" "$ID"
+          node pv/release.mjs
           echo "--- 产物 ---"
-          ls -la
-          unzip -l "$ID-$VER.zip" | head -30
+          ls -la dist/full dist/lite
+          for z in dist/*/*.zip; do echo "$z:"; unzip -l "$z" | tail -3; done
+          # 包里不许有开发目录、注入脚本、测试音、凭据
+          for z in dist/*/*.zip; do
+            if unzip -l "$z" | grep -E '/pv/|\.mjs$|fixtures|test\.html|\.env|\.git' ; then
+              echo "✗ $z 含开发期文件，拒绝发布"; exit 1
+            fi
+          done
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hanako-audio-player-${{ github.ref_name }}
-          path: dist/*.zip
+          name: packages-${{ github.ref_name }}
+          path: dist/*/*.zip
           if-no-files-found: error
 
-      - name: Create GitHub Release
+      - name: Release（完整版）
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.zip
+          tag_name: ${{ github.ref_name }}
+          files: dist/full/*.zip
           generate_release_notes: true
+          body: |
+            安装：解压后把整个目录放进 `<Hana 数据目录>/apps/`，目录名必须等于 manifest.id。
+
+            这个包**含**文字 PV 演出层（标准 / PV / 歌词 三档）。
+            不要 PV 的话装 `*-lite` 那个包，两者 id 不同、可并存。
+
+      - name: Release（无 PV 版）
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}-lite
+          files: dist/lite/*.zip
+          make_latest: false
+          generate_release_notes: true
+          body: |
+            与 ${{ github.ref_name }} 同源，只是**不带**文字 PV 演出层：
+            顶栏两档（标准 / 歌词），包体更小，也不含 `pv/` 之外的任何演出部件。
+
+            安装：解压后把整个目录放进 `<Hana 数据目录>/apps/`，目录名必须等于 manifest.id
+            （`hanako-audio-player-lite`）。与完整版 id 不同，可以同时装。
