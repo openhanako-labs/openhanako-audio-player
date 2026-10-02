@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1002182416";
+  window.__HANA_BUILD = "1002190529";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -3602,6 +3602,60 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
   80% { opacity: .22; }
   100% { transform: translateY(-70px) rotate(160deg); opacity: 0; }
 }
+
+/* PV 引擎 · ② 新增部件用的样式
+ * 切片退场、白闪、HUD、引线、纹理层。全部 pointer-events:none，不吃交互。
+ */
+
+/* --- exit: slice 切片错位 --- */
+.jv-slice {
+  position: absolute; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden; pointer-events: none;
+  writing-mode: horizontal-tb;     /* 别继承竖写版式的书写方向 */
+}
+
+/* --- transition: flash 白闪 --- */
+.jv-flash {
+  position: absolute; inset: 0; z-index: 40; pointer-events: none;
+  background: var(--jv-fg); opacity: .85; mix-blend-mode: screen;
+}
+.jv-flash.hard { background: var(--jv-acc); mix-blend-mode: lighten; }
+
+/* --- decor: hud 边角 --- */
+.jv-hud {
+  position: absolute; right: 5%; bottom: 8%; z-index: 3;
+  display: flex; flex-direction: column; gap: 3px; align-items: flex-end;
+  font-family: monospace; font-size: 9px; letter-spacing: .18em;
+  color: var(--jv-fg); opacity: .42; pointer-events: none;
+  writing-mode: horizontal-tb;     /* 竖写版式里不加这条，HUD 会跟着竖排 */
+}
+.jv-hud .no { color: var(--jv-acc); opacity: .9; }
+
+/* --- decor: rule 左右引线 --- */
+.jv-rules { position: absolute; inset: 0; pointer-events: none; }
+.jv-rules i {
+  position: absolute; top: 50%; width: 8%; height: 1px; background: var(--jv-acc); opacity: .55;
+}
+.jv-rules i:first-child { left: 4%; }
+.jv-rules i:last-child { right: 4%; }
+
+/* --- treatment: chroma 色偏残影 --- */
+.jv-ghostA, .jv-ghostB { pointer-events: none; z-index: 1; }
+
+/* --- treatment: grain 纹理（扫描线 + 纸纹 + 边角暗角） --- */
+.jv-texture {
+  position: absolute; inset: 0; z-index: 5; pointer-events: none; opacity: .2;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, .06) 0 1px, transparent 1px 3px),
+    radial-gradient(120% 90% at 50% 50%, transparent 52%, rgba(0, 0, 0, .5) 100%);
+  mix-blend-mode: overlay;
+}
+
+/* 层内元素给镜头留出变形空间：不要让行自己占满再叠 transform */
+.jv-line { transform-origin: 50% 50%; }
+.jv-w { transform-origin: 50% 50%; }
+.jv-t { transform-origin: 50% 50%; }
 
 /* ===== PV:END ===== */
 </style><script>
@@ -11638,7 +11692,7 @@ injectPills();
   'use strict';
   var PV = window.PV || (window.PV = {});
 
-  var GROUPS = ['style', 'layout', 'enter', 'hold', 'exit', 'decor', 'treatment', 'camera', 'transition'];
+  var GROUPS = ['mood', 'style', 'layout', 'enter', 'hold', 'exit', 'decor', 'treatment', 'camera', 'transition'];
   var reg = {}, order = {};
   GROUPS.forEach(function (g) { reg[g] = {}; order[g] = []; });
 
@@ -11690,8 +11744,33 @@ injectPills();
   };
   PV.glyph = function (t) { return t === ' ' ? '\u00A0' : t; };
 
-  /* ---------- 演出强度（③ 会由音频驱动覆写） ---------- */
-  PV.fx = { motion: 1, glitch: 0, chroma: 0, decor: 1, density: 1, texture: 0, bgSwitch: 0 };
+  /* ---------- 演出强度 ---------- */
+  PV.fx = { motion: 0.6, glitch: 0.2, chroma: 0.2, decor: 1, density: 0.7, texture: 0.2, bgSwitch: 0 };
+
+  /* ---------- 气氛：决不是换皮，是换抽签分布 + 换滑块 ---------- */
+  PV.mood = null;
+  [['glitch', '故障', { motion: 0.9, glitch: 0.9, chroma: 0.8, texture: 0.7, density: 0.8 }],
+   ['calm', '静', { motion: 0.25, glitch: 0, chroma: 0.1, texture: 0.3, density: 0.4 }],
+   ['pop', '流行', { motion: 0.85, glitch: 0.15, chroma: 0.25, texture: 0.2, density: 0.6 }],
+   ['graphic', '平面', { motion: 0.5, glitch: 0.1, chroma: 0.2, texture: 0.1, density: 0.5 }],
+   ['editorial', '编辑', { motion: 0.35, glitch: 0, chroma: 0.05, texture: 0.15, density: 0.45 }],
+   ['emotional', '情绪', { motion: 0.55, glitch: 0.2, chroma: 0.3, texture: 0.35, density: 0.5 }],
+   ['horror', '恐怖', { motion: 0.7, glitch: 0.75, chroma: 0.5, texture: 0.8, density: 0.55 }]
+  ].forEach(function (m) {
+    PV.reg('mood', m[0], { nm: m[1], fx: m[2] });
+  });
+
+  PV.setMood = function (m) {
+    var p = typeof m === 'string' ? PV.part('mood', m) : m;
+    PV.mood = p ? p.key : null;
+    if (p && p.fx) Object.keys(p.fx).forEach(function (k) { PV.fx[k] = p.fx[k]; });
+    if (PV.S.tag) PV.S.tag.textContent = 'LAYOUT · ' + (PV.lastLayout() || '—') + (PV.mood ? ' · ' + PV.mood : '');
+    return PV.mood;
+  };
+
+  /* 哪几层参与抽签（关掉就用默认件，可以随时收收观感） */
+  PV.rolling = { enter: true, hold: true, exit: true, transition: true, camera: true, decor: true };
+
   /* 每层的默认件——① 的目标是行为不变，所以默认件就是旧实现的那一套 */
   PV.defaults = { enter: 'rise', hold: 'none', exit: 'none', transition: 'cut', camera: 'none', style: 'auto', decor: ['particles'], treatment: ['sweep'] };
 
@@ -11752,24 +11831,43 @@ injectPills();
     };
   };
 
-  /* ---------- 选件：fit/when 过滤 → 权重抽签 ---------- */
+  /* ---------- 选件：fit/when 过滤 → 气氛偏置 → 权重抽签 ---------- */
+  function bias(d) {
+    if (!PV.mood || !d.tags || !d.tags.length) return 1;
+    return d.tags.indexOf(PV.mood) >= 0 ? 2.6 : 0.45;
+  }
+  function weighted(arr) {
+    var tot = 0;
+    arr.forEach(function (d) { tot += (d.w || 1) * bias(d); });
+    if (tot <= 0) return PV.pick(arr);
+    var r = PV.rnd(tot);
+    for (var i = 0; i < arr.length; i++) {
+      r -= (arr[i].w || 1) * bias(arr[i]);
+      if (r <= 0) return arr[i];
+    }
+    return arr[arr.length - 1];
+  }
   PV.choose = function (group, ctx, opts) {
     opts = opts || {};
-    if (opts.force) { var f = PV.part(group, opts.force); if (f) return f; }
-    if (opts.pick === false) return PV.part(group, PV.defaults[group]);
+    /* 显式指定某层的件（opts.layout / opts.enter / …） */
+    if (opts[group]) { var want = PV.part(group, opts[group]); if (want) return want; }
+    /* 不抽签的层直接用默认件（骰子也不会把它换掉） */
+    if (PV.rolling[group] === false || opts.pick === false)
+      return PV.part(group, opts[group] || PV.defaults[group]);
     var all = PV.parts(group);
     if (!all.length) return null;
     var ok = all.filter(function (d) {
-      if (d.special && !ctx.special) return false;         // title / interlude 这类专用件
-      if (d.sp) return false;                              // 显式特殊件只由 special 路径调用
+      if (d.sp || d.special) return false;                 // title / interlude 这类专用件只走显式调用
       if (d.fit && !d.fit(ctx)) return false;
       if (d.when && !d.when(ctx)) return false;
       return true;
     });
     if (!ok.length) ok = all.filter(function (d) { return !d.sp && !d.special; });
     if (!ok.length) ok = [PV.part(group, PV.defaults[group]) || all[0]];
-    if (group === 'layout') return PV.pickNot(ok, opts.keepLast === false ? '' : S.lastLayout);
-    return PV.pick(ok);
+    if (group === 'layout') return PV.pickNot(ok, S.lastLayout);
+    var p = weighted(ok);
+    if (ok.length > 1 && p.key === opts.avoid) p = weighted(ok.filter(function (d) { return d.key !== p.key; }));
+    return p;
   };
 
   /* ---------- 一行 = 一个 cut 的配牌 ---------- */
@@ -11780,21 +11878,31 @@ injectPills();
     if (opts.special) { ctx.special = opts.special; }
     /* 空行（间奏）不再渲染成一块空白，走专用版式 */
     if (!ctx.special && !(line && (line.text || '').trim())) ctx.special = 'interlude';
-    var lay = opts.layout ? PV.part('layout', opts.layout)
-      : (ctx.special ? PV.part('layout', ctx.special) || PV.choose('layout', ctx, opts)
-        : (opts.pick === false ? PV.part('layout', 'center') : PV.choose('layout', ctx, opts)));
+    var lay = (ctx.special && PV.part('layout', ctx.special))
+      || (opts.layout ? PV.part('layout', opts.layout) : PV.choose('layout', ctx, opts));
     if (!lay) lay = PV.part('layout', 'center');
     if (lay.pre) lay.pre(ctx);
+    /* decor / treatment 是 0..n 叠加：默认那几件 + 再抽一件（when 不满足就抽不到）。
+     * 外部可以传字符串（指定单件）也可以传数组（多件叠加）。 */
+    function stack(group) {
+      var raw = opts[group] == null ? PV.defaults[group] : opts[group];
+      var list = (typeof raw === 'string' ? [raw] : raw || []).slice();
+      if (PV.rolling[group] !== false && typeof raw !== 'string') {
+        var p = PV.choose(group, ctx, opts);
+        if (p && p.key !== 'none' && list.indexOf(p.key) < 0) list.push(p.key);
+      }
+      return list.map(function (k) { return typeof k === 'string' ? PV.part(group, k) : k; })
+        .filter(function (d) { return d && (!d.when || d.when(ctx)); });
+    }
     return {
       layout: lay,
-      enter: PV.part('enter', opts.enter || lay.enter || PV.defaults.enter) || PV.part('enter', PV.defaults.enter),
-      hold: PV.part('hold', opts.hold || lay.hold || PV.defaults.hold) || PV.part('hold', PV.defaults.hold),
-      exit: PV.part('exit', opts.exit || PV.defaults.exit) || PV.part('exit', PV.defaults.exit),
-      transition: PV.part('transition', opts.transition || PV.defaults.transition) || PV.part('transition', PV.defaults.transition),
-      camera: PV.part('camera', opts.camera || PV.defaults.camera) || PV.part('camera', PV.defaults.camera),
-      decor: (opts.decor == null ? PV.defaults.decor : opts.decor).map(function (k) { return PV.part('decor', k); })
-        .filter(function (d) { return d && (!d.when || d.when(ctx)); }),
-      treatment: (opts.treatment == null ? PV.defaults.treatment : opts.treatment).map(function (k) { return PV.part('treatment', k); }).filter(Boolean),
+      enter: PV.choose('enter', ctx, opts) || PV.part('enter', PV.defaults.enter),
+      hold: PV.choose('hold', ctx, opts) || PV.part('hold', PV.defaults.hold),
+      exit: PV.choose('exit', ctx, opts) || PV.part('exit', PV.defaults.exit),
+      transition: PV.choose('transition', ctx, opts) || PV.part('transition', PV.defaults.transition),
+      camera: PV.choose('camera', ctx, opts) || PV.part('camera', PV.defaults.camera),
+      decor: stack('decor'),
+      treatment: stack('treatment'),
       ctx: ctx
     };
   };
@@ -11829,6 +11937,8 @@ injectPills();
     return { el: el, ctx: ctx, toks: toks };
   };
 
+  /* 一行的完整切换：上一行由它自己的 exit 送走，新行由 transition 接进来。
+   * 旧实现里 exit 根本不存（innerHTML 直接覆盖），所以这是新增的执行路径。*/
   PV.show = function (i, opts) {
     if (i == null || i < 0) return;
     opts = opts || {};
@@ -11837,41 +11947,56 @@ injectPills();
     if (!plan) return;
     var made = PV.render(plan);
     if (!made) return;
+
+    var prev = S.cur, oldPlan = S.plan;
     S.idx = i;
     S.lastLayout = plan.layout.key;
     S.plan = plan;
-
-    var prev = S.cur;
     S.cur = made.el;
     S.cutT = performance.now();
-    /* 先停掉上一行的 hold/camera/计时器，再走衔接，顺序不能反过来 */
     stopAll();
 
-    var swap = function () {
+    /* ① 送走上一行 */
+    var drop = function () {
       if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
-      Array.prototype.slice.call(S.track.children).forEach(function (n) {
-        if (n !== made.el && n.classList && n.classList.contains('jv-line')) n.parentNode.removeChild(n);
-      });
-      if (!made.el.parentNode) S.track.appendChild(made.el);
-      /* 与旧实现一致：直接上 show，不跑容器自身的 opacity 过渡。
-       * 容器淡入属于衔接层的活，② 里由 transition 件自己接管。 */
-      made.el.classList.add('show');
+      prev = null;
     };
-    if (plan.transition && plan.transition.play) plan.transition.play(made.ctx, prev, made.el, swap);
+    var ex = oldPlan && oldPlan.exit ? oldPlan.exit : PV.part('exit', PV.defaults.exit);
+    if (prev) {
+      /* 用上一行自己的 ctx：退场件要知道自己是谁的退场 */
+      if (ex && ex.play) ex.play(oldPlan ? oldPlan.ctx : plan.ctx, prev, drop);
+      else drop();
+    }
+
+    /* ② 接上新行：插入之后再跑登场层，否则 WAAPI 动画在游离元素上不会启动 */
+    var swap = function () {
+      if (made.el.parentNode) return;
+      Array.prototype.slice.call(S.track.children).forEach(function (n) {
+        if (n !== prev && n.classList && n.classList.contains('jv-line')) n.parentNode.removeChild(n);
+      });
+      S.track.appendChild(made.el);
+      /* 容器自身的 opacity 过渡属于衔接层，这里直接上 show（与旧实现一致） */
+      made.el.classList.add('show');
+      applyIn(plan, made);
+    };
+    if (plan.transition && plan.transition.play) plan.transition.play(plan.ctx, prev, made.el, swap);
     else swap();
+    if (!made.el.parentNode) swap();      // 衔接件没调 swap 时的兜底
 
-    if (plan.enter && plan.enter.apply) plan.enter.apply(made.ctx, made.toks);
-    if (plan.hold && plan.hold.apply) { var sh = plan.hold.apply(made.ctx, made.el); if (sh) PV.addStop(sh); }
-    if (plan.camera && plan.camera.apply) { var sc = plan.camera.apply(made.ctx, S.track); if (sc) PV.addStop(sc); }
-    plan.decor.forEach(function (d) { if (d.apply) { var s = d.apply(made.ctx, made.el); if (s) PV.addStop(s); } });
-    plan.treatment.forEach(function (d) { if (d.apply) { var s2 = d.apply(made.ctx, made.el); if (s2) PV.addStop(s2); } });
-
-    if (S.tag) S.tag.textContent = 'LAYOUT · ' + plan.layout.nm;
+    if (S.tag) S.tag.textContent = 'LAYOUT · ' + plan.layout.nm + (PV.mood ? ' · ' + PV.mood : '');
     if (S.ghosts.up) S.ghosts.up.textContent = i > 0 && S.lyrics[i - 1] ? S.lyrics[i - 1].text : '';
     if (S.ghosts.dn) S.ghosts.dn.textContent = i < S.lyrics.length - 1 && S.lyrics[i + 1] ? S.lyrics[i + 1].text : '';
     PV.dispatch('pv:cut', plan);
     return plan;
   };
+
+  function applyIn(plan, made) {
+    if (plan.enter && plan.enter.apply) plan.enter.apply(made.ctx, made.toks);
+    if (plan.hold && plan.hold.apply) { var sh = plan.hold.apply(made.ctx, made.el); if (sh) PV.addStop(sh); }
+    if (plan.camera && plan.camera.apply) { var sc = plan.camera.apply(made.ctx, S.track); if (sc) PV.addStop(sc); }
+    plan.decor.forEach(function (d) { if (d.apply) { var s = d.apply(made.ctx, made.el); if (s) PV.addStop(s); } });
+    plan.treatment.forEach(function (d) { if (d.apply) { var s2 = d.apply(made.ctx, made.el); if (s2) PV.addStop(s2); } });
+  }
 
   /* ---------- 全局帧循环：hold / camera / treatment 的 frame 都从这里走 ---------- */
   var _raf = 0;
@@ -12193,62 +12318,571 @@ injectPills();
   });
 })();
 
-/* PV 引擎 · 03 演出层（enter / hold / exit / camera / transition / decor / treatment）
- * ① 这一步只做「把槽挖出来」：每个层的默认件就是旧实现的实际行为，
- * 所以重构后画面不变。真正的多件抽签在 ②③ 往里填。
+/* PV 引擎 · 03 登场层 enter
+ * 只动 i.jv-t（内层）。版式写在外层 .jv-w 上的 transform 不受影响。
+ * 一律用 WAAPI（el.animate），fill:both 保证停稳在终态。
  */
 (function () {
   'use strict';
   var PV = window.PV;
 
-  /* ================= 登场 enter ================= */
-  PV.reg('enter', 'none', { nm: '无', apply: function () { } });
-
-  /* 旧实现唯一的入场：逐字淡入 + 上移一个 em。jzWin → jvRise，参数原样。 */
-  PV.reg('enter', 'rise', {
-    nm: '逐字升起', w: 1,
-    apply: function (c, els) {
-      var st = c.stagger == null ? 45 : c.stagger;
-      els.forEach(function (el, i) {
-        el.style.animation = 'jvRise .5s cubic-bezier(.22,1,.36,1) both';
-        el.style.animationDelay = (i * st) + 'ms';
+  /* 统一跑一条动画并登记取消 */
+  function ani(c, el, kf, opt) {
+    if (!el.animate) {                         // 极端降级：直接终态
+      Object.keys(kf[kf.length - 1] || {}).forEach(function (p) {
+        if (p !== 'offset') el.style[p] = kf[kf.length - 1][p];
       });
+      return;
+    }
+    var a = el.animate(kf, opt);
+    PV.addStop(function () { try { a.cancel(); } catch (e) { } });
+  }
+
+  function each(c, els, kf, opt, stagger, base) {
+    var st = c.stagger == null ? 45 : c.stagger;
+    if (stagger != null) st = stagger;
+    els.forEach(function (el, i) {
+      var o = Object.assign({ delay: (base || 0) + i * st, fill: 'both', easing: 'cubic-bezier(.22,1,.36,1)' }, opt || {});
+      ani(c, el, kf, o);
+    });
+  }
+
+  PV.reg('enter', 'none', { nm: '直出', apply: function () { } });
+
+  /* 旧实现唯一的入场：逐字淡入 + 上移一个 em（jzWin → rise，参数原样） */
+  PV.reg('enter', 'rise', {
+    nm: '升起', tags: ['calm', 'pop', 'graphic', 'editorial'], w: 1.3,
+    apply: function (c, els) {
+      each(c, els, [{ opacity: 0, transform: 'translateY(.5em)' }, { opacity: 1, transform: 'none' }], { duration: 500 });
     }
   });
 
-  /* ================= 保持 hold ================= */
-  PV.reg('hold', 'none', { nm: '静止', apply: function () { return null; } });
+  PV.reg('enter', 'fade', {
+    nm: '淡入', tags: ['calm', 'emotional'], w: 0.9,
+    apply: function (c, els) {
+      each(c, els, [{ opacity: 0 }, { opacity: 1 }], { duration: 620, easing: 'ease-out' }, Math.max(18, (c.stagger || 45) * 0.5));
+    }
+  });
 
-  /* ================= 退场 exit ================= */
-  PV.reg('exit', 'none', { nm: '直切', play: function (c, el, done) { if (done) done(); } });
+  PV.reg('enter', 'drop', {
+    nm: '落下', tags: ['pop', 'graphic'], w: 1,
+    apply: function (c, els) {
+      each(c, els, [
+        { opacity: 0, transform: 'translateY(-.7em) scale(1.12)' },
+        { opacity: 0.6, transform: 'translateY(.12em) scale(.99)', offset: 0.62 },
+        { opacity: 1, transform: 'none' }
+      ], { duration: 560, easing: 'cubic-bezier(.3,1.4,.5,1)' });
+    }
+  });
 
-  /* ================= 镜头 camera ================= */
-  PV.reg('camera', 'none', { nm: '固定', frame: function () { } });
+  PV.reg('enter', 'zoomIn', {
+    nm: '放大落定', tags: ['emotional', 'pop'], w: 0.9,
+    apply: function (c, els) {
+      each(c, els, [{ opacity: 0, transform: 'scale(1.85)' }, { opacity: 1, transform: 'scale(1)' }],
+        { duration: 480, easing: 'cubic-bezier(.16,.9,.3,1)' }, Math.max(14, (c.stagger || 45) * 0.45));
+    }
+  });
 
-  /* ================= 衔接 transition ================= */
-  /* 旧实现就是 innerHTML 直接替换：硬切 */
+  PV.reg('enter', 'wipe', {
+    nm: '擦出', tags: ['editorial', 'graphic'], w: 0.9,
+    fit: function (c) { return c.tokens.length <= 26; },
+    apply: function (c, els) {
+      each(c, els, [{ opacity: 0, clipPath: 'inset(0 100% 0 0)' }, { opacity: 1, clipPath: 'inset(0 0 0 0)' }],
+        { duration: 420, easing: 'cubic-bezier(.4,0,.2,1)' }, Math.max(22, (c.stagger || 45) * 0.6));
+    }
+  });
+
+  PV.reg('enter', 'blur', {
+    nm: '聚焦', tags: ['calm', 'emotional'], w: 0.8,
+    when: function () { return PV.fx.motion >= 0; },
+    apply: function (c, els) {
+      each(c, els, [{ opacity: 0, filter: 'blur(9px)' }, { opacity: 1, filter: 'blur(0)' }],
+        { duration: 540, easing: 'ease-out' }, Math.max(20, (c.stagger || 45) * 0.55));
+    }
+  });
+
+  /* 砸入：紧 stagger + 缩放过冲，整行像被拍到屏幕上 */
+  PV.reg('enter', 'slam', {
+    nm: '砸入', tags: ['pop', 'graphic', 'glitch'], w: 1,
+    apply: function (c, els) {
+      each(c, els, [
+        { opacity: 0, transform: 'scale(2.1) rotate(-2deg)' },
+        { opacity: 1, transform: 'scale(.97)', offset: 0.55 },
+        { opacity: 1, transform: 'none' }
+      ], { duration: 260, easing: 'cubic-bezier(.2,.9,.2,1)' }, 18);
+    }
+  });
+
+  /* 乱码定格：先滚本行自己的字 + 符号，逐字落定 */
+  var SYM = '＊＋◇○△□※';
+  PV.reg('enter', 'scramble', {
+    nm: '乱码定格', tags: ['glitch', 'graphic'], w: 0.8,
+    fit: function (c) { return c.tokens.length <= 24; },
+    apply: function (c, els) {
+      var pool = (c.text || '').replace(/\s/g, '').split('').concat(SYM.split(''));
+      if (!pool.length || !els.length) return;
+      var st = c.stagger == null ? 45 : c.stagger;
+      var t0 = performance.now(), done = [], raf = 0;
+      els.forEach(function (el, i) { el._final = el.textContent; done[i] = false; });
+      /* 一条 rAF 看完一整行，切行时一次取消——旧写法每字一条链，取消只记得住最后一个 */
+      var tick = function () {
+        var d = performance.now() - t0, alive = false;
+        for (var i = 0; i < els.length; i++) {
+          if (done[i]) continue;
+          alive = true;
+          if (d >= 90 + i * st) { els[i].textContent = els[i]._final; done[i] = true; continue; }
+          if (Math.floor(d / 46) !== Math.floor((d - 16) / 46)) els[i].textContent = pool[Math.floor(Math.random() * pool.length)];
+        }
+        if (alive) raf = requestAnimationFrame(tick);
+      };
+      tick();
+      PV.addStop(function () { if (raf) cancelAnimationFrame(raf); });
+    }
+  });
+})();
+
+/* PV 引擎 · 04 保持层 hold
+ * 行说完之前画面得活着。写在外层 .jv-w 或整行容器上，避开登场层的 i.jv-t。
+ * frame(c) 由全局一条 rAF 驱动，c.lt = 本 cut 已过的秒数。
+ */
+(function () {
+  'use strict';
+  var PV = window.PV;
+
+  /* 量化随机时钟：24Hz 以内的整数步，抖动才不会糊成噪声 */
+  function stepClock(hz) {
+    return Math.floor(performance.now() / (1000 / (hz || 12)));
+  }
+  function sr(n) { var x = Math.sin(n * 12.9898) * 43758.5453; return x - Math.floor(x); }
+
+  PV.reg('hold', 'none', { nm: '静止', w: 0.6 });
+
+  PV.reg('hold', 'breathe', {
+    nm: '呼吸', tags: ['calm', 'emotional'], w: 1,
+    frame: function (c) {
+      var k = 1 + Math.sin(c.lt * 1.5) * (0.004 + 0.011 * PV.fx.motion);
+      c.el.style.transform = 'scale(' + k.toFixed(4) + ')';
+    }
+  });
+
+  PV.reg('hold', 'sway', {
+    nm: '轻摆', tags: ['pop', 'calm', 'emotional'], w: 1,
+    when: function (c) { return PV.fx.motion > 0.18; },
+    apply: function (c) {
+      c._w = Array.prototype.slice.call(c.el.querySelectorAll('.jv-w'));
+    },
+    frame: function (c) {
+      var ws = c._w || (c._w = Array.prototype.slice.call(c.el.querySelectorAll('.jv-w')));
+      var amp = 1.6 + 5.5 * PV.fx.motion;
+      for (var i = 0; i < ws.length; i++) {
+        var p = Math.sin(c.lt * 2.1 + i * 0.55);
+        ws[i].style.translate = (p * amp * 0.35).toFixed(2) + 'px ' + (p * amp).toFixed(2) + 'px';
+      }
+    }
+  });
+
+  PV.reg('hold', 'wave', {
+    nm: '起伏', tags: ['pop', 'graphic'], w: 0.9,
+    when: function (c) { return PV.fx.motion > 0.45; },
+    apply: function (c) { c._w = Array.prototype.slice.call(c.el.querySelectorAll('.jv-w')); },
+    frame: function (c) {
+      var ws = c._w || [];
+      var amp = 3 + 9 * PV.fx.motion;
+      for (var i = 0; i < ws.length; i++) {
+        ws[i].style.translate = '0 ' + (Math.sin(c.lt * 3.1 + i * 0.42) * amp).toFixed(2) + 'px';
+      }
+    }
+  });
+
+  PV.reg('hold', 'jitter', {
+    nm: '抖动', tags: ['glitch', 'horror'], w: 0.9,
+    when: function () { return PV.fx.glitch > 0.18; },
+    apply: function (c) { c._w = Array.prototype.slice.call(c.el.querySelectorAll('.jv-w')); },
+    frame: function (c) {
+      var g = PV.fx.glitch, s = stepClock(10 + 14 * g);
+      var amp = g * (2 + 5 * PV.fx.motion);
+      var ws = c._w || [];
+      for (var i = 0; i < ws.length; i++) {
+        var dx = (sr(s * 7 + i * 31) - 0.5) * amp * 2;
+        var dy = (sr(s * 11 + i * 17) - 0.5) * amp;
+        ws[i].style.translate = dx.toFixed(2) + 'px ' + dy.toFixed(2) + 'px';
+      }
+    }
+  });
+
+  PV.reg('hold', 'drift', {
+    nm: '漂移', tags: ['graphic', 'editorial', 'calm'], w: 0.8,
+    apply: function (c) { c._x0 = c.el.getBoundingClientRect().left; },
+    frame: function (c) {
+      var d = 1.4 + 3.6 * PV.fx.motion;
+      c.el.style.translate = (Math.sin(c.lt * 0.34) * d).toFixed(2) + 'px ' + (Math.cos(c.lt * 0.27) * d * 0.6).toFixed(2) + 'px';
+    }
+  });
+
+  PV.reg('hold', 'pulse', {
+    nm: '拍脉', tags: ['pop', 'glitch', 'graphic'], w: 1,
+    when: function () { return !!(PV.audio.beat || PV.audio.energy != null); },
+    frame: function (c) {
+      var b = PV.audio.beat, e = PV.audio.energy;
+      var k = 0;
+      if (b && b.len) k = Math.max(0, 1 - b.since / (b.len * 0.55));
+      else if (e != null) k = e;
+      var s = 1 + k * (0.012 + 0.05 * PV.fx.motion);
+      c.el.style.transform = 'scale(' + s.toFixed(4) + ')';
+    }
+  });
+})();
+
+/* PV 引擎 · 05 退场层 exit
+ * play(ctx, el, drop)：把上一行送走，动画收尾必须调 drop()（引擎负责摘掉元素）。
+ * 旧实现没有这一层——innerHTML 直接覆盖，所以「退场」一直是零。
+ */
+(function () {
+  'use strict';
+  var PV = window.PV;
+
+  function tk(el) { return Array.prototype.slice.call(el.querySelectorAll('.jv-t')); }
+  function after(ms, fn) { var t = setTimeout(fn, ms); return function () { clearTimeout(t); }; }
+
+  PV.reg('exit', 'none', {
+    nm: '直切', w: 1.1,
+    play: function (c, el, drop) { drop(); }
+  });
+
+  PV.reg('exit', 'fade', {
+    nm: '淡出', tags: ['calm', 'emotional', 'editorial'], w: 1,
+    play: function (c, el, drop) {
+      var d = 260 + 220 * PV.fx.motion;
+      el.classList.add('jv-out');
+      if (el.animate) el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: d, fill: 'both', easing: 'ease-in' });
+      PV.addStop(after(d, drop));
+    }
+  });
+
+  /* 逐字散开：每字一个随机方向，配微旋转 */
+  PV.reg('exit', 'scatter', {
+    nm: '吹散', tags: ['emotional', 'pop', 'graphic'], w: 1,
+    when: function (c) { return c.tokens.length <= 34; },
+    play: function (c, el, drop) {
+      var els = tk(el), dur = 380 + 200 * PV.fx.motion;
+      els.forEach(function (e, i) {
+        var a = Math.random() * Math.PI * 2, r = 20 + Math.random() * 70;
+        if (e.animate) e.animate([
+          { opacity: 1, transform: 'none' },
+          { opacity: 0, transform: 'translate(' + (Math.cos(a) * r).toFixed(1) + 'px,' + (Math.sin(a) * r).toFixed(1) + 'px) rotate(' + (a * 30).toFixed(0) + 'deg) scale(.8)' }
+        ], { duration: dur, delay: i * 8, fill: 'both', easing: 'cubic-bezier(.4,0,.6,1)' });
+      });
+      PV.addStop(after(dur + els.length * 8 + 30, drop));
+    }
+  });
+
+  /* 爆散：先顿一下再炸开，落在拍点上更狠 */
+  PV.reg('exit', 'burst', {
+    nm: '爆散', tags: ['pop', 'glitch', 'graphic'], w: 0.9,
+    when: function () { return PV.fx.motion > 0.35; },
+    play: function (c, el, drop) {
+      var els = tk(el);
+      if (el.animate) el.animate([{ opacity: 1, transform: 'scale(1)' }, { opacity: 1, transform: 'scale(1.06)', offset: 0.18 }, { opacity: 0, transform: 'scale(1.16)' }],
+        { duration: 300, fill: 'both', easing: 'steps(3,end)' });
+      els.forEach(function (e, i) {
+        var a = Math.random() * Math.PI * 2, r = 60 + Math.random() * 180;
+        if (e.animate) e.animate([
+          { opacity: 1, transform: 'none' },
+          { opacity: 1, transform: 'translate(' + (Math.cos(a) * r * 0.3).toFixed(1) + 'px,' + (Math.sin(a) * r * 0.3).toFixed(1) + 'px)', offset: 0.3 },
+          { opacity: 0, transform: 'translate(' + (Math.cos(a) * r).toFixed(1) + 'px,' + (Math.sin(a) * r).toFixed(1) + 'px) scale(.4)' }
+        ], { duration: 420, delay: i * 6, fill: 'both', easing: 'cubic-bezier(.1,.7,.3,1)' });
+      });
+      PV.addStop(after(460, drop));
+    }
+  });
+
+  /* 切片错位：整行切成几横条各自滑走 */
+  PV.reg('exit', 'slice', {
+    nm: '切片', tags: ['glitch', 'graphic'], w: 0.8,
+    when: function () { return PV.fx.glitch > 0.3; },
+    play: function (c, el, drop) {
+      var n = 4, h = 100 / n;
+      for (var i = 0; i < n; i++) {
+        var b = document.createElement('div');
+        b.className = 'jv-slice';
+        b.style.top = (i * h) + '%';
+        b.style.height = h + '%';
+        b.style.clipPath = 'inset(' + (i * h) + '% 0 ' + (100 - (i + 1) * h) + '% 0)';
+        b.textContent = el.textContent;
+        el.appendChild(b);
+        if (b.animate) b.animate([{ transform: 'none', opacity: 1 }, { transform: 'translateX(' + (i % 2 ? 40 : -40) + '%)', opacity: 0 }],
+          { duration: 280, fill: 'both', easing: 'cubic-bezier(.5,0,.9,.4)' });
+      }
+      Array.prototype.forEach.call(tk(el), function (e) { e.style.opacity = '0'; });
+      PV.addStop(after(300, drop));
+    }
+  });
+
+  /* 故障闪灭：抖三下再断 */
+  PV.reg('exit', 'glitchOut', {
+    nm: '闪灭', tags: ['glitch', 'horror'], w: 0.8,
+    when: function () { return PV.fx.glitch > 0.45; },
+    play: function (c, el, drop) {
+      if (el.animate) el.animate([
+        { opacity: 1, transform: 'none' },
+        { opacity: 1, transform: 'translate(-3%,1%) skewX(6deg)', offset: 0.2 },
+        { opacity: .25, transform: 'translate(4%,-2%) skewX(-8deg)', offset: 0.4 },
+        { opacity: 1, transform: 'none', offset: 0.6 },
+        { opacity: 0, transform: 'translate(-6%,0) scaleY(.4)' }
+      ], { duration: 320, fill: 'both', easing: 'steps(6,end)' });
+      PV.addStop(after(330, drop));
+    }
+  });
+
+  /* 掉落：逐字加速坠出画面 */
+  PV.reg('exit', 'smash', {
+    nm: '坠出', tags: ['pop', 'graphic', 'emotional'], w: 0.9,
+    when: function (c) { return c.tokens.length <= 30; },
+    play: function (c, el, drop) {
+      var els = tk(el);
+      els.forEach(function (e, i) {
+        if (e.animate) e.animate([
+          { opacity: 1, transform: 'none' },
+          { opacity: 1, transform: 'translateY(-.18em)', offset: 0.22 },
+          { opacity: 0, transform: 'translateY(1.6em) rotate(' + (Math.random() * 24 - 12).toFixed(0) + 'deg)' }
+        ], { duration: 420, delay: i * 26, fill: 'both', easing: 'cubic-bezier(.6,0,.9,.4)' });
+      });
+      PV.addStop(after(430 + els.length * 26, drop));
+    }
+  });
+})();
+
+/* PV 引擎 · 06 镜头层 camera
+ * 动的是 .jv-track（整屏），所以镜头与版式互不抢占。
+ * 旧实现根本没有镜头层，而且 fix-jizura-layout 用 transform:none !important
+ * 把 track 焊死了——那条规则已在迁移时删掉。
+ */
+(function () {
+  'use strict';
+  var PV = window.PV;
+
+  function sr(n) { var x = Math.sin(n * 78.233) * 43758.5453; return x - Math.floor(x); }
+
+  /* 本 cut 走到哪了：有行时长就按时长，没歌词时序时退化成 4 秒 */
+  function prog(c) {
+    var l = c.line || {};
+    var d = (l.end && l.time && l.end > l.time) ? Math.max(0.6, (l.end - l.time) / 1000) : 4;
+    return Math.min(1, Math.max(0, c.lt / d));
+  }
+  PV.prog = prog;
+
+  PV.reg('camera', 'none', { nm: '固定', w: 0.8 });
+
+  /* 缓推：整行时长里慢慢压近一点 */
+  PV.reg('camera', 'pushIn', {
+    nm: '缓推', tags: ['calm', 'emotional', 'editorial'], w: 1,
+    apply: function (c) {
+      c._cam = { dir: 1, k: 0.022 + 0.055 * PV.fx.motion, rot: (PV.rnd(2) - 1) * 0.5 };
+    },
+    frame: function (c) {
+      var m = c._cam || (c._cam = { k: 0.04, rot: 0 });
+      var p = prog(c);
+      c.track.style.transform = 'scale(' + (1 + m.k * p).toFixed(4) + ') rotate(' + (m.rot * p).toFixed(2) + 'deg)';
+    }
+  });
+
+  PV.reg('camera', 'pullOut', {
+    nm: '缓拉', tags: ['calm', 'emotional'], w: 0.9,
+    apply: function (c) { c._cam = { k: 0.03 + 0.05 * PV.fx.motion }; },
+    frame: function (c) {
+      var m = c._cam || { k: 0.04 };
+      c.track.style.transform = 'scale(' + (1 + m.k * (1 - prog(c))).toFixed(4) + ')';
+    }
+  });
+
+  /* 横移：往一个方向慢慢飘，幅度小 */
+  PV.reg('camera', 'pan', {
+    nm: '横移', tags: ['graphic', 'editorial', 'pop'], w: 0.9,
+    apply: function (c) { c._cam = { x: (PV.rnd(2) < 1 ? -1 : 1) * (0.8 + 2.2 * PV.fx.motion), rot: (PV.rnd(2) - 1) * 0.9 }; },
+    frame: function (c) {
+      var m = c._cam || { x: 1, rot: 0 };
+      var p = prog(c);
+      c.track.style.transform = 'translateX(' + (m.x * p * 10).toFixed(2) + 'px) rotate(' + (m.rot * p).toFixed(2) + 'deg)';
+    }
+  });
+
+  /* 荷兰角：歪着拍，配轻微呼吸 */
+  PV.reg('camera', 'dutch', {
+    nm: '荷兰角', tags: ['graphic', 'pop', 'emotional'], w: 0.8,
+    apply: function (c) { c._cam = { a: (PV.rnd(2) < 1 ? -1 : 1) * (1.5 + 4.5 * PV.fx.motion) }; },
+    frame: function (c) {
+      var m = c._cam || { a: 3 };
+      c.track.style.transform = 'rotate(' + m.a.toFixed(2) + 'deg) scale(1.035)';
+    }
+  });
+
+  /* 手持：量化随机抖，跟 motion 走 */
+  PV.reg('camera', 'handheld', {
+    nm: '手持', tags: ['pop', 'emotional', 'glitch', 'horror'], w: 0.9,
+    when: function () { return PV.fx.motion > 0.4; },
+    frame: function (c) {
+      var s = Math.floor(performance.now() / 90);
+      var a = PV.fx.motion * 3.2;
+      var dx = (sr(s) - 0.5) * a, dy = (sr(s + 91) - 0.5) * a, dr = (sr(s + 17) - 0.5) * a * 0.35;
+      c.track.style.transform = 'translate(' + dx.toFixed(2) + 'px,' + dy.toFixed(2) + 'px) rotate(' + dr.toFixed(2) + 'deg)';
+    }
+  });
+
+  /* 拍震：有音频数据才开——③ 接 analyser 之前不会中签 */
+  PV.reg('camera', 'beatZoom', {
+    nm: '拍震', tags: ['pop', 'glitch', 'graphic'], w: 1,
+    when: function () { return !!(PV.audio.beat || PV.audio.energy != null); },
+    frame: function (c) {
+      var b = PV.audio.beat, e = PV.audio.energy, k = 0;
+      if (b && b.len) k = Math.max(0, 1 - b.since / (b.len * 0.5));
+      else if (e != null) k = e;
+      var s = 1 + k * (0.015 + 0.06 * PV.fx.motion);
+      c.track.style.transform = 'scale(' + s.toFixed(4) + ')';
+    }
+  });
+
+  /* 升降：一边推近一边上移 */
+  PV.reg('camera', 'crane', {
+    nm: '升降', tags: ['editorial', 'calm', 'emotional'], w: 0.7,
+    apply: function (c) { c._cam = { y: PV.rnd(2) < 1 ? -1 : 1 }; },
+    frame: function (c) {
+      var m = c._cam || { y: -1 };
+      var p = prog(c);
+      c.track.style.transform = 'translateY(' + (m.y * p * 16).toFixed(2) + 'px) scale(' + (1 + 0.03 * p).toFixed(4) + ')';
+    }
+  });
+})();
+
+/* PV 引擎 · 07 衔接层 transition
+ * play(ctx, prev, next, swap)：决定新行什么时候上、怎么上。
+ * prev 怎么送走属于退场层，不在这里抢；只有 overlap 类需要 transition 自己按住 prev。
+ * 旧实现等于这里的 cut——innerHTML 直接覆盖。
+ */
+(function () {
+  'use strict';
+  var PV = window.PV;
+
+  function an(el, kf, opt) {
+    if (!el || !el.animate) return null;
+    var a = el.animate(kf, opt);
+    PV.addStop(function () { try { a.cancel(); } catch (e) { } });
+    return a;
+  }
+
   PV.reg('transition', 'cut', {
-    nm: '硬切',
+    nm: '硬切', w: 1,
     play: function (c, prev, next, swap) { swap(); }
   });
-  /* 槽位示范件（默认不启用，② 里给骰子加可选） */
+
   PV.reg('transition', 'fade', {
-    nm: '交叉淡出', sp: 1,
+    nm: '叠化', tags: ['calm', 'emotional', 'editorial'], w: 1,
     play: function (c, prev, next, swap) {
-      if (prev) { prev.classList.remove('show'); prev.classList.add('jv-out'); }
-      if (!prev) { swap(); return; }
-      var t = setTimeout(swap, 420);
-      PV.addStop(function () { clearTimeout(t); });
+      swap();
+      an(next, [{ opacity: 0 }, { opacity: 1 }], { duration: 300 + 220 * PV.fx.motion, fill: 'both', easing: 'ease-out' });
     }
   });
 
-  /* ================= 装饰 decor ================= */
-  PV.reg('decor', 'none', { nm: '无', apply: function () { return null; } });
+  PV.reg('transition', 'wipe', {
+    nm: '擦入', tags: ['graphic', 'pop', 'editorial'], w: 0.9,
+    play: function (c, prev, next, swap) {
+      var dir = PV.rnd(4);
+      var from = ['inset(0 100% 0 0)', 'inset(0 0 0 100%)', 'inset(100% 0 0 0)', 'inset(0 0 100% 0)'][dir];
+      swap();
+      an(next, [{ clipPath: from, opacity: 1 }, { clipPath: 'inset(0 0 0 0)', opacity: 1 }],
+        { duration: 320 + 180 * PV.fx.motion, fill: 'both', easing: 'cubic-bezier(.5,0,.2,1)' });
+    }
+  });
+
+  PV.reg('transition', 'push', {
+    nm: '推入', tags: ['pop', 'graphic'], w: 0.9,
+    play: function (c, prev, next, swap) {
+      var horiz = PV.rnd(2) < 1;
+      var dx = horiz ? (PV.rnd(2) < 1 ? 46 : -46) : 0;
+      var dy = horiz ? 0 : (PV.rnd(2) < 1 ? 42 : -42);
+      swap();
+      an(next, [{ transform: 'translate(' + dx + 'vw,' + dy + 'vh)' }, { transform: 'none' }],
+        { duration: 360 + 160 * PV.fx.motion, fill: 'both', easing: 'cubic-bezier(.2,.9,.25,1)' });
+      if (prev) an(prev, [{ transform: 'none', opacity: 1 }, { transform: 'translate(' + (-dx * 0.55) + 'vw,' + (-dy * 0.55) + 'vh)', opacity: .25 }],
+        { duration: 360, fill: 'both', easing: 'ease-out' });
+    }
+  });
+
+  PV.reg('transition', 'zoomThrough', {
+    nm: '穿越', tags: ['pop', 'emotional', 'glitch'], w: 0.85,
+    when: function () { return PV.fx.motion > 0.25; },
+    play: function (c, prev, next, swap) {
+      swap();
+      an(next, [{ transform: 'scale(1.34)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }],
+        { duration: 420, fill: 'both', easing: 'cubic-bezier(.16,.86,.32,1)' });
+      if (prev) an(prev, [{ transform: 'none', opacity: 1 }, { transform: 'scale(1.3)', opacity: 0 }],
+        { duration: 300, fill: 'both', easing: 'ease-in' });
+    }
+  });
+
+  PV.reg('transition', 'iris', {
+    nm: '光圈', tags: ['calm', 'graphic', 'editorial'], w: 0.7,
+    play: function (c, prev, next, swap) {
+      swap();
+      an(next, [{ clipPath: 'circle(3% at 50% 50%)', opacity: 1 }, { clipPath: 'circle(78% at 50% 50%)', opacity: 1 }],
+        { duration: 480, fill: 'both', easing: 'cubic-bezier(.3,.7,.3,1)' });
+    }
+  });
+
+  PV.reg('transition', 'whip', {
+    nm: '甩镜', tags: ['pop', 'glitch', 'graphic'], w: 0.8,
+    when: function () { return PV.fx.motion > 0.5; },
+    play: function (c, prev, next, swap) {
+      var sgn = PV.rnd(2) < 1 ? 1 : -1;
+      swap();
+      an(next, [
+        { transform: 'translateX(' + (sgn * 22) + 'vw) skewX(' + (sgn * 9) + 'deg)', filter: 'blur(7px)', opacity: .2 },
+        { transform: 'translateX(' + (sgn * 3) + 'vw) skewX(' + (sgn * 2) + 'deg)', filter: 'blur(2px)', opacity: 1, offset: .6 },
+        { transform: 'none', filter: 'blur(0)', opacity: 1 }
+      ], { duration: 340, fill: 'both', easing: 'cubic-bezier(.2,.8,.3,1)' });
+    }
+  });
+
+  PV.reg('transition', 'flash', {
+    nm: '白闪', tags: ['glitch', 'pop', 'graphic', 'horror'], w: 0.9,
+    when: function () { return PV.fx.glitch > 0.12 || PV.fx.motion > 0.55; },
+    play: function (c, prev, next, swap) {
+      swap();
+      var layer = PV.layer();
+      if (!layer) return;
+      var f = document.createElement('div');
+      f.className = 'jv-flash' + (PV.fx.glitch > 0.5 ? ' hard' : '');
+      layer.appendChild(f);
+      var t = setTimeout(function () { if (f.parentNode) f.parentNode.removeChild(f); }, 150);
+      PV.addStop(function () { clearTimeout(t); if (f.parentNode) f.parentNode.removeChild(f); });
+      if (f.animate) f.animate([{ opacity: .85 }, { opacity: 0 }], { duration: 150, fill: 'both', easing: 'steps(2,end)' });
+    }
+  });
+
+  PV.reg('transition', 'blur', {
+    nm: '虚接', tags: ['calm', 'emotional'], w: 0.8,
+    play: function (c, prev, next, swap) {
+      swap();
+      an(next, [{ filter: 'blur(12px)', opacity: 0 }, { filter: 'blur(0)', opacity: 1 }],
+        { duration: 460, fill: 'both', easing: 'ease-out' });
+    }
+  });
+})();
+
+/* PV 引擎 · 08 装饰与处理层 decor / treatment
+ * decor：可叠加 0..n 件的附加图形，apply(ctx, lineEl) 返回 cleanup
+ * treatment：按帧处理（扫光等），frame(ctx) 由全局 rAF 驱动
+ */
+(function () {
+  'use strict';
+  var PV = window.PV;
+
+  /* ================= decor ================= */
+  PV.reg('decor', 'none', { nm: '无' });
 
   /* 全局粒子层：从 inject-ambient 搬来，参数原样（14 粒，30% 为方块描边） */
   PV.reg('decor', 'particles', {
     nm: '粒子', tags: ['calm', 'emotional', 'pop'], w: 1,
-    when: function (c) { return PV.fx.decor > 0.2; },
+    when: function () { return PV.fx.decor > 0.2; },
     apply: function (c) {
       var layer = PV.layer();
       if (!layer) return null;
@@ -12275,19 +12909,60 @@ injectPills();
     }
   });
 
-  /* ================= 处理 treatment =================
-   * 逐字扫光（MonetGlow 包络：smoothstep 升起→驻留→衰减）。
-   * 时序优先用 TTML 的 words，没有就按行的起止均分。
-   * 它是 frame 型部件：全局一条 rAF 驱动，不随 cut 重建。 */
+  /* 边角 HUD：坐标环 + 行号，够安静，给画面一个"被记录"的边 */
+  PV.reg('decor', 'hud', {
+    nm: 'HUD', tags: ['graphic', 'editorial', 'glitch'], w: 0.8,
+    when: function () { return PV.fx.decor > 0.5; },
+    apply: function (c) {
+      var line = c.el;
+      if (!line || line.querySelector('.jv-hud')) return null;
+      var d = document.createElement('div');
+      d.className = 'jv-hud';
+      d.innerHTML = '<span class="no">No.' + String((c.idx || 0) + 1).padStart(2, '0') + '</span>' +
+        '<span class="tc">TC ' + tc(c.line && c.line.time) + '</span>';
+      line.appendChild(d);
+      return null;
+    }
+  });
+
+  function tc(ms) {
+    ms = ms || 0;
+    var m = Math.floor(ms / 60000), s = Math.floor(ms / 1000) % 60, f = Math.floor((ms % 1000) / 40);
+    return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0') + '.' + String(f).padStart(2, '0');
+  }
+
+  /* 细引 lines：左右两条短线把整行夹住 */
+  PV.reg('decor', 'rule', {
+    nm: '引线', tags: ['editorial', 'calm', 'graphic'], w: 0.7,
+    when: function () { return PV.fx.decor > 0.5 && c_short(); },
+    apply: function (c) {
+      if (!c.el || c.el.querySelector('.jv-rules')) return null;
+      var d = document.createElement('div');
+      d.className = 'jv-rules';
+      d.innerHTML = '<i></i><i></i>';
+      c.el.appendChild(d);
+      return null;
+    }
+  });
+  function c_short() { return !PV.plan() || (PV.plan().ctx.tokens || []).length <= 18; }
+
+  /* ================= treatment ================= */
+  /* 逐字扫光（folia 的 MonetGlow 包络：smoothstep 升起→驻留→衰减）。
+   * 时序优先 TTML 的 words，没有就按行起止均分。frame 型件：全局一条 rAF。 */
   PV.reg('treatment', 'sweep', {
     nm: '逐字扫光', w: 1,
     frame: function (c) {
       var els = c.tokensEls;
       if (!els || !els.length) return;
-      var audio = document.querySelector('audio');
-      if (!audio) return;
-      var line = c.line || {};
-      var toks = c.tokens || [];
+      var line = c.line || {}, toks = c.tokens || [];
+      /* 时间源：有外部推值（PV.audio.time，预览台与③的音频链都用它）就用它，
+       * 否则回落到 DOM 里的 <audio>。扫光不再自己读时钟，才能被驱动。 */
+      var ms = PV.audio.time;
+      if (ms == null) {
+        var audio = document.querySelector('audio');
+        if (!audio) return;
+        ms = audio.currentTime * 1000;
+      }
       var offs = [], acc = 0;
       toks.forEach(function (tk) { offs.push(acc); acc += tk === ' ' ? 1 : Array.from(tk).length; });
       var total = Math.max(1, acc);
@@ -12299,9 +12974,10 @@ injectPills();
         t1 = line.words[line.words.length - 1].time + line.words[line.words.length - 1].dur;
       }
       var span = Math.max(1, t1 - t0);
-      var now = audio.currentTime * 1000;
+      var now = ms;
       for (var i = 0; i < els.length; i++) {
-        var w0 = t0 + span * (offs[i] / total), w1 = t0 + span * ((offs[i] + (toks[i] === ' ' ? 1 : Array.from(toks[i]).length)) / total);
+        var len = toks[i] === ' ' ? 1 : Array.from(toks[i]).length;
+        var w0 = t0 + span * (offs[i] / total), w1 = t0 + span * ((offs[i] + len) / total);
         var el = els[i];
         if (now < w0) { el.style.color = 'color-mix(in srgb,var(--jv-fg) 38%,transparent)'; el.style.textShadow = 'none'; }
         else if (now > w1) { el.style.color = ''; el.style.textShadow = 'none'; }
@@ -12312,6 +12988,50 @@ injectPills();
           el.style.textShadow = '0 0 ' + (6 + 16 * glow).toFixed(1) + 'px var(--jv-acc), 0 0 ' + (2 + 5 * glow).toFixed(1) + 'px var(--jv-fg)';
         }
       }
+    }
+  });
+
+  /* 色偏残影：整行三趟（青/红错位复制），chroma 滑块推它 */
+  PV.reg('treatment', 'chroma', {
+    nm: '色偏', tags: ['glitch', 'pop', 'graphic'], w: 0.9,
+    when: function () { return PV.fx.chroma > 0.25; },
+    apply: function (c) {
+      var src = c.el;
+      if (!src) return null;
+      var d = (1 + 3.4 * PV.fx.chroma).toFixed(2);
+      var g1 = clone(src, 'jv-ghostA', d + 'px ' + (-d) + 'px', 'color-mix(in srgb,var(--jv-acc) 70%,#0ff)');
+      var g2 = clone(src, 'jv-ghostB', (-d) + 'px ' + d + 'px', 'color-mix(in srgb,var(--jv-acc) 55%,#f08)');
+      function clone(el, cls, tr, col) {
+        var n = el.cloneNode(true);
+        n.className = el.className + ' ' + cls;
+        n.setAttribute('aria-hidden', 'true');
+        Array.prototype.forEach.call(n.querySelectorAll('.jv-t'), function (t) { t.style.color = col; t.style.textShadow = 'none'; });
+        n.style.transform = 'translate(' + tr + ')';
+        n.style.opacity = String(0.28 + 0.3 * PV.fx.chroma);
+        el.parentNode.insertBefore(n, el);
+        return n;
+      }
+      return function () {
+        [g1, g2].forEach(function (n) { if (n && n.parentNode) n.parentNode.removeChild(n); });
+      };
+    }
+  });
+
+  /* 扫描线 + 纸纹：texture 滑块推它，整层一片，不随 cut 重建 */
+  PV.reg('treatment', 'grain', {
+    nm: '纹理', tags: ['editorial', 'graphic', 'glitch', 'calm'], w: 0.7,
+    when: function () { return PV.fx.texture > 0.2; },
+    apply: function () {
+      var layer = PV.layer();
+      if (!layer) return null;
+      var g = layer.querySelector('.jv-texture');
+      if (!g) {
+        g = document.createElement('div');
+        g.className = 'jv-texture';
+        layer.appendChild(g);
+      }
+      g.style.opacity = (0.08 + 0.4 * PV.fx.texture).toFixed(3);
+      return null;
     }
   });
 })();
@@ -12438,14 +13158,17 @@ injectPills();
     if (!PV.active()) return;
     PV.show(idx);
   };
-  /* ---------- おまかせ：换 seed、换风格，重掷当前行 ---------- */
+  /* ---------- おまかせ：换 seed、换风格、换气氛，重掷当前行 ---------- */
   PV.omakase = function () {
     PV.seed(Math.floor(Math.random() * 1e9));
     PV.rollStyle();
+    var m = PV.pick(PV.parts('mood'));
+    PV.setMood(m ? m.key : null);
     PV.setLastLayout('');
     var l = PV.lyrics(), i = PV.curIdx();
     if (l.length && i >= 0 && i < l.length) PV.show(i, { force: true });
     else if (l.length) PV.show(PV.idxFromTime(), { force: true });
+    PV.dispatch('pv:omakase', { mood: PV.mood, style: PV.style() ? PV.style().id : null });
   };
 
   /* 只重掷版式（保留风格与歌词时序）——② 的「部分重掷」入口 */
@@ -12499,7 +13222,7 @@ injectPills();
   requestAnimationFrame(function () { try { PV.boot(); } catch (e) { } });
 
   /* 控制台与自检 */
-  PV.version = 'pv-registry/0.1';
+  PV.version = 'pv-registry/0.2';
   PV.selftest = function () {
     var out = { version: PV.version, groups: PV.stats(), mounted: !!PV.layer() };
     out.demo = [];

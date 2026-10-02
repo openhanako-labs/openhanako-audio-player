@@ -1,0 +1,53 @@
+/* PV 引擎 · ② 新增部件用的样式
+ * 切片退场、白闪、HUD、引线、纹理层。全部 pointer-events:none，不吃交互。
+ */
+
+/* --- exit: slice 切片错位 --- */
+.jv-slice {
+  position: absolute; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden; pointer-events: none;
+  writing-mode: horizontal-tb;     /* 别继承竖写版式的书写方向 */
+}
+
+/* --- transition: flash 白闪 --- */
+.jv-flash {
+  position: absolute; inset: 0; z-index: 40; pointer-events: none;
+  background: var(--jv-fg); opacity: .85; mix-blend-mode: screen;
+}
+.jv-flash.hard { background: var(--jv-acc); mix-blend-mode: lighten; }
+
+/* --- decor: hud 边角 --- */
+.jv-hud {
+  position: absolute; right: 5%; bottom: 8%; z-index: 3;
+  display: flex; flex-direction: column; gap: 3px; align-items: flex-end;
+  font-family: monospace; font-size: 9px; letter-spacing: .18em;
+  color: var(--jv-fg); opacity: .42; pointer-events: none;
+  writing-mode: horizontal-tb;     /* 竖写版式里不加这条，HUD 会跟着竖排 */
+}
+.jv-hud .no { color: var(--jv-acc); opacity: .9; }
+
+/* --- decor: rule 左右引线 --- */
+.jv-rules { position: absolute; inset: 0; pointer-events: none; }
+.jv-rules i {
+  position: absolute; top: 50%; width: 8%; height: 1px; background: var(--jv-acc); opacity: .55;
+}
+.jv-rules i:first-child { left: 4%; }
+.jv-rules i:last-child { right: 4%; }
+
+/* --- treatment: chroma 色偏残影 --- */
+.jv-ghostA, .jv-ghostB { pointer-events: none; z-index: 1; }
+
+/* --- treatment: grain 纹理（扫描线 + 纸纹 + 边角暗角） --- */
+.jv-texture {
+  position: absolute; inset: 0; z-index: 5; pointer-events: none; opacity: .2;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, .06) 0 1px, transparent 1px 3px),
+    radial-gradient(120% 90% at 50% 50%, transparent 52%, rgba(0, 0, 0, .5) 100%);
+  mix-blend-mode: overlay;
+}
+
+/* 层内元素给镜头留出变形空间：不要让行自己占满再叠 transform */
+.jv-line { transform-origin: 50% 50%; }
+.jv-w { transform-origin: 50% 50%; }
+.jv-t { transform-origin: 50% 50%; }

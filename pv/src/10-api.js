@@ -51,14 +51,17 @@
     if (!PV.active()) return;
     PV.show(idx);
   };
-  /* ---------- おまかせ：换 seed、换风格，重掷当前行 ---------- */
+  /* ---------- おまかせ：换 seed、换风格、换气氛，重掷当前行 ---------- */
   PV.omakase = function () {
     PV.seed(Math.floor(Math.random() * 1e9));
     PV.rollStyle();
+    var m = PV.pick(PV.parts('mood'));
+    PV.setMood(m ? m.key : null);
     PV.setLastLayout('');
     var l = PV.lyrics(), i = PV.curIdx();
     if (l.length && i >= 0 && i < l.length) PV.show(i, { force: true });
     else if (l.length) PV.show(PV.idxFromTime(), { force: true });
+    PV.dispatch('pv:omakase', { mood: PV.mood, style: PV.style() ? PV.style().id : null });
   };
 
   /* 只重掷版式（保留风格与歌词时序）——② 的「部分重掷」入口 */
@@ -112,7 +115,7 @@
   requestAnimationFrame(function () { try { PV.boot(); } catch (e) { } });
 
   /* 控制台与自检 */
-  PV.version = 'pv-registry/0.1';
+  PV.version = 'pv-registry/0.2';
   PV.selftest = function () {
     var out = { version: PV.version, groups: PV.stats(), mounted: !!PV.layer() };
     out.demo = [];

@@ -9,7 +9,7 @@
   'use strict';
   var PV = window.PV || (window.PV = {});
 
-  var GROUPS = ['style', 'layout', 'enter', 'hold', 'exit', 'decor', 'treatment', 'camera', 'transition'];
+  var GROUPS = ['mood', 'style', 'layout', 'enter', 'hold', 'exit', 'decor', 'treatment', 'camera', 'transition'];
   var reg = {}, order = {};
   GROUPS.forEach(function (g) { reg[g] = {}; order[g] = []; });
 
@@ -61,8 +61,33 @@
   };
   PV.glyph = function (t) { return t === ' ' ? '\u00A0' : t; };
 
-  /* ---------- 演出强度（③ 会由音频驱动覆写） ---------- */
-  PV.fx = { motion: 1, glitch: 0, chroma: 0, decor: 1, density: 1, texture: 0, bgSwitch: 0 };
+  /* ---------- 演出强度 ---------- */
+  PV.fx = { motion: 0.6, glitch: 0.2, chroma: 0.2, decor: 1, density: 0.7, texture: 0.2, bgSwitch: 0 };
+
+  /* ---------- 气氛：决不是换皮，是换抽签分布 + 换滑块 ---------- */
+  PV.mood = null;
+  [['glitch', '故障', { motion: 0.9, glitch: 0.9, chroma: 0.8, texture: 0.7, density: 0.8 }],
+   ['calm', '静', { motion: 0.25, glitch: 0, chroma: 0.1, texture: 0.3, density: 0.4 }],
+   ['pop', '流行', { motion: 0.85, glitch: 0.15, chroma: 0.25, texture: 0.2, density: 0.6 }],
+   ['graphic', '平面', { motion: 0.5, glitch: 0.1, chroma: 0.2, texture: 0.1, density: 0.5 }],
+   ['editorial', '编辑', { motion: 0.35, glitch: 0, chroma: 0.05, texture: 0.15, density: 0.45 }],
+   ['emotional', '情绪', { motion: 0.55, glitch: 0.2, chroma: 0.3, texture: 0.35, density: 0.5 }],
+   ['horror', '恐怖', { motion: 0.7, glitch: 0.75, chroma: 0.5, texture: 0.8, density: 0.55 }]
+  ].forEach(function (m) {
+    PV.reg('mood', m[0], { nm: m[1], fx: m[2] });
+  });
+
+  PV.setMood = function (m) {
+    var p = typeof m === 'string' ? PV.part('mood', m) : m;
+    PV.mood = p ? p.key : null;
+    if (p && p.fx) Object.keys(p.fx).forEach(function (k) { PV.fx[k] = p.fx[k]; });
+    if (PV.S.tag) PV.S.tag.textContent = 'LAYOUT · ' + (PV.lastLayout() || '—') + (PV.mood ? ' · ' + PV.mood : '');
+    return PV.mood;
+  };
+
+  /* 哪几层参与抽签（关掉就用默认件，可以随时收收观感） */
+  PV.rolling = { enter: true, hold: true, exit: true, transition: true, camera: true, decor: true };
+
   /* 每层的默认件——① 的目标是行为不变，所以默认件就是旧实现的那一套 */
   PV.defaults = { enter: 'rise', hold: 'none', exit: 'none', transition: 'cut', camera: 'none', style: 'auto', decor: ['particles'], treatment: ['sweep'] };
 
@@ -123,24 +148,43 @@
     };
   };
 
-  /* ---------- 选件：fit/when 过滤 → 权重抽签 ---------- */
+  /* ---------- 选件：fit/when 过滤 → 气氛偏置 → 权重抽签 ---------- */
+  function bias(d) {
+    if (!PV.mood || !d.tags || !d.tags.length) return 1;
+    return d.tags.indexOf(PV.mood) >= 0 ? 2.6 : 0.45;
+  }
+  function weighted(arr) {
+    var tot = 0;
+    arr.forEach(function (d) { tot += (d.w || 1) * bias(d); });
+    if (tot <= 0) return PV.pick(arr);
+    var r = PV.rnd(tot);
+    for (var i = 0; i < arr.length; i++) {
+      r -= (arr[i].w || 1) * bias(arr[i]);
+      if (r <= 0) return arr[i];
+    }
+    return arr[arr.length - 1];
+  }
   PV.choose = function (group, ctx, opts) {
     opts = opts || {};
-    if (opts.force) { var f = PV.part(group, opts.force); if (f) return f; }
-    if (opts.pick === false) return PV.part(group, PV.defaults[group]);
+    /* 显式指定某层的件（opts.layout / opts.enter / …） */
+    if (opts[group]) { var want = PV.part(group, opts[group]); if (want) return want; }
+    /* 不抽签的层直接用默认件（骰子也不会把它换掉） */
+    if (PV.rolling[group] === false || opts.pick === false)
+      return PV.part(group, opts[group] || PV.defaults[group]);
     var all = PV.parts(group);
     if (!all.length) return null;
     var ok = all.filter(function (d) {
-      if (d.special && !ctx.special) return false;         // title / interlude 这类专用件
-      if (d.sp) return false;                              // 显式特殊件只由 special 路径调用
+      if (d.sp || d.special) return false;                 // title / interlude 这类专用件只走显式调用
       if (d.fit && !d.fit(ctx)) return false;
       if (d.when && !d.when(ctx)) return false;
       return true;
     });
     if (!ok.length) ok = all.filter(function (d) { return !d.sp && !d.special; });
     if (!ok.length) ok = [PV.part(group, PV.defaults[group]) || all[0]];
-    if (group === 'layout') return PV.pickNot(ok, opts.keepLast === false ? '' : S.lastLayout);
-    return PV.pick(ok);
+    if (group === 'layout') return PV.pickNot(ok, S.lastLayout);
+    var p = weighted(ok);
+    if (ok.length > 1 && p.key === opts.avoid) p = weighted(ok.filter(function (d) { return d.key !== p.key; }));
+    return p;
   };
 
   /* ---------- 一行 = 一个 cut 的配牌 ---------- */
@@ -151,21 +195,31 @@
     if (opts.special) { ctx.special = opts.special; }
     /* 空行（间奏）不再渲染成一块空白，走专用版式 */
     if (!ctx.special && !(line && (line.text || '').trim())) ctx.special = 'interlude';
-    var lay = opts.layout ? PV.part('layout', opts.layout)
-      : (ctx.special ? PV.part('layout', ctx.special) || PV.choose('layout', ctx, opts)
-        : (opts.pick === false ? PV.part('layout', 'center') : PV.choose('layout', ctx, opts)));
+    var lay = (ctx.special && PV.part('layout', ctx.special))
+      || (opts.layout ? PV.part('layout', opts.layout) : PV.choose('layout', ctx, opts));
     if (!lay) lay = PV.part('layout', 'center');
     if (lay.pre) lay.pre(ctx);
+    /* decor / treatment 是 0..n 叠加：默认那几件 + 再抽一件（when 不满足就抽不到）。
+     * 外部可以传字符串（指定单件）也可以传数组（多件叠加）。 */
+    function stack(group) {
+      var raw = opts[group] == null ? PV.defaults[group] : opts[group];
+      var list = (typeof raw === 'string' ? [raw] : raw || []).slice();
+      if (PV.rolling[group] !== false && typeof raw !== 'string') {
+        var p = PV.choose(group, ctx, opts);
+        if (p && p.key !== 'none' && list.indexOf(p.key) < 0) list.push(p.key);
+      }
+      return list.map(function (k) { return typeof k === 'string' ? PV.part(group, k) : k; })
+        .filter(function (d) { return d && (!d.when || d.when(ctx)); });
+    }
     return {
       layout: lay,
-      enter: PV.part('enter', opts.enter || lay.enter || PV.defaults.enter) || PV.part('enter', PV.defaults.enter),
-      hold: PV.part('hold', opts.hold || lay.hold || PV.defaults.hold) || PV.part('hold', PV.defaults.hold),
-      exit: PV.part('exit', opts.exit || PV.defaults.exit) || PV.part('exit', PV.defaults.exit),
-      transition: PV.part('transition', opts.transition || PV.defaults.transition) || PV.part('transition', PV.defaults.transition),
-      camera: PV.part('camera', opts.camera || PV.defaults.camera) || PV.part('camera', PV.defaults.camera),
-      decor: (opts.decor == null ? PV.defaults.decor : opts.decor).map(function (k) { return PV.part('decor', k); })
-        .filter(function (d) { return d && (!d.when || d.when(ctx)); }),
-      treatment: (opts.treatment == null ? PV.defaults.treatment : opts.treatment).map(function (k) { return PV.part('treatment', k); }).filter(Boolean),
+      enter: PV.choose('enter', ctx, opts) || PV.part('enter', PV.defaults.enter),
+      hold: PV.choose('hold', ctx, opts) || PV.part('hold', PV.defaults.hold),
+      exit: PV.choose('exit', ctx, opts) || PV.part('exit', PV.defaults.exit),
+      transition: PV.choose('transition', ctx, opts) || PV.part('transition', PV.defaults.transition),
+      camera: PV.choose('camera', ctx, opts) || PV.part('camera', PV.defaults.camera),
+      decor: stack('decor'),
+      treatment: stack('treatment'),
       ctx: ctx
     };
   };
@@ -200,6 +254,8 @@
     return { el: el, ctx: ctx, toks: toks };
   };
 
+  /* 一行的完整切换：上一行由它自己的 exit 送走，新行由 transition 接进来。
+   * 旧实现里 exit 根本不存（innerHTML 直接覆盖），所以这是新增的执行路径。*/
   PV.show = function (i, opts) {
     if (i == null || i < 0) return;
     opts = opts || {};
@@ -208,41 +264,56 @@
     if (!plan) return;
     var made = PV.render(plan);
     if (!made) return;
+
+    var prev = S.cur, oldPlan = S.plan;
     S.idx = i;
     S.lastLayout = plan.layout.key;
     S.plan = plan;
-
-    var prev = S.cur;
     S.cur = made.el;
     S.cutT = performance.now();
-    /* 先停掉上一行的 hold/camera/计时器，再走衔接，顺序不能反过来 */
     stopAll();
 
-    var swap = function () {
+    /* ① 送走上一行 */
+    var drop = function () {
       if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
-      Array.prototype.slice.call(S.track.children).forEach(function (n) {
-        if (n !== made.el && n.classList && n.classList.contains('jv-line')) n.parentNode.removeChild(n);
-      });
-      if (!made.el.parentNode) S.track.appendChild(made.el);
-      /* 与旧实现一致：直接上 show，不跑容器自身的 opacity 过渡。
-       * 容器淡入属于衔接层的活，② 里由 transition 件自己接管。 */
-      made.el.classList.add('show');
+      prev = null;
     };
-    if (plan.transition && plan.transition.play) plan.transition.play(made.ctx, prev, made.el, swap);
+    var ex = oldPlan && oldPlan.exit ? oldPlan.exit : PV.part('exit', PV.defaults.exit);
+    if (prev) {
+      /* 用上一行自己的 ctx：退场件要知道自己是谁的退场 */
+      if (ex && ex.play) ex.play(oldPlan ? oldPlan.ctx : plan.ctx, prev, drop);
+      else drop();
+    }
+
+    /* ② 接上新行：插入之后再跑登场层，否则 WAAPI 动画在游离元素上不会启动 */
+    var swap = function () {
+      if (made.el.parentNode) return;
+      Array.prototype.slice.call(S.track.children).forEach(function (n) {
+        if (n !== prev && n.classList && n.classList.contains('jv-line')) n.parentNode.removeChild(n);
+      });
+      S.track.appendChild(made.el);
+      /* 容器自身的 opacity 过渡属于衔接层，这里直接上 show（与旧实现一致） */
+      made.el.classList.add('show');
+      applyIn(plan, made);
+    };
+    if (plan.transition && plan.transition.play) plan.transition.play(plan.ctx, prev, made.el, swap);
     else swap();
+    if (!made.el.parentNode) swap();      // 衔接件没调 swap 时的兜底
 
-    if (plan.enter && plan.enter.apply) plan.enter.apply(made.ctx, made.toks);
-    if (plan.hold && plan.hold.apply) { var sh = plan.hold.apply(made.ctx, made.el); if (sh) PV.addStop(sh); }
-    if (plan.camera && plan.camera.apply) { var sc = plan.camera.apply(made.ctx, S.track); if (sc) PV.addStop(sc); }
-    plan.decor.forEach(function (d) { if (d.apply) { var s = d.apply(made.ctx, made.el); if (s) PV.addStop(s); } });
-    plan.treatment.forEach(function (d) { if (d.apply) { var s2 = d.apply(made.ctx, made.el); if (s2) PV.addStop(s2); } });
-
-    if (S.tag) S.tag.textContent = 'LAYOUT · ' + plan.layout.nm;
+    if (S.tag) S.tag.textContent = 'LAYOUT · ' + plan.layout.nm + (PV.mood ? ' · ' + PV.mood : '');
     if (S.ghosts.up) S.ghosts.up.textContent = i > 0 && S.lyrics[i - 1] ? S.lyrics[i - 1].text : '';
     if (S.ghosts.dn) S.ghosts.dn.textContent = i < S.lyrics.length - 1 && S.lyrics[i + 1] ? S.lyrics[i + 1].text : '';
     PV.dispatch('pv:cut', plan);
     return plan;
   };
+
+  function applyIn(plan, made) {
+    if (plan.enter && plan.enter.apply) plan.enter.apply(made.ctx, made.toks);
+    if (plan.hold && plan.hold.apply) { var sh = plan.hold.apply(made.ctx, made.el); if (sh) PV.addStop(sh); }
+    if (plan.camera && plan.camera.apply) { var sc = plan.camera.apply(made.ctx, S.track); if (sc) PV.addStop(sc); }
+    plan.decor.forEach(function (d) { if (d.apply) { var s = d.apply(made.ctx, made.el); if (s) PV.addStop(s); } });
+    plan.treatment.forEach(function (d) { if (d.apply) { var s2 = d.apply(made.ctx, made.el); if (s2) PV.addStop(s2); } });
+  }
 
   /* ---------- 全局帧循环：hold / camera / treatment 的 frame 都从这里走 ---------- */
   var _raf = 0;

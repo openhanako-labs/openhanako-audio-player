@@ -1,7 +1,7 @@
 // 生成 pv/test.html —— 不依赖播放器的 PV 预览台
-// 用法：node pv/make-test.mjs   然后浏览器打开 pv/test.html（或在 Hana 里开）
+// 用法：node pv/make-test.mjs，然后开 pv/serve.mjs 8778 用浏览器看 pv/test.html
 // 作用：从 ui/index.html 里取出构建好的 PV 块，套一个假的 #pvStage，
-//       可以逐版式点着看、跑 selftest，不用先有歌有词。
+//       不放歌也能逐件看、逐层试、拖 fx 滑块。
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -34,20 +34,23 @@ const html = `<!DOCTYPE html>
   :root { --card-bg:#141210; --text:#F2EDE4; --accent:#D4AF37; --border:#2c2823; --text-dim:#8a8378; }
   * { box-sizing: border-box; }
   body { margin:0; background:#0b0a09; color:var(--text); font-family:system-ui,"Microsoft YaHei",sans-serif; }
-  header { padding:14px 18px; border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  header { padding:12px 16px; border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   header b { font-size:13px; letter-spacing:.08em; }
   header .stat { font-family:monospace; font-size:11px; color:var(--text-dim); }
-  #err { color:#ff6b6b; font-family:monospace; font-size:11px; padding:8px 18px; white-space:pre-wrap; }
-  #row { display:flex; gap:6px; padding:10px 18px; flex-wrap:wrap; border-bottom:1px solid var(--border); }
-  #row button { background:#1b1917; color:var(--text); border:1px solid var(--border); border-radius:6px;
-    padding:5px 9px; font-size:11px; cursor:pointer; font-family:inherit; }
-  #row button:hover { border-color:var(--accent); }
+  #err { color:#ff6b6b; font-family:monospace; font-size:11px; padding:6px 16px; white-space:pre-wrap; }
+  .row { display:flex; gap:6px; padding:8px 16px; flex-wrap:wrap; align-items:center; border-bottom:1px solid #1b1917; }
+  .row .lb { font-size:10px; color:var(--text-dim); font-family:monospace; letter-spacing:.14em; width:78px; flex:none; }
+  .row button { background:#1b1917; color:var(--text); border:1px solid var(--border); border-radius:6px;
+    padding:4px 8px; font-size:11px; cursor:pointer; font-family:inherit; }
+  .row button:hover { border-color:var(--accent); }
+  .row button.on { border-color:var(--accent); background:#2a2318; }
+  .row input[type=range] { width:92px; accent-color: var(--accent); }
+  .row .fxv { font-family:monospace; font-size:10px; color:var(--text-dim); width:30px; }
   #stageWrap { padding:18px; }
-  /* 假舞台：尺寸与播放器一致，类名沿用核心用到的那几个 */
   .pv-stage { position:relative; width:min(960px,92vw); aspect-ratio:16/9; margin:0 auto;
     background:var(--card-bg); color:var(--text); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
   .pv-track { position:absolute; inset:0; }
-  .np-title { display:none; }
+  .np-title, .np-artist { display:none; }
 </style>
 <style>
 ${css}
@@ -57,9 +60,10 @@ ${css}
 <header>
   <b>PV 预览台</b>
   <span class="stat" id="stat">—</span>
+  <span class="stat" id="plan">—</span>
 </header>
-<div id="row"></div>
 <div id="err"></div>
+<div id="rows"></div>
 <div id="stageWrap">
   <div id="pvStage" class="pv-stage">
     <div id="pvTrack" class="pv-track"></div>
@@ -67,7 +71,10 @@ ${css}
 </div>
 <script>
 window.__errs = [];
-window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @' + l + ':' + c); document.getElementById('err').textContent = window.__errs.join('\n'); };
+window.onerror = function (m, s, l, c) {
+  window.__errs.push(m + ' @' + l + ':' + c);
+  document.getElementById('err').textContent = window.__errs.join('\n');
+};
 </script>
 <script>
 (function(){'use strict';
@@ -79,33 +86,76 @@ ${js}
   var LINES = [
     { text: '夜明けの色を 覚えてる', time: 0, end: 4000 },
     { text: 'We are the champions, my friends', time: 4000, end: 8000 },
-    { text: '就算前面是深渊', time: 8000, end: 12000 },
+    { text: '就算前面是深渊也别回头', time: 8000, end: 12000 },
     { text: '', time: 12000, end: 16000 }
   ];
-  var savedStyle = 'gold';   // file:// 下 localStorage 会被禁，预览台自己记
+  var line = 0, savedStyle = 'gold';
   document.body.classList.add('jizura-mode');
   PV.setLyrics(LINES);
   PV.useStyle(savedStyle);
   PV.seed(20261002);
 
-  var stat = document.getElementById('stat');
-  stat.textContent = Object.entries(PV.stats()).map(function (e) { return e[0] + ' ' + e[1]; }).join('  ·  ');
-
-  var row = document.getElementById('row');
-  function btn(label, fn) {
-    var b = document.createElement('button');
-    b.textContent = label; b.onclick = fn; row.appendChild(b);
+  var rows = document.getElementById('rows');
+  function group(label) {
+    var d = document.createElement('div');
+    d.className = 'row';
+    var s = document.createElement('span');
+    s.className = 'lb'; s.textContent = label;
+    d.appendChild(s);
+    rows.appendChild(d);
+    return d;
   }
-  btn('おまかせ', function () { PV.seed(Date.now() % 1e9); PV.setLastLayout(''); PV.show(0, { force: true }); });
-  PV.parts('style').forEach(function (s) {
-    btn(s.nm, function () { PV.useStyle(s.id); savedStyle = s.id; });
-  });
-  PV.parts('layout').forEach(function (l) {
-    btn(l.nm + (l.sp ? ' *' : ''), function () { PV.setLyrics(LINES); PV.show(l.key === 'interlude' ? 3 : 0, { force: true, layout: l.key }); });
-  });
-  btn('逐字扫光（无音频，静态）', function () { PV.show(0, { force: true, layout: 'center' }); });
+  function btn(host, text, fn, cls) {
+    var b = document.createElement('button');
+    b.textContent = text; if (cls) b.className = cls;
+    b.onclick = fn; host.appendChild(b); return b;
+  }
 
-  window.PV_TEST = { lines: LINES };
+  var gMain = group('控制');
+  btn(gMain, 'おまかせ', function () { PV.omakase(); show(); });
+  btn(gMain, '上一行', function () { line = (line + LINES.length - 1) % LINES.length; PV.show(line, { force: true }); show(); });
+  btn(gMain, '下一行', function () { line = (line + 1) % LINES.length; PV.show(line, { force: true }); show(); });
+
+  var gMood = group('气氛');
+  PV.parts('mood').forEach(function (m) {
+    btn(gMood, m.nm, function () { PV.setMood(m.key); PV.setLastLayout(''); PV.show(line, { force: true }); show(); });
+  });
+
+  var gStyle = group('风格');
+  PV.parts('style').forEach(function (s) {
+    btn(gStyle, s.nm, function () { PV.useStyle(s.id); savedStyle = s.id; });
+  });
+
+  ['layout', 'enter', 'hold', 'exit', 'transition', 'camera', 'decor', 'treatment'].forEach(function (g) {
+    var host = group(g);
+    PV.parts(g).forEach(function (d) {
+      var o = {}; o[g] = d.key;
+      btn(host, d.nm + (d.sp ? ' *' : ''), function () { PV.show(line, Object.assign({ force: true }, o)); show(); });
+    });
+  });
+
+  var gFx = group('滑块');
+  ['motion', 'glitch', 'chroma', 'texture', 'density'].forEach(function (k) {
+    var s = document.createElement('input');
+    s.type = 'range'; s.min = '0'; s.max = '1'; s.step = '0.05'; s.value = String(PV.fx[k]);
+    var v = document.createElement('span'); v.className = 'fxv'; v.textContent = s.value;
+    s.oninput = function () { PV.fx[k] = Number(s.value); v.textContent = s.value; PV.show(line, { force: true }); show(); };
+    var lb = document.createElement('span'); lb.className = 'fxv'; lb.textContent = k;
+    gFx.appendChild(lb); gFx.appendChild(s); gFx.appendChild(v);
+  });
+
+  var planEl = document.getElementById('plan');
+  function show() {
+    var p = PV.plan();
+    if (!p) return;
+    planEl.textContent = [p.layout.key, p.enter.key, p.hold.key, p.exit.key, p.transition.key, p.camera.key,
+      'decor[' + p.decor.map(function (d) { return d.key; }).join(',') + ']',
+      'treat[' + p.treatment.map(function (d) { return d.key; }).join(',') + ']'].join(' / ');
+  }
+
+  document.getElementById('stat').textContent =
+    Object.entries(PV.stats()).map(function (e) { return e[0] + ' ' + e[1]; }).join('  ·  ');
+  PV.show(line, { force: true }); show();
 })();
 </script>
 </body>
@@ -113,4 +163,4 @@ ${js}
 `;
 
 writeFileSync(join(PV, 'test.html'), html, 'utf8');
-console.log(`pv/test.html 已生成（CSS ${(css.length/1024).toFixed(1)} KB / JS ${(js.length/1024).toFixed(1)} KB）`);
+console.log(`pv/test.html 已生成（CSS ${(css.length / 1024).toFixed(1)} KB / JS ${(js.length / 1024).toFixed(1)} KB）`);
