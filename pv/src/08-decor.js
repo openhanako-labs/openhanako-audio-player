@@ -97,9 +97,10 @@
       toks.forEach(function (tk) { offs.push(acc); acc += tk === ' ' ? 1 : Array.from(tk).length; });
       var total = Math.max(1, acc);
       var next = PV.lyrics()[c.idx + 1];
-      var t0 = line.time || 0;
-      var t1 = line.end || (next && next.time) || (t0 + 4000);
-      if (line.words && line.words.length) {
+      var whole = (c.cutN || 1) <= 1;      /* 有 cut（④）时用本段自己的时间窗；TTML 逐词时序只在整行不被切开时有效 */
+      var t0 = !whole && c.t0 != null ? c.t0 : (line.time || 0);
+      var t1 = !whole && c.t1 != null ? c.t1 : (line.end || (next && next.time) || (t0 + 4000));
+      if (line.words && line.words.length && whole) {
         t0 = line.words[0].time;
         t1 = line.words[line.words.length - 1].time + line.words[line.words.length - 1].dur;
       }

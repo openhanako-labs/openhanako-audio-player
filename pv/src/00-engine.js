@@ -98,7 +98,8 @@
   /* ---------- 状态 ---------- */
   var S = {
     lyrics: [], idx: -1, style: null, stage: null, layer: null, track: null,
-    cur: null, lastLayout: '', stops: [], tag: null, ghosts: { up: null, dn: null }
+    cur: null, lastLayout: '', stops: [], tag: null, ghosts: { up: null, dn: null },
+    cuts: null, cutI: 0
   };
   PV.S = S;
 
@@ -143,6 +144,7 @@
       tokens: PV.tokens(line.text || ''),
       style: S.style, fx: PV.fx, audio: PV.audio,
       lyrics: S.lyrics,
+      cutI: 0, cutN: 1, t0: line.time || 0, t1: line.end || 0,
       /* 层之间可写的字段 */
       stagger: 45, emphasis: 0, params: {}, ghost: true, decor: true,
       ltr: PV.hasLatin(line.text || '')
@@ -188,14 +190,30 @@
     return p;
   };
 
-  /* ---------- 一行 = 一个 cut 的配牌 ---------- */
+  /* ---------- 一行（或一行里的一段）的配牌 ---------- */
   PV.planLine = function (i, opts) {
     opts = opts || {};
     var line = PV.lineAt(i);
-    var ctx = PV.makeCtx(i, line ? line.text : '');
+    /* ④ 分 cut：不保留时重算（切分依赖字数与当时的拍子，重算才会跟着变） */
+    if (!opts.keepCuts || !S.cuts) S.cuts = (PV.splitLine ? PV.splitLine(line, i) : null) || [];
+    if (!S.cuts.length) S.cutI = 0;
+    var cutI = opts.keepCuts ? Math.max(0, Math.min((opts.cutI == null ? S.cutI : opts.cutI), (S.cuts || []).length - 1)) : 0;
+    S.cutI = cutI;
+    var cut = S.cuts && S.cuts.length ? S.cuts[cutI] : null;
+
+    var ctx = PV.makeCtx(i, cut ? cut.text : (line ? line.text : ''));
+    if (cut) {
+      ctx.tokens = cut.tokens;
+      ctx.cutI = cut.i; ctx.cutN = cut.n; ctx.t0 = cut.t0; ctx.t1 = cut.t1;
+      ctx.explicitCut = !!cut.explicit;
+      ctx.ltr = PV.hasLatin(ctx.text);
+      /* 一行内多段时，每段自己算字数：长短句适配（fit）要按段而不是按整行 */
+      ctx.line = Object.assign({}, line, { text: ctx.text, time: cut.t0, end: cut.t1 });
+    }
     if (opts.special) { ctx.special = opts.special; }
     /* 空行（间奏）不再渲染成一块空白，走专用版式 */
-    if (!ctx.special && !(line && (line.text || '').trim())) ctx.special = 'interlude';
+    if (!ctx.special && !(ctx.text || '').trim()) ctx.special = 'interlude';
+    ctx.emphasis = /[*!]/.test(line ? line.text : '') ? 1 : 0;
     var lay = (ctx.special && PV.part('layout', ctx.special))
       || (opts.layout ? PV.part('layout', opts.layout) : PV.choose('layout', ctx, opts));
     if (!lay) lay = PV.part('layout', 'center');
@@ -301,7 +319,8 @@
     else swap();
     if (!made.el.parentNode) swap();      // 衔接件没调 swap 时的兜底
 
-    if (S.tag) S.tag.textContent = 'LAYOUT · ' + plan.layout.nm + (PV.mood ? ' · ' + PV.mood : '');
+    if (S.tag) S.tag.textContent = 'LAYOUT · ' + plan.layout.nm + (PV.mood ? ' · ' + PV.mood : '') +
+      (S.cuts && S.cuts.length > 1 ? ' · ' + (S.cutI + 1) + '/' + S.cuts.length : '');
     if (S.ghosts.up) S.ghosts.up.textContent = i > 0 && S.lyrics[i - 1] ? S.lyrics[i - 1].text : '';
     if (S.ghosts.dn) S.ghosts.dn.textContent = i < S.lyrics.length - 1 && S.lyrics[i + 1] ? S.lyrics[i + 1].text : '';
     PV.dispatch('pv:cut', plan);
@@ -341,7 +360,7 @@
   PV.empty = function (msg) {
     if (!PV.mount()) return;
     stopAll();
-    S.cur = null; S.idx = -1;
+    S.cur = null; S.idx = -1; S.cuts = null; S.cutI = 0; S.cuts = null; S.cutI = 0;
     S.track.innerHTML = '<div class="jv-line jv-center show"><div class="cur" style="opacity:.4">' + (msg || '暂无歌词') + '</div></div>';
   };
 

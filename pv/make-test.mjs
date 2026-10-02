@@ -86,8 +86,9 @@ ${js}
   var LINES = [
     { text: '夜明けの色を 覚えてる', time: 0, end: 4000 },
     { text: 'We are the champions, my friends', time: 4000, end: 8000 },
-    { text: '就算前面是深渊也别回头', time: 8000, end: 12000 },
-    { text: '', time: 12000, end: 16000 }
+    { text: '就算前面是深渊也别回头，我一直都在这里等', time: 8000, end: 12000 },
+    { text: '风也/停了/星也落了', time: 12000, end: 16000 },
+    { text: '', time: 16000, end: 20000 }
   ];
   var line = 0, savedStyle = 'gold';
   /* 预览台没有 core 的频谱链，清掉那个开关免得白等 6 秒才自建图 */
@@ -175,13 +176,34 @@ ${js}
   function show() {
     var p = PV.plan();
     if (!p) return;
-    planEl.textContent = [p.layout.key, p.enter.key, p.hold.key, p.exit.key, p.transition.key, p.camera.key,
+    var ci = PV.cutsInfo ? PV.cutsInfo() : { cut: 0, n: 1 };
+    planEl.textContent = 'cut ' + (ci.cut + 1) + '/' + ci.n + '  ⟵  ' +
+      [p.layout.key, p.enter.key, p.hold.key, p.exit.key, p.transition.key, p.camera.key,
       'decor[' + p.decor.map(function (d) { return d.key; }).join(',') + ']',
       'treat[' + p.treatment.map(function (d) { return d.key; }).join(',') + ']'].join(' / ');
+    var ct = document.getElementById('cutPlan');
+    if (ct) ct.textContent = (ci.times || []).map(function (t, k) {
+      return (k === ci.cut ? '▶' : ' ') + (k + 1) + ' [' + (t[0] / 1000).toFixed(2) + '→' + (t[1] / 1000).toFixed(2) + ']';
+    }).join('  ');
   }
 
   document.getElementById('stat').textContent =
     Object.entries(PV.stats()).map(function (e) { return e[0] + ' ' + e[1]; }).join('  ·  ');
+  var cutRow = document.createElement('div');
+  cutRow.className = 'row';
+  cutRow.innerHTML = '<span class="lb">cut 时间</span><span class="stat" id="cutPlan">—</span>' +
+    '<label class="fxv" style="width:auto"><input type="checkbox" id="cbSnap" checked> beatSnap</label>' +
+    '<label class="fxv" style="width:auto"><input type="checkbox" id="cbAuto" checked> autoSplit</label>' +
+    '<span class="fxv">maxChars</span><input type="range" id="rgMax" min="6" max="24" step="1" value="13">' +
+    '<span class="fxv" id="rgMaxV">13</span>';
+  rows.insertBefore(cutRow, rows.children[1]);
+  document.getElementById('cbSnap').onchange = function (e) { PV.beatSnap = e.target.checked; PV.show(line, { force: true }); show(); };
+  document.getElementById('cbAuto').onchange = function (e) { PV.autoSplit = e.target.checked; PV.show(line, { force: true }); show(); };
+  document.getElementById('rgMax').oninput = function (e) {
+    PV.maxCutChars = Number(e.target.value); document.getElementById('rgMaxV').textContent = e.target.value;
+    PV.show(line, { force: true }); show();
+  };
+  btn(rows.children[0], '⏵ 推 +0.4s', function () { PV.audio.time = (PV.audio.time || 0) + 400; });
   PV.show(line, { force: true }); show();
 })();
 </script>
