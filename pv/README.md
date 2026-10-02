@@ -98,13 +98,15 @@ PV.reg('hold', 'sway', {
 
 | 字段 | 含义 |
 |---|---|
-| `idx` `line` `text` `tokens` | 行号、原行对象（含 `time`/`end`/`words`）、整句、切好的词/字 |
+| `idx` `line` `text` `tokens` | 行号、原行对象（含 `time`/`end`/`words`）、**本段**文本、本段切好的词/字 |
+| `cutI` `cutN` `t0` `t1` `explicitCut` | 第几段 / 共几段 / 本段起止 ms / 是不是作者写的 `/`（④） |
+| `emph` `flash` `note` | `*强调*`、行末 `!`、`\|注釈` 三个记号解出的结果（⑤ 语法层） |
 | `el` `tokensEls` `track` `stage` | 本 cut 容器、`i.jv-t` 列表、`.jv-track`、`#pvStage` |
 | `style` `fx` | 当前风格件；`motion/glitch/chroma/decor/density/texture/bgSwitch`（0..1） |
 | `audio` | `energy`、`beat{since,len,index}`、`time`(ms)。③ 接 analyser 之前 `time` 由外部推；`pulse`/`beatZoom` 靠它，没数据时 `when` 不成立、抽不到 |
 | `stagger` | 逐字间隔 ms，`layout.pre()` 可覆写 |
 | `lt` | 本 cut 已过的秒数 |
-| `lyrics` | 全表，取前后行 |
+| `lyrics` | 全表，取邻行用——**取到的是原始文本，上画面前要先过 `PV.plain()`**（否则 `/`、`*` 会泄到画面上） |
 | `params` | 留给 `plan()` 存自己的排版决定 |
 
 版式另有 `fit(c)` / `pre(c)` / `render(c)`；token 必须用 `PV.spans(c, extra)` 产出。
