@@ -27,6 +27,7 @@
     if (!PV.style()) PV.useStyle('auto');
     PV.markStyle();
     PV.startLoop();
+    if (PV.audioStart) PV.audioStart();          // ③ 音频驱动：跟着 PV 开，不单独常驻
     if (!PV._booted) {
       PV._booted = true;
       document.addEventListener('pv:cut', function () { PV.markStyle(); });
@@ -82,6 +83,7 @@
 
   PV.exit = function () {
     document.body.classList.remove('jizura-mode');
+    if (PV.audioStop) PV.audioStop();
     var c = core();
     /* 旧实现这里 dispatch 了一个没人听的 'jizura-exit'，folia 层不会重建。
      * 现在直接请核心重画，退出后不会停在上一句 PV。 */
@@ -115,7 +117,7 @@
   requestAnimationFrame(function () { try { PV.boot(); } catch (e) { } });
 
   /* 控制台与自检 */
-  PV.version = 'pv-registry/0.2';
+  PV.version = 'pv-registry/0.3';
   PV.selftest = function () {
     var out = { version: PV.version, groups: PV.stats(), mounted: !!PV.layer() };
     out.demo = [];

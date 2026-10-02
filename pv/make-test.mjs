@@ -90,6 +90,8 @@ ${js}
     { text: '', time: 12000, end: 16000 }
   ];
   var line = 0, savedStyle = 'gold';
+  /* 预览台没有 core 的频谱链，清掉那个开关免得白等 6 秒才自建图 */
+  try { localStorage.removeItem('hana_audio_reactive'); } catch (e) { }
   document.body.classList.add('jizura-mode');
   PV.setLyrics(LINES);
   PV.useStyle(savedStyle);
@@ -105,9 +107,9 @@ ${js}
     rows.appendChild(d);
     return d;
   }
-  function btn(host, text, fn, cls) {
+  function btn(host, text, fn, id) {
     var b = document.createElement('button');
-    b.textContent = text; if (cls) b.className = cls;
+    b.textContent = text; if (id) b.id = id;
     b.onclick = fn; host.appendChild(b); return b;
   }
 
@@ -139,10 +141,35 @@ ${js}
     var s = document.createElement('input');
     s.type = 'range'; s.min = '0'; s.max = '1'; s.step = '0.05'; s.value = String(PV.fx[k]);
     var v = document.createElement('span'); v.className = 'fxv'; v.textContent = s.value;
-    s.oninput = function () { PV.fx[k] = Number(s.value); v.textContent = s.value; PV.show(line, { force: true }); show(); };
+    /* 写 base 不写 PV.fx：③ 的强度调制每帧重算 PV.fx，直接改会被下一帧抹掉 */
+    s.oninput = function () { PV.setFxBase(k, Number(s.value)); v.textContent = s.value; PV.show(line, { force: true }); show(); };
     var lb = document.createElement('span'); lb.className = 'fxv'; lb.textContent = k;
     gFx.appendChild(lb); gFx.appendChild(s); gFx.appendChild(v);
   });
+
+  /* ---- ③ 音频驱动：同源拍点测试音，验证检出来的 BPM ---- */
+  var gAu = group('音频');
+  var au = document.createElement('audio');
+  au.id = 'audio'; au.controls = true; au.preload = 'auto';
+  au.style.height = '28px'; au.style.width = '300px';
+  var sel = document.createElement('select');
+  [['bpm-96', '96 BPM'], ['bpm-120', '120 BPM'], ['bpm-140', '140 BPM']].forEach(function (f) {
+    var o = document.createElement('option'); o.value = f[0]; o.textContent = f[1]; sel.appendChild(o);
+  });
+  var auStat = document.createElement('span'); auStat.className = 'stat';
+  function loadFix() { au.src = 'fixtures/' + sel.value + '.wav'; PV.audioStop(); PV.audioStart(); }
+  sel.onchange = loadFix;
+  /* 播放必须装在按钮的 click 里：合成事件不算用户手势，AudioContext 会被挂起 */
+  btn(gAu, '▶ 播放测试音', function () { au.currentTime = 0; au.play().catch(function (e) { auStat.textContent = '播放被拒：' + e.message; }); }, 'auPlay');
+  btn(gAu, '⏸', function () { au.pause(); });
+  gAu.appendChild(sel); gAu.appendChild(au); gAu.appendChild(auStat);
+  loadFix();
+  setInterval(function () {
+    var st = PV.audio.stats();
+    auStat.textContent = 'mode ' + (st.mode || '—') + ' · energy ' + st.energy + ' · bpm ' + st.bpm + ' · conf ' + st.confidence;
+    var m = document.getElementById('audioMod'); if (m) m.textContent = 'motion ' + PV.fx.motion.toFixed(2) + ' / chroma ' + PV.fx.chroma.toFixed(2);
+  }, 400);
+  var mod = document.createElement('span'); mod.className = 'stat'; mod.id = 'audioMod'; gAu.appendChild(mod);
 
   var planEl = document.getElementById('plan');
   function show() {

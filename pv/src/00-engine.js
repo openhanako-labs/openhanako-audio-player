@@ -81,6 +81,7 @@
     var p = typeof m === 'string' ? PV.part('mood', m) : m;
     PV.mood = p ? p.key : null;
     if (p && p.fx) Object.keys(p.fx).forEach(function (k) { PV.fx[k] = p.fx[k]; });
+    if (PV._fxBaseChanged) PV._fxBaseChanged();      // ③ 的强度调制以这套为基准
     if (PV.S.tag) PV.S.tag.textContent = 'LAYOUT · ' + (PV.lastLayout() || '—') + (PV.mood ? ' · ' + PV.mood : '');
     return PV.mood;
   };
@@ -91,8 +92,8 @@
   /* 每层的默认件——① 的目标是行为不变，所以默认件就是旧实现的那一套 */
   PV.defaults = { enter: 'rise', hold: 'none', exit: 'none', transition: 'cut', camera: 'none', style: 'auto', decor: ['particles'], treatment: ['sweep'] };
 
-  /* ---------- 音频钩子（③ 接 analyser；现在留给外部塞值） ---------- */
-  PV.audio = { energy: null, beat: null };
+  /* ---------- 音频钩子：③ 由 pv/src/11-audio.js 灌值 ---------- */
+  PV.audio = { energy: null, beat: null, time: null, bpm: 0, confidence: 0, low: 0, mid: 0, high: 0 };
 
   /* ---------- 状态 ---------- */
   var S = {
@@ -315,17 +316,21 @@
     plan.treatment.forEach(function (d) { if (d.apply) { var s2 = d.apply(made.ctx, made.el); if (s2) PV.addStop(s2); } });
   }
 
-  /* ---------- 全局帧循环：hold / camera / treatment 的 frame 都从这里走 ---------- */
-  var _raf = 0;
+    /* ---------- 全局帧循环 ----------
+   * 一条 rAF 喂所有 frame 型消费者：音频驱动→ 气氛偏置→ 本 cut 的 hold / camera / treatment。
+   * 顺序不能换：音频先把 energy/beat 算完，后面的件才能读到本帧的新值。 */
+  var _raf = 0, _subs = [];
+  PV.onFrame = function (fn) { if (fn && _subs.indexOf(fn) < 0) _subs.push(fn); };
   PV.startLoop = function () {
     if (_raf) return;
     var tick = function () {
       _raf = requestAnimationFrame(tick);
       if (!PV.active()) return;
       var p = S.plan;
+      var c = p && p.ctx;
+      if (c) c.lt = (performance.now() - S.cutT) / 1000;
+      for (var i = 0; i < _subs.length; i++) { try { _subs[i](c); } catch (e) { } }
       if (!p || !S.cur || !S.cur.parentNode) return;
-      var c = p.ctx;
-      c.lt = (performance.now() - S.cutT) / 1000;
       if (p.hold && p.hold.frame) p.hold.frame(c);
       if (p.camera && p.camera.frame) p.camera.frame(c);
       p.treatment.forEach(function (t) { if (t.frame) t.frame(c); });

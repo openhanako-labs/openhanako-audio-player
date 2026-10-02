@@ -26,3 +26,6 @@ plugin-data/
 
 # PV 预览台（构建产物，用 node pv/make-test.mjs 重新生成）
 pv/test.html
+
+# 拍点检测测试音（node pv/make-fixtures.mjs 生成，不入库）
+pv/fixtures/

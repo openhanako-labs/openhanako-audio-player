@@ -26,6 +26,7 @@ pv/
   build.mjs          构建：拆旧块 → 剥遗留 → 接核心钩子 → 插新块 → 自锁校验 → 写盘
   serve.mjs          本地静态服务（宿主浏览器不吃 file://）
   make-test.mjs      从产物抽 PV 块，生成 test.html 预览台
+  make-fixtures.mjs  用 ffmpeg 合成拍点测试音（pv/fixtures/，不入库）
   test.html          预览台产物（已 gitignore）：不放歌也能逐层逐件点着看
   src/00-engine.js   注册表、随机、ctx、配牌、渲染、帧循环、气氛与滑块
   src/01-styles.js   风格层 + 封面取色
@@ -38,6 +39,7 @@ pv/
   src/08-decor.js    装饰 4 件 + 处理 3 件
   src/09-chrome.js   骰子 / 标签 / ghost / 风格条
   src/10-api.js      对外接口与宿主接线
+  src/11-audio.js    ③ 音频驱动：频谱 → energy/beat/bpm/confidence，并实时调制 fx
   css/base.css       层容器与舞台规则
   css/layouts.css    版式规则
   css/chrome.css     附件规则
@@ -144,11 +146,43 @@ node tools/bump-build.mjs      # 构建号三处同步，开着的播放器卡�
 
 另外：`jizura-exit` 事件被 dispatch 却没有任何监听者，退出 PV 会停在上句——现在由 `__pvCore.render()` 重建。
 
+## ③ 音频驱动（pv/src/11-audio.js）
+
+`PV.audio` 现在有生产者了，不再只是留给外部的空字段：
+
+| 字段 | 含义 |
+|---|---|
+| `energy` | 0..1，低频为主，用 p10..p95 百分位区间归一化 |
+| `beat` | `{since, len, index}`：`since` 是距上一个瞬态的秒数，`len` 取 IOI 中位数 |
+| `bpm` | 估计值（60/len），只当参考，不当目标 |
+| `confidence` | 0..1，由 IOI 离散度算；静默或瞬态断开时归 0 |
+| `time` | ms，扫光层的时间源（没推值时回落 DOM 的 `<audio>`） |
+| `low/mid/high` | 三个频段的归一化能量，调参用 |
+
+`pulse`（hold）与 `beatZoom`（camera）之前因 `when` 不成立而永远抽不到，现在数据一到位就进池。`PV.audioModulate = false` 可关能量对 fx 的实时调制；面板改滑块要走 `PV.setFxBase(k, v)`——直接写 `PV.fx` 会被下一帧的调制覆掉。
+
+**频谱从哪来**：先用 core 那条音频反应链——它每帧把 `getByteFrequencyData` 的结果摊在 `window.__reactiveBins` 上，PV 只读不建。只有它不可用时 PV 才自建 `MediaElementSource`，而且两条约束：
+
+- 用户开了音频反应（`localStorage.hana_audio_reactive === '1'`）且**正在播放**时，PV 让位 4 秒再自建。一个 `<audio>` 只能被 `createMediaElementSource` 接一次，谁先接谁赢——实测就是 PV 先接上、把 core 的链顶死了。
+- 只对同源 / blob 源自建。跳源无 CORS 的媒体一接 `MediaElementSource`，Chrome 直接静音，那比没节拍严重得多。
+
+**为什么不用 BPM 网格**（两种都试过，数据在案）：IOI 直方图消不了八度歧义——瞬态全落在八分音符上时，0.625s 那格根本没样本，96 BPM 报成 191.6；改成网格命中（取达标最长周期）又往漂，长周期容差天然大，实测在 176→64→79→160 之间跳。所以不猜绝对 BPM，**把检到的瞬态直接当拍**：`since` 天然零漂移， subdivision 猜错也仍踩在音乐上。瞬态门限是四重 AND（均值+2σ、达近期峰值 40%、绝对地板 0.02、`hp > 0.05`）加 0.18s 峰选取确认——一个嗑鼓的衰减会造两个峰，不做峰选取周期就被折半（实测 229.6 / 189）。
+
+自检命令：`PV.audio.stats()`（mode / energy / bpm / conf / failed / err）、`PV.audio.diag()`（onsets / period / thr / rebases / clock）。
+
+实测（`pv/fixtures/` 里 ffmpeg 合成的拍点音，`node pv/make-fixtures.mjs` 重建，不入库）：
+
+| 测试音 | 真值 | 检出 | 走哪条链 |
+|---|---|---|---|
+| bpm-96 | 96 | 95.8 | PV 自建 analyser |
+| bpm-120 | 120 | 120.1 | PV 自建 analyser |
+| bpm-140 | 140 | 139.7 – 140.0 | **core 的 `__reactiveBins`** |
+
 ## 待填
 
-- ③ `audio.energy/beat` 还没有生产者。App 的 analyser 链在 `ui/index.html` 约 11109 行，只喂了 spectrum / waveform 两个主题；`pulse` 与 `beatZoom` 已就位，接上就能用。
-- ④ 一行 = 一个 cut；`/` 分切与拍对齐未做。
+- ④ 一行 = 一个 cut；`/` 分切与拍对齐未做——`beat` 已到位，④ 可以把切点吸到 `beat.since` 上。
 - ⑤ `decor` 4 件、`treatment` 3 件，JIZURA 那边是 130 + 62 + 69。
 - ⑥ 没有字体表，PV 跟 App 字体。
 - `exit` 的 `slice` 是文字复制品近似，不是真的切片遮罩。
+- 真人真歌的准确度待听：合成拍点音没有和声、人声与混响，onset 会比真实流行乐干净得多。
 - `tools/` 剩下的 `inject-*` / `fix-*` 仍是补丁链（只管非 PV 部分），可以搬同样的「拆-剥-插-验」形状。
