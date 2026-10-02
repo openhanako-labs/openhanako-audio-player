@@ -435,6 +435,23 @@
    *  · 每次先把 --fx/--fy/--fk 抹掉再量，否则上一轮的位移会被这一轮量进去（不幂等，
    *    实测 --fk 会一路缩到 0.58）。
    *  · 只写 left/top 与 --fx/--fy/--fk，绝不碰 transform：那是版式（旋转）与镜头的地盘。 */
+  /* 通用判据：这个元素是不是被某个「自己还在台上」的 overflow:hidden 祖先裁掉了。
+   * 守卫和体检共用，避免两各写一版、各错一版。*/
+  function clippedIn(node, stageEl, sb) {
+    var n = node.parentElement;
+    while (n && n !== stageEl && stageEl.contains(n)) {
+      var cs = getComputedStyle(n);
+      if (/hidden|clip|auto|scroll/.test(cs.overflowX + cs.overflowY)) {
+        var nr = n.getBoundingClientRect();
+        return nr.left >= sb.left - 1 && nr.right <= sb.right + 1 &&
+          nr.top >= sb.top - 1 && nr.bottom <= sb.bottom + 1;
+      }
+      n = n.parentElement;
+    }
+    return false;
+  }
+  PV._clippedIn = clippedIn;
+
   function fitGuard(c) {
     var stage = c.stage || PV.stage(), el = c.el;
     if (!stage || !el) return;
@@ -445,6 +462,10 @@
     el.style.removeProperty('--fx'); el.style.removeProperty('--fy'); el.style.removeProperty('--fk');
 
     var toks = Array.prototype.slice.call(el.querySelectorAll('.jv-w'));
+    /* 被裁切祖先包住、而且祖先自己还在台上的 token，不参与守卫：
+     * 跑马这类版式故意把内容探出窗口，拉回来就等于把动画抽风。
+     * 体检用同一个判据（PV._clippedIn），两边不各写一版。*/
+    toks = toks.filter(function (w) { return !clippedIn(w, stage, sb); });
     /* 上一段的单字修正（--gdx/--gdy）不能遗留给这一段 */
     toks.forEach(function (w) {
       w.style.removeProperty('--gdx'); w.style.removeProperty('--gdy');

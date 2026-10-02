@@ -126,6 +126,10 @@
             if (!toks.length && lay.key !== 'ring' && lay.key !== 'interlude') {
               out.空段.push(lay.key + '@' + li + ' 无 token'); return;
             }
+            /* 被裁掉的不算溢出：跑马/胶片这类版式故意把内容探出窗口，由某个
+             * overflow:hidden 的祖先切掉。判据用引擎的 PV._clippedIn（和守卫同一个）——
+             * 两各写一版的话，总有一天一版放行另一版报错。*/
+            toks = toks.filter(function (el) { return !PV._clippedIn(el, stage, box); });
             var worst = 0, first = null;
             toks.forEach(function (el) {
               if (!rectIn(el, box)) {

@@ -17,7 +17,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PV = dirname(fileURLToPath(import.meta.url));
 const TARGETS = ['ui/index.html', 'ui/standalone.html'];
 
-const CSS_ORDER = ['css/base.css', 'css/layouts.css', 'css/chrome.css', 'css/parts.css', 'css/decor.css', 'css/fonts.css', 'css/bg.css', 'css/look.css'];
+const CSS_ORDER = ['css/base.css', 'css/layouts.css', 'css/layouts2.css', 'css/chrome.css', 'css/parts.css', 'css/decor.css', 'css/fonts.css', 'css/bg.css', 'css/look.css'];
 const JS_ORDER = [
   'src/00-engine.js', 'src/01-styles.js', 'src/02-layouts.js',
   'src/03-enter.js', 'src/04-hold.js', 'src/05-exit.js',
@@ -25,7 +25,7 @@ const JS_ORDER = [
   'src/09-chrome.js', 'src/10-api.js', 'src/11-audio.js',
   'src/13-syntax.js', 'src/12-cuts.js',
   'src/14-decor.js', 'src/15-treat.js', 'src/16-trans.js', 'src/17-faces.js',
-  'src/18-audit.js', 'src/19-bg.js', 'src/21-looks.js'
+  'src/18-audit.js', 'src/19-bg.js', 'src/21-looks.js', 'src/22-layouts2.js'
 ];
 
 const CSS_B = '/* ===== PV:BEGIN 文字PV引擎（pv/ 目录构建产物，勿手改） ===== */';
@@ -260,7 +260,7 @@ for (const rel of TARGETS) {
 
 const srcAll = jsParts.join('\n');
 const regCount = (srcAll.match(/PV\.reg\(/g) || []).length;
-log.push(`PV.reg 调用点 ${regCount} 处（循环注册的件数会多于这个数：真实件数看页面 PV.stats()，当前 157）；PV 块 CSS ${(CSS_BLOCK.length / 1024).toFixed(1)} KB / JS ${(JS_BLOCK.length / 1024).toFixed(1)} KB`);
+log.push(`PV.reg 调用点 ${regCount} 处（循环注册的件数多于这个数，真实件数看页面 PV.stats()）；PV 块 CSS ${(CSS_BLOCK.length / 1024).toFixed(1)} KB / JS ${(JS_BLOCK.length / 1024).toFixed(1)} KB`);
 if (REPORT) log.push('（PV 块内容不参与遗留剥离，构建产物勿手改）');
 
 console.log(log.join('\n'));
