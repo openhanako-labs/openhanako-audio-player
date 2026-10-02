@@ -19,22 +19,24 @@
       var pl = layer.querySelector('.jv-particles');
       if (!pl) {
         pl = document.createElement('div');
-        pl.className = 'jv-particles';
-        for (var i = 0; i < 14; i++) {
-          var sp = document.createElement('i');
-          var sz = (2 + Math.random() * 4).toFixed(1);
-          sp.style.width = sz + 'px'; sp.style.height = sz + 'px';
-          sp.style.left = (Math.random() * 96).toFixed(1) + '%';
-          sp.style.top = (10 + Math.random() * 80).toFixed(1) + '%';
-          sp.style.animationDuration = (7 + Math.random() * 9).toFixed(1) + 's';
-          sp.style.animationDelay = (-Math.random() * 10).toFixed(1) + 's';
-          if (Math.random() < 0.3) sp.className = 'sq';
-          pl.appendChild(sp);
+        pl.className = 'jv-d jv-particles';
+        if (!pl.childElementCount) {
+          for (var pi = 0; pi < 14; pi++) {
+            var sp = document.createElement('i');
+            var sz = (2 + Math.random() * 4).toFixed(1);
+            sp.style.width = sz + 'px'; sp.style.height = sz + 'px';
+            sp.style.left = (Math.random() * 96).toFixed(1) + '%';
+            sp.style.top = (10 + Math.random() * 80).toFixed(1) + '%';
+            sp.style.animationDuration = (7 + Math.random() * 9).toFixed(1) + 's';
+            sp.style.animationDelay = (-Math.random() * 10).toFixed(1) + 's';
+            if (Math.random() < 0.3) sp.className = 'sq';
+            pl.appendChild(sp);
+          }
         }
         layer.appendChild(pl);
       }
       var n = Math.max(0, Math.round(14 * PV.fx.density));
-      Array.prototype.forEach.call(pl.children, function (el, i) { el.style.display = i < n ? '' : 'none'; });
+      Array.prototype.forEach.call(pl.children, function (el2, i) { el2.style.display = i < n ? '' : 'none'; });
       return null;
     }
   });
@@ -47,7 +49,8 @@
       var line = c.el;
       if (!line || line.querySelector('.jv-hud')) return null;
       var d = document.createElement('div');
-      d.className = 'jv-hud';
+      /* jv-d 带 horizontal-tb：不带就会被竖写版式把整块子层带走方向（⑤ 修了 HUD，这轮补上引线） */
+      d.className = 'jv-d jv-hud';
       d.innerHTML = '<span class="no">No.' + String((c.idx || 0) + 1).padStart(2, '0') + '</span>' +
         '<span class="tc">TC ' + tc(c.line && c.line.time) + '</span>';
       line.appendChild(d);
@@ -68,7 +71,7 @@
     apply: function (c) {
       if (!c.el || c.el.querySelector('.jv-rules')) return null;
       var d = document.createElement('div');
-      d.className = 'jv-rules';
+      d.className = 'jv-d jv-rules';
       d.innerHTML = '<i></i><i></i>';
       c.el.appendChild(d);
       return null;

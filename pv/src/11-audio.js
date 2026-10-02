@@ -27,15 +27,36 @@
   };
   Object.assign(PV.audio, A);
 
-  /* ---------- 自建图 ---------- */
-  var own = { actx: null, an: null, data: null, failed: false, err: null };
+  /* ---------- 自建图 ----------
+   * 接 <audio> 是个危险动作：createMediaElementSource 一调，元素的声音就只能从图里出去。
+   * 图没跑起来 = 静音。实测就是这么把播放声弄没的（进 PV 但未播时抢接）。
+   * 三条硬规定：
+   *   1) 只在「正在播」时接——那一刻必然有用户手势，AudioContext 才可能真 running；
+   *   2) 接上后 1.5s 内到不了 running 就拆桥，把声音还给原生出口；
+   *   3) 退出 PV 一定拆桥。
+   */
+  var own = { actx: null, an: null, src: null, data: null, failed: false, err: null, since: 0, released: null };
+  PV.audioOwn = true;              // 设 false 就彻底不接元素，拍点驱动失效但绝对不会哑
+
+  function releaseOwn(why) {
+    if (own.src) { try { own.src.disconnect(); } catch (e) { } own.src = null; }
+    own.an = null; own.data = null; own.since = 0;
+    if (own.actx) { try { own.actx.close(); } catch (e) { } own.actx = null; }
+    own.failed = true; own.released = why || true; A.mode = null;
+    A.energy = 0; A.beat = null; A.confidence = 0;
+  }
+  /* 重新可用：下次开播还能再接（不被一次的 failed 锁死） */
+  PV.audioRelease = function () {
+    releaseOwn('manual');
+    own.failed = false; own.err = null; own.released = null;
+  };
 
   PV.audio.stats = function () {
     return {
       on: A.on, mode: A.mode, ticks: A.ticks, energy: +A.energy.toFixed(3),
       bpm: +A.bpm.toFixed(1), confidence: +A.confidence.toFixed(2),
       beat: A.beat ? +A.beat.since.toFixed(3) : null, period: +A._period.toFixed(3),
-      failed: !!own.failed, err: own.err,
+      failed: !!own.failed, err: own.err, released: own.released || null, audioOwn: !!PV.audioOwn,
       onsets: A._onsets.length, flux: +flux.toFixed(4),
       bins: own.data ? Array.prototype.slice.call(own.data, 0, 8).join(',') : null
     };
@@ -67,10 +88,10 @@
   }
   var hostWaitSince = 0;
   function mayBuildOwn() {
-    if (!hostWanted()) return true;
     var el = audioEl();
-    /* 用户开了音频反应：core 有权接这个元素。没在播的时候它还没机会建，更不能抢。 */
-    if (!el || el.paused) return false;
+    /* 铁律：没在播绝不接元素；总开关关了也不接 */
+    if (!PV.audioOwn || !el || el.paused || el.ended) return false;
+    if (!hostWanted()) return true;
     if (!hostWaitSince) hostWaitSince = performance.now();
     return performance.now() - hostWaitSince > 4000;   // 播了 4s 还没频谱，那条链负不了责，PV 自建
   }
@@ -88,10 +109,17 @@
 
   function ownFrame() {
     if (own.failed) return null;
-    if (own.actx && own.actx.state !== 'running' && own.actx.resume) own.actx.resume().catch(function () { });
     if (own.an) {
+      /* 接完跑不起来就拆桥：宁可不驱动拍点，也不能替用户把声音图挂住 */
+      if (own.actx.state !== 'running') {
+        if (!own.since) own.since = performance.now();
+        else if (performance.now() - own.since > 1500) { releaseOwn('ctx-stuck'); return null; }
+        if (own.actx.resume) own.actx.resume().catch(function () { });
+        return null;
+      }
+      own.since = 0;
       /* 自建这条没人替我们填 buffer，core 那条是它的循环在填 */
-      try { own.an.getByteFrequencyData(own.data); } catch (e) { own.err = 'getByte: ' + e.message; return null; }
+      try { own.an.getByteFrequencyData(own.data); } catch (e) { releaseOwn('getbyte'); return null; }
       return own.data;
     }
     if (!mayBuildOwn()) return null;
@@ -100,17 +128,19 @@
     if (!el || !AC) return null;
     try {
       var actx = own.actx || (own.actx = new AC());
+      if (actx.resume) actx.resume().catch(function () { });
       var src = actx.createMediaElementSource(el);     // 同一元素第二次调必抛，所以只在这里建
       var an = actx.createAnalyser();
       an.fftSize = 128; an.smoothingTimeConstant = 0.6;
-      src.connect(an); an.connect(actx.destination);
-      own.an = an; own.data = new Uint8Array(an.frequencyBinCount);
+      src.connect(an);
+      an.connect(actx.destination);                   // 漏这条就是静音：接了图不接出口，声音没归处
+      own.src = src; own.an = an; own.data = new Uint8Array(an.frequencyBinCount);
       A.mode = 'own';
-      try { own.an.getByteFrequencyData(own.data); } catch (e) { }
+      try { an.getByteFrequencyData(own.data); } catch (e) { }
       return own.data;
     } catch (e) {
       own.err = String((e && e.name) + ': ' + (e && e.message));
-      own.failed = true;
+      releaseOwn('throw');
       return null;
     }
   }
@@ -316,7 +346,9 @@
     A._idx = 0; clockMode = null;
     Object.assign(PV.audio, { energy: null, beat: null, bpm: 0, confidence: 0, time: null });
     if (base) Object.assign(PV.fx, base);
-    if (own.actx) { try { own.actx.suspend(); } catch (e) { } }
+    /* 退出 PV 就拆桥：不能给后台留一个挂着的图，那是静音的源头 */
+    if (own.src || own.actx) releaseOwn('exit');
+    own.failed = false; own.err = null; own.released = null;
   };
 
   /* 挂到引擎的帧循环上，不另开 rAF */
