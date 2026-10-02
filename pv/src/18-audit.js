@@ -61,8 +61,26 @@
     }
 
     var keepIdx = PV.curIdx();
+    /* 体检基线必须包含上游：mood 与 fx 会改 when 门槛（谁在池里）与版式幅度（摆多远），
+     * 不钉住它们，同一页连跑两次能拿到 10 和 0 两种结果——光播种不够。
+     * 现在：气氛清空、强度回开机值、字体钉成黑体（宽度可控），跑完全部还原。 */
+    var saved = { mood: PV.mood, fx: Object.assign({}, PV.fx), manual: PV.faceManual, style: PV.style() && PV.style().id };
+    PV.mood = null;
+    if (PV.FX0) Object.keys(PV.FX0).forEach(function (k) { PV.fx[k] = PV.FX0[k]; });
+    /* 字体必须走 opts.face 逐格指定：faceManual 的优先级排在「风格钉死」之后，
+     * 风格是 gold 这类钉了字体的时候，faceManual 根本管不到（实测就是这样量出不一致的数）。
+     * 同时把风格切到 auto：颜色不改度量，但 auto 不钉字体，才能让 opts.face 说话。*/
     PV.setLyrics(lines);
-    try {
+    /* 体检必须自己播种：以前不播，于是它继承页面当前的随机流，
+     * 同一个页面连跑两次能得出 14 / 16 两种结果——那这个工具给的数字就没一句能信。
+     * 现在按（版式 × 行 × 段）固定播种，每一格都是可复现的。*/
+    var layNo = {};
+    PV.parts('layout').forEach(function (d, i) { layNo[d.key] = i; });
+    /* 一轮扫描 = 一个字体下的全部（版式 × 行 × 段）格子。
+     * 字体是真实变量（同一格子宋体比黑体宽），钉死字体换来的「0 溢出」不算答案，
+     * 所以 opts.eachFace 能把 12 套字体各扫一遍。 */
+    function pass(PINFACE) {
+      var F = PINFACE === 'hei' ? '' : ' @' + PINFACE;
       for (var li = 0; li < lines.length; li++) {
         var cuts = PV.splitLine(lines[li], li) || [];
         if (!cuts.length && (lines[li].text || '').trim()) out.空段.push(li + ':' + lines[li].text.slice(0, 10));
@@ -80,21 +98,31 @@
             if (lay.pre) lay.pre(probe);
             if (lay.fit && !lay.fit(probe)) { skipped++; return; }
             var p = null;
+            var sd = 90000 + li * 419 + ci * 31 + (layNo[lay.key] || 0);
+            PV.seed(sd);
             try {
               p = PV.show(li, {
                 force: true, keepCuts: true, cutI: ci, layout: lay.key,
-                bg: 'solid',
+                bg: 'solid', look: 'none', face: PINFACE,
                 enter: 'none', hold: 'none', exit: 'none', transition: 'cut', camera: 'none',
                 decor: [], treatment: []
               });
             } catch (e) {
-              out.溢出.push(lay.key + '@' + li + ' 抛错 ' + e.message); return;
+              out.溢出.push(lay.key + '@' + li + ' 抛错 ' + e.message + ' [seed ' + sd + ']' + F); return;
             }
             if (!p) return;
             var stage = PV.stage();
             if (!stage) return;
             box = stage.getBoundingClientRect();
             var toks = p.ctx.tokensEls || [];
+            /* 量「所有可见行」而不只量当前行：前后幽灵行也在台上，
+             * 上一轮就是幽灵行因为版式重写了 position 而排到舞台外，体检完全没看到。*/
+            var lnav = PV.layer() ? PV.layer().querySelectorAll('.jv-line:not(.jv-out) .jv-t') : [];
+            if (lnav.length) toks = Array.prototype.slice.call(lnav).filter(function (el) {
+              if (!el.isConnected) return false;
+              var q = el.getBoundingClientRect();
+              return q.width || q.height;
+            });
             if (!toks.length && lay.key !== 'ring' && lay.key !== 'interlude') {
               out.空段.push(lay.key + '@' + li + ' 无 token'); return;
             }
@@ -105,30 +133,39 @@
                 if (a > worst) { worst = a; first = el.textContent; }
               }
             });
-            if (worst > 40) out.溢出.push(lay.key + '@' + li + '「' + (first || '') + '」溢出 ' + worst + 'px²');
+            if (worst > 40) out.溢出.push(lay.key + '@' + li + '「' + (first || '') + '」溢出 ' + worst + 'px² [seed ' + sd + ']' + F);
             /* 贴边：任何 token 距边界 < 6px 记一笔，攒久了画面很挤 */
             var tight = 0;
             toks.forEach(function (el) {
               var r = el.getBoundingClientRect();
               if (r.left - box.left < 6 || box.right - r.right < 6) tight++;
             });
-            if (tight && tight >= Math.min(4, toks.length)) out.边缘挤压.push(lay.key + '@' + li + ' 贴边 ' + tight + ' 字');
+            if (tight && tight >= Math.min(4, toks.length)) out.边缘挤压.push(lay.key + '@' + li + ' 贴边 ' + tight + ' 字 [seed ' + sd + ']' + F);
 
             /* 入场跑不完本段：拿基准登场件（升起）重算一次配牌（不碰 DOM），
              * 看引擎把 stagger 收完之后还有多长——收不下的才是真问题。 */
             var tp = PV.planLine(li, {
-              keepCuts: true, cutI: ci, layout: lay.key,
+              keepCuts: true, cutI: ci, layout: lay.key, face: PINFACE, look: 'none', bg: 'solid',
               enter: 'rise', hold: 'none', exit: 'none', transition: 'cut', camera: 'none',
               decor: [], treatment: []
             });
             var cost = tp ? enterCost(tp.enter, tp.ctx) : 0;
             if (cost > avail * 0.9) {
-              out.入场超时.push(lay.key + '@' + li + ' 入场 ' + Math.round(cost) + 'ms，本段 ' + Math.round(avail) + 'ms（阈值 90%）');
+              out.入场超时.push(lay.key + '@' + li + ' 入场 ' + Math.round(cost) + 'ms，本段 ' + Math.round(avail) + 'ms（阈值 90%）[seed ' + sd + ']' + F);
             }
           });
         }
       }
+    }
+    try {
+      if (opts.eachFace) PV.parts('face').forEach(function (f) { pass(f.key); });
+      else pass(opts.face || 'hei');
     } finally {
+      PV.faceManual = saved.manual;
+      if (saved.style && PV.useStyle) PV.useStyle(saved.style);
+      /* 先恢复气氛（setMood 会把 fx 刷成该气氛的预设），再把 fx 精确贴回体检前的值 */
+      if (saved.mood) PV.setMood(saved.mood);
+      Object.assign(PV.fx, saved.fx);
       PV.setLyrics(L);
       if (keepIdx >= 0) PV.show(keepIdx, { force: true });
     }

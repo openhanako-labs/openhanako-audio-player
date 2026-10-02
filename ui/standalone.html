@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1002230457";
+  window.__HANA_BUILD = "1002235753";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -3423,6 +3423,9 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 /* 外层归版式（位置/字号/旋转），内层归登场层（位移/淡入）——
  * 旧实现两件事写在一个元素上，jzWin 的 transform:none 会永久吃掉版式的旋转 */
 .jv-w { display: inline-block; white-space: pre; }
+/* 守卫的单字修正走独立 translate：版式写的是 transform（旋转）、保持层写 --drift-*，
+ * 三个各自一个属性，谁也不盖谁 */
+.jv-w { translate: var(--gdx, 0px) var(--gdy, 0px); }
 .jv-t { display: inline-block; font-style: inherit; }
 
 @keyframes jvRise { 0% { opacity: 0; transform: translateY(.5em); } 100% { opacity: 1; transform: none; } }
@@ -3453,7 +3456,12 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 .jv-tile { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 14px; align-content: center; justify-items: center; width: 100%; }
 .jv-tile .jv-w { font-size: 26px; font-weight: 800; }
 
-.jv-scatter { width: 100%; height: 100%; position: relative; }
+/* 注意：.jv-scatter / .jv-cad 这两个类是打在**行元素本身**上的（.jv-line.jv-scatter），
+ * 而行已经是 position:absolute; inset:0。这里绝不能重写 position——
+ * 改成 relative 会让行掉回普通流：三条线（当前行 + 前后幽灵行）从叠在一起变成竖着排队，
+ * 后两条直接排到舞台外面去（实测 token 落在 y=1161/1483，而舞台只有 540 高）。
+ * 百分比 top/left 需要一个已定位的包含块，.jv-line 本身就是，不需要再包一层。*/
+.jv-scatter { width: 100%; height: 100%; }
 .jv-scatter .jv-w { position: absolute; font-size: 24px; font-weight: 700; }
 
 .jv-ring svg { width: 100%; height: 100%; }
@@ -3525,7 +3533,7 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
   white-space: nowrap; text-shadow: 0 0 24px color-mix(in srgb, var(--jv-acc) 35%, transparent);
 }
 
-.jv-cad { width: 100%; height: 100%; position: relative; }
+.jv-cad { width: 100%; height: 100%; }   /* position 同上不重写 */
 .jv-cad .jv-w { position: absolute; font-weight: 800; letter-spacing: .02em; }
 .jv-cad .deco { position: absolute; pointer-events: none; opacity: .35; animation: jvDrift 9s ease-in-out infinite alternate; }
 @keyframes jvDrift { 0% { transform: translate(0, 0) rotate(0deg); } 100% { transform: translate(10px, -14px) rotate(18deg); } }
@@ -3813,6 +3821,151 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 
 /* 扫光与同心圈要能真的动起来：background-position / transform 都得可动画 */
 .jv-bg-layer[data-bg="beam"] { background-size: 220% 100%; }
+
+/* PV 引擎 · ⑩ 字形外观层样式
+ * 只作用在 i.jv-t 上（登场层的那个内层），只写涂装属性。
+ * 幅度一律走 .pv-jv 上的 --lk-* 变量，由 21-looks.js 每件自己掷；
+ * 变量没给时下面的 fallback 就是这件的默认长相。
+ */
+
+/* ---------- 描边族 ---------- */
+.pv-jv[data-look="outline"] .jv-t,
+.pv-jv[data-look="outlineFill"] .jv-t,
+.pv-jv[data-look="doubleOutline"] .jv-t,
+.pv-jv[data-look="dotted"] .jv-t,
+.pv-jv[data-look="echoOutline"] .jv-t,
+.pv-jv[data-look="stencil"] .jv-t {
+  -webkit-text-stroke: var(--lk-sw, .05em) var(--jv-acc);
+  color: var(--lk-fill, transparent);
+  paint-order: stroke fill;
+}
+.pv-jv[data-look="doubleOutline"] .jv-t {
+  text-shadow: var(--lk-ring, 3px) var(--lk-ring, 3px) 0 color-mix(in srgb, var(--jv-acc) 45%, transparent);
+}
+/* 点线缘：整字按横向节距切片，读起来就是虚线描的 */
+.pv-jv[data-look="dotted"] .jv-t {
+  -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 var(--lk-dash, 4px), transparent 0 calc(var(--lk-dash, 4px) * 2));
+  mask-image: repeating-linear-gradient(90deg, #000 0 var(--lk-dash, 4px), transparent 0 calc(var(--lk-dash, 4px) * 2));
+}
+.pv-jv[data-look="echoOutline"] .jv-t {
+  text-shadow:
+    var(--lk-echo, 10px) var(--lk-echo, 10px) 0 color-mix(in srgb, var(--jv-acc) 22%, transparent),
+    calc(var(--lk-echo, 10px) * -1) calc(var(--lk-echo, 10px) * -1) 0 color-mix(in srgb, var(--jv-acc) 14%, transparent);
+}
+
+/* ---------- 阴影族（方向由 --lk-dx/--lk-dy 给单位less 步长，CSS 乘 px） ---------- */
+.pv-jv[data-look="extrude"] .jv-t {
+  text-shadow:
+    calc(var(--lk-dx, .7) * 1px) calc(var(--lk-dy, .7) * 1px) 0 var(--lk-sh),
+    calc(var(--lk-dx, .7) * 2px) calc(var(--lk-dy, .7) * 2px) 0 var(--lk-sh),
+    calc(var(--lk-dx, .7) * 3px) calc(var(--lk-dy, .7) * 3px) 0 var(--lk-sh),
+    calc(var(--lk-dx, .7) * 4px) calc(var(--lk-dy, .7) * 4px) 0 var(--lk-sh),
+    calc(var(--lk-dx, .7) * 5px) calc(var(--lk-dy, .7) * 5px) 0 var(--lk-sh),
+    calc(var(--lk-dx, .7) * 6px) calc(var(--lk-dy, .7) * 6px) 0 var(--lk-sh2),
+    calc(var(--lk-dx, .7) * 7px) calc(var(--lk-dy, .7) * 7px) 0 var(--lk-sh2),
+    calc(var(--lk-dx, .7) * 8px) calc(var(--lk-dy, .7) * 8px) 3px rgba(0, 0, 0, .35);
+}
+.pv-jv[data-look="longShadow"] .jv-t {
+  text-shadow:
+    calc(var(--lk-dx, 1) * 1px) calc(var(--lk-dy, 1) * 1px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 2px) calc(var(--lk-dy, 1) * 2px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 3px) calc(var(--lk-dy, 1) * 3px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 4px) calc(var(--lk-dy, 1) * 4px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 5px) calc(var(--lk-dy, 1) * 5px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 6px) calc(var(--lk-dy, 1) * 6px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 7px) calc(var(--lk-dy, 1) * 7px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 8px) calc(var(--lk-dy, 1) * 8px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 9px) calc(var(--lk-dy, 1) * 9px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 10px) calc(var(--lk-dy, 1) * 10px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 11px) calc(var(--lk-dy, 1) * 11px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 12px) calc(var(--lk-dy, 1) * 12px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 13px) calc(var(--lk-dy, 1) * 13px) 0 var(--lk-sh4),
+    calc(var(--lk-dx, 1) * 14px) calc(var(--lk-dy, 1) * 14px) 4px var(--lk-sh4);
+}
+.pv-jv[data-look="hardShadow"] .jv-t {
+  text-shadow: calc(var(--lk-dx, 3) * 1px) calc(var(--lk-dy, 3) * 1px) 0 color-mix(in srgb, var(--jv-acc) 85%, var(--jv-bg));
+}
+.pv-jv[data-look="softShadow"] .jv-t {
+  text-shadow: 0 var(--lk-soft, .45em) var(--lk-soft, .45em) rgba(0, 0, 0, .55);
+}
+.pv-jv[data-look="glow"] .jv-t {
+  text-shadow:
+    0 0 calc(var(--lk-glow, .6em) * .4) color-mix(in srgb, var(--jv-acc) 80%, #fff),
+    0 0 var(--lk-glow, .6em) var(--jv-acc),
+    0 0 calc(var(--lk-glow, .6em) * 2) color-mix(in srgb, var(--jv-acc) 45%, transparent);
+}
+
+/* ---------- 填充族：一律 clip 到字上 ---------- */
+.pv-jv[data-look="gradientV"] .jv-t,
+.pv-jv[data-look="splitColor"] .jv-t,
+.pv-jv[data-look="halftone"] .jv-t,
+.pv-jv[data-look="stripes"] .jv-t,
+.pv-jv[data-look="hatch"] .jv-t,
+.pv-jv[data-look="stencil"] .jv-t {
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.pv-jv[data-look="gradientV"] .jv-t {
+  background-image: linear-gradient(var(--lk-dir, 180deg), var(--jv-fg), color-mix(in srgb, var(--jv-acc) 75%, var(--jv-fg)));
+}
+.pv-jv[data-look="splitColor"] .jv-t {
+  background-image: linear-gradient(180deg, var(--jv-fg) var(--lk-stop, 50%), var(--jv-acc) var(--lk-stop, 50%));
+}
+.pv-jv[data-look="halftone"] .jv-t {
+  background-image: radial-gradient(var(--jv-fg) 0 var(--lk-dot, 4px), transparent var(--lk-dot, 4px));
+  background-size: calc(var(--lk-dot, 4px) * 2.2) calc(var(--lk-dot, 4px) * 2.2);
+}
+.pv-jv[data-look="stripes"] .jv-t {
+  background-image: repeating-linear-gradient(var(--lk-ang, 90deg), var(--jv-fg) 0 2px, transparent 2px var(--lk-pitch, 6px));
+}
+.pv-jv[data-look="hatch"] .jv-t {
+  background-image: repeating-linear-gradient(48deg, var(--jv-fg) 0 1px, transparent 1px var(--lk-pitch, 3px));
+}
+/* 镂空：条纹填充 + 描边，中间再抹几道横杠 */
+.pv-jv[data-look="stencil"] .jv-t {
+  background-image: linear-gradient(var(--jv-fg), var(--jv-fg));
+  -webkit-mask-image: repeating-linear-gradient(0deg, transparent 0 var(--lk-bar, 10px), #000 var(--lk-bar, 10px) calc(var(--lk-bar, 10px) + 2px));
+  mask-image: repeating-linear-gradient(0deg, transparent 0 var(--lk-bar, 10px), #000 var(--lk-bar, 10px) calc(var(--lk-bar, 10px) + 2px));
+}
+
+/* ---------- 线与框族 ---------- */
+.pv-jv[data-look="marker"] .jv-t {
+  background-image: linear-gradient(transparent var(--lk-mk, 68%), color-mix(in srgb, var(--jv-acc) 55%, transparent) var(--lk-mk, 68%));
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+}
+.pv-jv[data-look="underline"] .jv-t {
+  text-decoration: underline;
+  text-decoration-thickness: var(--lk-ul, 3px);
+  text-decoration-color: var(--jv-acc);
+  text-underline-offset: .14em;
+}
+.pv-jv[data-look="strike"] .jv-t {
+  text-decoration: line-through;
+  text-decoration-thickness: .07em;
+  text-decoration-color: var(--jv-acc);
+}
+.pv-jv[data-look="boxed"] .jv-t {
+  display: inline-block;
+  border: var(--lk-bw, 1.5px) solid var(--jv-acc);
+  padding: var(--lk-pad, 4px) calc(var(--lk-pad, 4px) + 2px);
+  background: color-mix(in srgb, var(--jv-acc) 12%, transparent);
+}
+/* 傍点：日文竖排着重号，CJK 原生特性，不需要素材 */
+.pv-jv[data-look="emphasisDots"] .jv-t {
+  text-emphasis: filled dot var(--jv-acc);
+  -webkit-text-emphasis: filled dot var(--jv-acc);
+  text-emphasis-position: over right;
+}
+.pv-jv[data-look="alternate"] .jv-w:nth-child(even) .jv-t { color: var(--jv-acc); }
+.pv-jv[data-look="italic"] .jv-t { font-style: italic; }
+
+/* 阴影色：主体压暗，末端更淡，全部从当前风格的 acc/bg 混出来，跟配色走 */
+.pv-jv {
+  --lk-sh: color-mix(in srgb, var(--jv-acc) 42%, var(--jv-bg));
+  --lk-sh2: color-mix(in srgb, var(--jv-acc) 26%, var(--jv-bg));
+  --lk-sh3: color-mix(in srgb, var(--jv-acc) 20%, var(--jv-bg));
+  --lk-sh4: color-mix(in srgb, var(--jv-acc) 9%, var(--jv-bg));
+}
 
 /* ===== PV:END ===== */
 </style><script>
@@ -11849,7 +12002,7 @@ injectPills();
   'use strict';
   var PV = window.PV || (window.PV = {});
 
-  var GROUPS = ['mood', 'style', 'face', 'bg', 'layout', 'enter', 'hold', 'exit', 'decor', 'treatment', 'camera', 'transition'];
+  var GROUPS = ['mood', 'style', 'face', 'look', 'bg', 'layout', 'enter', 'hold', 'exit', 'decor', 'treatment', 'camera', 'transition'];
   var reg = {}, order = {};
   GROUPS.forEach(function (g) { reg[g] = {}; order[g] = []; });
 
@@ -11903,6 +12056,8 @@ injectPills();
 
   /* ---------- 演出强度 ---------- */
   PV.fx = { motion: 0.6, glitch: 0.2, chroma: 0.2, decor: 0.5, density: 0.7, texture: 0.2, bgSwitch: 0 };
+  /* 开机默认值留一份：体检要靠它把上游强度钉住（PV.fx 会被气氛与音频每帧改写）*/
+  PV.FX0 = Object.assign({}, PV.fx);
 
   /* ---------- 气氛：决不是换皮，是换抽签分布 + 换滑块 ---------- */
   /* decor 这一列是后补的：先前没有一档气氛设过它，于是它恒等于1，
@@ -12109,8 +12264,9 @@ injectPills();
     /* ⑥ 字体：风格可以钉死（新闻就该黑体），没钉就按气氛/强调抽；
      * auto 风格不抢字体——那是“跟 App 主题”的意思，连字体一起跟才对 */
     var fc = PV.rollFace ? PV.rollFace(ctx, opts) : null;
+    var lk = PV.rollLook ? PV.rollLook(ctx, opts) : null;
     var bgPart = PV.rollBg ? PV.rollBg(ctx, opts) : null;
-    if (ctx.style && ctx.style.id === 'auto' && !PV.faceManual) fc = null;
+    if (ctx.style && ctx.style.id === 'auto' && !PV.faceManual && !opts.face) fc = null;
     /* decor / treatment 可叠 0..n 件；外部传字符串 = 只用那一件 */
     function stack(group) {
       var raw = opts[group];
@@ -12139,6 +12295,7 @@ injectPills();
     return {
       layout: lay,
       face: fc,
+      look: lk,
       bg: bgPart,
       enter: enterPart,
       hold: PV.choose('hold', ctx, opts) || PV.part('hold', PV.defaults.hold),
@@ -12228,6 +12385,7 @@ injectPills();
     if (!made.el.parentNode) swap();      // 衔接件没调 swap 时的兜底
 
     if (S.tag) S.tag.textContent = 'LAYOUT · ' + plan.layout.nm + (plan.face ? ' · ' + plan.face.nm : '') +
+      (plan.look && plan.look.key !== 'none' ? ' · ' + plan.look.nm : '') +
       (PV.mood ? ' · ' + PV.mood : '') +
       (S.cuts && S.cuts.length > 1 ? ' · ' + (S.cutI + 1) + '/' + S.cuts.length : '') +
       (PV.audioChain ? ' · 音' + PV.audioChain() : '');
@@ -12242,6 +12400,8 @@ injectPills();
     else if (PV.clearFace) PV.clearFace();
     /* 背景先铺：它在最底下一层，背面动画不影响上面的几何 */
     if (plan.bg && PV.useBg) { var bgc = PV.useBg(plan.bg, made.ctx); if (bgc) PV.addStop(bgc); }
+    /* 字形外观：只写涂装变量，与登场/保持/镜头/守卫互不抢属性 */
+    if (PV.useLook) PV.useLook(plan.look, made.ctx);
     /* 守卫先跑：此时只有版式写好的位置与旋转，还没有任何动画 transform，
      * 量到的就是落点。守卫自己只写 left/top 与 --fx/--fy/--fk，
      * 后面的登场/保持/镜头层照旧动 transform，互不抢占。 */
@@ -12274,10 +12434,26 @@ injectPills();
     var sb = stage.getBoundingClientRect();
     if (sb.width < 40 || sb.height < 40) return;
     var PAD = 12;
+    var lo = sb.left + PAD, hi = sb.right - PAD, vt = sb.top + PAD, vb = sb.bottom - PAD;
     el.style.removeProperty('--fx'); el.style.removeProperty('--fy'); el.style.removeProperty('--fk');
 
     var toks = Array.prototype.slice.call(el.querySelectorAll('.jv-w'));
+    /* 上一段的单字修正（--gdx/--gdy）不能遗留给这一段 */
+    toks.forEach(function (w) {
+      w.style.removeProperty('--gdx'); w.style.removeProperty('--gdy');
+    });
     if (!toks.length) return;
+
+    /* 单侧修正量：over0 = 离左/上界的欠量（负数才算越界），over1 = 超出右/下界的量（正数才算）。
+     * 方呀验算（不是拍脑袋）：左边欠 138px → 应当往**右** +138 = -(over0)；
+     * 右边多 82px → 应当往**左** -82 = -(over1)。所以修正量 = -(over0 + over1)。
+     * 两边都越界（它本身比安全区宽）不平移，平移只会把一头按下另一头翘起——
+     * 上一版先写成 over0-over1（双反），又写成相加不平移，都不对。*/
+    function sideFix(over0, over1) {
+      var a = over0 < 0 ? over0 : 0, b = over1 > 0 ? over1 : 0;
+      if (a && b) return 0;
+      return -(a + b);
+    }
 
     function rects() {
       var minL = 1e9, maxR = -1e9, minT = 1e9, maxB = -1e9;
@@ -12314,30 +12490,41 @@ injectPills();
       }
     }
 
-    /* b) 整行并集还是出界：先缩，缩完剩下的再平移 */
-    var u = rects();
-    if (!u) return;
-    var lo = sb.left + PAD, hi = sb.right - PAD, vt = sb.top + PAD, vb = sb.bottom - PAD;
-    var k = Math.min(1, (hi - lo) / Math.max(1, u.maxR - u.minL), (vb - vt) / Math.max(1, u.maxB - u.minT));
-    k = Math.max(0.5, k);
-    var ox = Math.max(0, u.maxR * 1 - hi) + Math.min(0, u.minL - lo);
-    if (k < 0.999) {
-      el.style.setProperty('--fk', k.toFixed(3));
-      /* 缩放绕元素中心，所以缩放后的边界要按中心重算，不能简单乘 k */
-      var cxm = (u.minL + u.maxR) / 2, cym = (u.minT + u.maxB) / 2;
-      var hw = (u.maxR - u.minL) / 2 * k, hh = (u.maxB - u.minT) / 2 * k;
-      var s2 = stage.getBoundingClientRect();
-      var ncx = s2.left + s2.width / 2 + (cxm - (s2.left + s2.width / 2)) * k;
-      var ncy = s2.top + s2.height / 2 + (cym - (s2.top + s2.height / 2)) * k;
-      ox = Math.max(0, ncx + hw - hi) + Math.min(0, ncx - hw - lo);
-      var oy = Math.max(0, ncy + hh - vb) + Math.min(0, ncy - hh - vt);
-      if (ox) el.style.setProperty('--fx', ox.toFixed(1) + 'px');
-      if (oy) el.style.setProperty('--fy', oy.toFixed(1) + 'px');
-    } else {
-      var oy2 = Math.max(0, u.maxB - vb) + Math.min(0, u.minT - vt);
-      if (ox) el.style.setProperty('--fx', ox.toFixed(1) + 'px');
-      if (oy2) el.style.setProperty('--fy', oy2.toFixed(1) + 'px');
+    /* b) 整行并集还是出界：先缩，缩完剩下的再平移。
+     * 这里不靠“算出缩放后的边界”（上一版就是这么写的，符号写反还把字往下推，
+     * 而且绕中心缩放的投影算不精），而是每修正一次就重量一次——
+     * getBoundingClientRect 读到的是应用 --fk/--fy 之后的真实矩形，迭代两轮就能收敛。*/
+    var u2 = rects();
+    if (!u2) return;
+    var kk = Math.min(1, (hi - lo) / Math.max(1, u2.maxR - u2.minL), (vb - vt) / Math.max(1, u2.maxB - u2.minT));
+    kk = Math.max(0.5, kk);
+    if (kk < 0.999) el.style.setProperty('--fk', kk.toFixed(3));
+    var fxA = 0, fyA = 0;
+    for (var it = 0; it < 3; it++) {
+      var u3 = rects();
+      if (!u3) break;
+      var dx = sideFix(u3.minL - lo, u3.maxR - hi);
+      var dy = sideFix(u3.minT - vt, u3.maxB - vb);
+      if (!dx && !dy) break;
+      fxA += dx; fyA += dy;
+      el.style.setProperty('--fx', fxA.toFixed(1) + 'px');
+      el.style.setProperty('--fy', fyA.toFixed(1) + 'px');
     }
+
+    /* c) 整行缩过、挪过，仍有个别字出头（长拉丁词换行、某些字体比预期宽）——这种字单挑出来挪。
+     * 不能写 left/top：版式可能给散落字写了 left:34%，写成像素就跳位了。
+     * 所以用独立的 --gdx/--gdy 走 .jv-w 的 translate（与版式的 transform、保持层的 --drift 互不抢）。*/
+    toks.forEach(function (w) {
+      var r = w.getBoundingClientRect();
+      if (!r.width && !r.height) return;
+      var ddx = sideFix(r.left - lo, r.right - hi);
+      var ddy = sideFix(r.top - vt, r.bottom - vb);
+      if (!ddx && !ddy) return;
+      var px = parseFloat(w.style.getPropertyValue('--gdx')) || 0;
+      var py = parseFloat(w.style.getPropertyValue('--gdy')) || 0;
+      w.style.setProperty('--gdx', (px + ddx).toFixed(1) + 'px');
+      w.style.setProperty('--gdy', (py + ddy).toFixed(1) + 'px');
+    });
   }
   PV.fitGuard = fitGuard;
 
@@ -14899,8 +15086,26 @@ injectPills();
     }
 
     var keepIdx = PV.curIdx();
+    /* 体检基线必须包含上游：mood 与 fx 会改 when 门槛（谁在池里）与版式幅度（摆多远），
+     * 不钉住它们，同一页连跑两次能拿到 10 和 0 两种结果——光播种不够。
+     * 现在：气氛清空、强度回开机值、字体钉成黑体（宽度可控），跑完全部还原。 */
+    var saved = { mood: PV.mood, fx: Object.assign({}, PV.fx), manual: PV.faceManual, style: PV.style() && PV.style().id };
+    PV.mood = null;
+    if (PV.FX0) Object.keys(PV.FX0).forEach(function (k) { PV.fx[k] = PV.FX0[k]; });
+    /* 字体必须走 opts.face 逐格指定：faceManual 的优先级排在「风格钉死」之后，
+     * 风格是 gold 这类钉了字体的时候，faceManual 根本管不到（实测就是这样量出不一致的数）。
+     * 同时把风格切到 auto：颜色不改度量，但 auto 不钉字体，才能让 opts.face 说话。*/
     PV.setLyrics(lines);
-    try {
+    /* 体检必须自己播种：以前不播，于是它继承页面当前的随机流，
+     * 同一个页面连跑两次能得出 14 / 16 两种结果——那这个工具给的数字就没一句能信。
+     * 现在按（版式 × 行 × 段）固定播种，每一格都是可复现的。*/
+    var layNo = {};
+    PV.parts('layout').forEach(function (d, i) { layNo[d.key] = i; });
+    /* 一轮扫描 = 一个字体下的全部（版式 × 行 × 段）格子。
+     * 字体是真实变量（同一格子宋体比黑体宽），钉死字体换来的「0 溢出」不算答案，
+     * 所以 opts.eachFace 能把 12 套字体各扫一遍。 */
+    function pass(PINFACE) {
+      var F = PINFACE === 'hei' ? '' : ' @' + PINFACE;
       for (var li = 0; li < lines.length; li++) {
         var cuts = PV.splitLine(lines[li], li) || [];
         if (!cuts.length && (lines[li].text || '').trim()) out.空段.push(li + ':' + lines[li].text.slice(0, 10));
@@ -14918,21 +15123,31 @@ injectPills();
             if (lay.pre) lay.pre(probe);
             if (lay.fit && !lay.fit(probe)) { skipped++; return; }
             var p = null;
+            var sd = 90000 + li * 419 + ci * 31 + (layNo[lay.key] || 0);
+            PV.seed(sd);
             try {
               p = PV.show(li, {
                 force: true, keepCuts: true, cutI: ci, layout: lay.key,
-                bg: 'solid',
+                bg: 'solid', look: 'none', face: PINFACE,
                 enter: 'none', hold: 'none', exit: 'none', transition: 'cut', camera: 'none',
                 decor: [], treatment: []
               });
             } catch (e) {
-              out.溢出.push(lay.key + '@' + li + ' 抛错 ' + e.message); return;
+              out.溢出.push(lay.key + '@' + li + ' 抛错 ' + e.message + ' [seed ' + sd + ']' + F); return;
             }
             if (!p) return;
             var stage = PV.stage();
             if (!stage) return;
             box = stage.getBoundingClientRect();
             var toks = p.ctx.tokensEls || [];
+            /* 量「所有可见行」而不只量当前行：前后幽灵行也在台上，
+             * 上一轮就是幽灵行因为版式重写了 position 而排到舞台外，体检完全没看到。*/
+            var lnav = PV.layer() ? PV.layer().querySelectorAll('.jv-line:not(.jv-out) .jv-t') : [];
+            if (lnav.length) toks = Array.prototype.slice.call(lnav).filter(function (el) {
+              if (!el.isConnected) return false;
+              var q = el.getBoundingClientRect();
+              return q.width || q.height;
+            });
             if (!toks.length && lay.key !== 'ring' && lay.key !== 'interlude') {
               out.空段.push(lay.key + '@' + li + ' 无 token'); return;
             }
@@ -14943,30 +15158,39 @@ injectPills();
                 if (a > worst) { worst = a; first = el.textContent; }
               }
             });
-            if (worst > 40) out.溢出.push(lay.key + '@' + li + '「' + (first || '') + '」溢出 ' + worst + 'px²');
+            if (worst > 40) out.溢出.push(lay.key + '@' + li + '「' + (first || '') + '」溢出 ' + worst + 'px² [seed ' + sd + ']' + F);
             /* 贴边：任何 token 距边界 < 6px 记一笔，攒久了画面很挤 */
             var tight = 0;
             toks.forEach(function (el) {
               var r = el.getBoundingClientRect();
               if (r.left - box.left < 6 || box.right - r.right < 6) tight++;
             });
-            if (tight && tight >= Math.min(4, toks.length)) out.边缘挤压.push(lay.key + '@' + li + ' 贴边 ' + tight + ' 字');
+            if (tight && tight >= Math.min(4, toks.length)) out.边缘挤压.push(lay.key + '@' + li + ' 贴边 ' + tight + ' 字 [seed ' + sd + ']' + F);
 
             /* 入场跑不完本段：拿基准登场件（升起）重算一次配牌（不碰 DOM），
              * 看引擎把 stagger 收完之后还有多长——收不下的才是真问题。 */
             var tp = PV.planLine(li, {
-              keepCuts: true, cutI: ci, layout: lay.key,
+              keepCuts: true, cutI: ci, layout: lay.key, face: PINFACE, look: 'none', bg: 'solid',
               enter: 'rise', hold: 'none', exit: 'none', transition: 'cut', camera: 'none',
               decor: [], treatment: []
             });
             var cost = tp ? enterCost(tp.enter, tp.ctx) : 0;
             if (cost > avail * 0.9) {
-              out.入场超时.push(lay.key + '@' + li + ' 入场 ' + Math.round(cost) + 'ms，本段 ' + Math.round(avail) + 'ms（阈值 90%）');
+              out.入场超时.push(lay.key + '@' + li + ' 入场 ' + Math.round(cost) + 'ms，本段 ' + Math.round(avail) + 'ms（阈值 90%）[seed ' + sd + ']' + F);
             }
           });
         }
       }
+    }
+    try {
+      if (opts.eachFace) PV.parts('face').forEach(function (f) { pass(f.key); });
+      else pass(opts.face || 'hei');
     } finally {
+      PV.faceManual = saved.manual;
+      if (saved.style && PV.useStyle) PV.useStyle(saved.style);
+      /* 先恢复气氛（setMood 会把 fx 刷成该气氛的预设），再把 fx 精确贴回体检前的值 */
+      if (saved.mood) PV.setMood(saved.mood);
+      Object.assign(PV.fx, saved.fx);
       PV.setLyrics(L);
       if (keepIdx >= 0) PV.show(keepIdx, { force: true });
     }
@@ -15186,6 +15410,172 @@ injectPills();
     el.dataset.bg = b.key;
     if (b.apply) return b.apply(ctx || {}, el);
     return null;
+  };
+})();
+
+/* PV 引擎 · 21 字形外观层（⑩ look）
+ *
+ * 吸收自 JIZURA 的 11p_looks.js——先纠正一句我上一轮说错的话：那个包是**混合包**，
+ * 85 条里前 24 条才是真「字形外观」（袋文字/立体/傍点/マーカー…），后面混着背景、
+ * 镜头、转场、后处理。而那 24 条对应的能力，我们**一件都没有**——133 件里没有一个
+ * 改变文字本身涂装的层。所以这层是补空白，不是扩量。
+ *
+ * 归属规矩（比件数重要）：本层只写**涂装**——text-shadow / -webkit-text-stroke /
+ * background-clip / text-decoration / text-emphasis / font-style / color，
+ * 全部通过 .pv-jv[data-look=…] 作用在 `i.jv-t` 上。
+ * 不碰 transform（归版式与镜头）、不碰 left/top 与 --fx/--fy/--fk（归守卫）、
+ * 不碰 --drift-*（归保持层）。所以外观能和呼吸、拍震、守卫叠加而谁也不盖谁。
+ *
+ * vars 可以是对象，也可以是函数(ctx) —— 函数版让每件在自己那段里掷幅度，
+ * 同一个件每段看起来不至于像一个模子。
+ */
+(function () {
+  'use strict';
+  var PV = window.PV;
+
+  PV.defaults.look = 'none';
+  if (PV.rolling) PV.rolling.look = true;
+
+  function rnd(a, b, unit) { return (a + PV.rnd(b - a)).toFixed(1) + (unit || ''); }
+
+  PV.reg('look', 'none', { nm: '无', w: 1.5, tags: ['calm', 'editorial', 'pop', 'graphic', 'emotional', 'glitch', 'horror'] });
+
+  /* ---------- 描边族 ---------- */
+  PV.reg('look', 'outline', {
+    nm: '袋文字', w: 1, tags: ['pop', 'graphic'],
+    vars: function () { return { '--lk-sw': rnd(0.035, 0.07, 'em') }; }
+  });
+  PV.reg('look', 'outlineFill', {
+    nm: '缘取', w: 1, tags: ['pop', 'graphic', 'emotional'],
+    vars: function () { return { '--lk-sw': rnd(0.04, 0.08, 'em'), '--lk-fill': 'var(--jv-fg)' }; }
+  });
+  PV.reg('look', 'doubleOutline', {
+    nm: '二重缘', w: 0.7, tags: ['graphic', 'glitch'],
+    vars: function () { return { '--lk-sw': rnd(0.04, 0.065, 'em'), '--lk-ring': rnd(2, 5, 'px') }; }
+  });
+  PV.reg('look', 'dotted', {
+    nm: '点线缘', w: 0.55, tags: ['editorial', 'graphic'],
+    when: function () { return PV.fx.texture > 0.2; },
+    vars: function () { return { '--lk-sw': rnd(0.05, 0.08, 'em'), '--lk-dash': rnd(3, 6, 'px') }; }
+  });
+  PV.reg('look', 'echoOutline', {
+    nm: '轮廓回响', w: 0.6, tags: ['emotional', 'glitch'],
+    vars: function () { return { '--lk-sw': rnd(0.03, 0.05, 'em'), '--lk-echo': rnd(6, 14, 'px') }; }
+  });
+
+  /* ---------- 阴影族 ---------- */
+  PV.reg('look', 'extrude', {
+    nm: '立体', w: 0.9, tags: ['pop', 'graphic'],
+    vars: function () {
+      var a = (120 + PV.rnd(120)) * Math.PI / 180;                 // 光从左上，影子往右下
+      return { '--lk-dx': Math.cos(a).toFixed(3), '--lk-dy': Math.abs(Math.sin(a)).toFixed(3), '--lk-n': 7 };
+    }
+  });
+  PV.reg('look', 'longShadow', {
+    nm: '长影', w: 0.7, tags: ['graphic', 'pop', 'horror'],
+    vars: function () {
+      var a = (110 + PV.rnd(130)) * Math.PI / 180, k = 0.9 + PV.rnd(0.6);
+      return { '--lk-dx': (Math.cos(a) * k).toFixed(3), '--lk-dy': (Math.sin(a) * k).toFixed(3), '--lk-n': 14 };
+    }
+  });
+  PV.reg('look', 'hardShadow', {
+    nm: '偏移影', w: 0.9, tags: ['graphic', 'pop', 'glitch'],
+    vars: function () {
+      var a = (100 + PV.rnd(160)) * Math.PI / 180, k = 2 + PV.rnd(4);
+      return { '--lk-dx': (Math.cos(a) * k).toFixed(2), '--lk-dy': (Math.sin(a) * k).toFixed(2) };
+    }
+  });
+  PV.reg('look', 'softShadow', {
+    nm: '柔影', w: 0.9, tags: ['calm', 'emotional'],
+    vars: function () { return { '--lk-soft': rnd(0.3, 0.7, 'em') }; }
+  });
+  PV.reg('look', 'glow', {
+    nm: '发光', w: 0.8, tags: ['emotional', 'pop'],
+    when: function () { return PV.fx.chroma > 0.2; },
+    vars: function () { return { '--lk-glow': rnd(0.4, 1.1, 'em') }; }
+  });
+
+  /* ---------- 填充族（background-clip:text） ---------- */
+  PV.reg('look', 'gradientV', {
+    nm: '纵向渐变', w: 0.9, tags: ['emotional', 'pop', 'graphic'],
+    vars: function () { return { '--lk-clip': '1', '--lk-dir': Math.round(rnd(120, 240)) + 'deg' }; }
+  });
+  PV.reg('look', 'splitColor', {
+    nm: '上下二色', w: 0.75, tags: ['graphic', 'pop'],
+    vars: function () { return { '--lk-clip': '1', '--lk-stop': Math.round(38 + PV.rnd(24)) + '%' }; }
+  });
+  PV.reg('look', 'halftone', {
+    nm: '网点', w: 0.6, tags: ['graphic', 'glitch', 'pop'],
+    when: function () { return PV.fx.texture > 0.25; },
+    vars: function () { return { '--lk-clip': '1', '--lk-dot': rnd(3, 7, 'px') }; }
+  });
+  PV.reg('look', 'stripes', {
+    nm: '条纹填充', w: 0.6, tags: ['graphic', 'pop'],
+    when: function () { return PV.fx.texture > 0.2; },
+    vars: function () { return { '--lk-clip': '1', '--lk-pitch': rnd(4, 9, 'px'), '--lk-ang': Math.round(rnd(60, 130)) + 'deg' }; }
+  });
+  PV.reg('look', 'hatch', {
+    nm: '斜线填充', w: 0.5, tags: ['editorial', 'graphic'],
+    when: function () { return PV.fx.texture > 0.3; },
+    vars: function () { return { '--lk-clip': '1', '--lk-pitch': rnd(2, 4.5, 'px') }; }
+  });
+  PV.reg('look', 'marker', {
+    nm: '荧光标记', w: 0.8, tags: ['editorial', 'pop'],
+    vars: function () { return { '--lk-mk': rnd(58, 86) + '%' }; }
+  });
+
+  /* ---------- 线与框族 ---------- */
+  PV.reg('look', 'underline', {
+    nm: '下划线', w: 0.8, tags: ['editorial', 'calm'],
+    vars: function () { return { '--lk-ul': rnd(2, 5, 'px') }; }
+  });
+  PV.reg('look', 'strike', { nm: '删除线', w: 0.45, tags: ['editorial', 'glitch'] });
+  PV.reg('look', 'boxed', {
+    nm: '箱组', w: 0.7, tags: ['graphic', 'pop', 'editorial'],
+    vars: function () { return { '--lk-pad': rnd(2, 8, 'px'), '--lk-bw': rnd(1, 2.5, 'px') }; }
+  });
+  PV.reg('look', 'emphasisDots', { nm: '傍点', w: 0.7, tags: ['emotional', 'editorial', 'calm'] });
+  PV.reg('look', 'alternate', { nm: '交互色', w: 0.6, tags: ['pop', 'graphic'] });
+  PV.reg('look', 'italic', { nm: '斜体', w: 0.7, tags: ['emotional', 'editorial'] });
+  PV.reg('look', 'stencil', {
+    nm: '镂空', w: 0.45, tags: ['glitch', 'horror', 'graphic'],
+    when: function () { return PV.fx.glitch > 0.3; },
+    vars: function () { return { '--lk-clip': '1', '--lk-sw': rnd(0.03, 0.05, 'em'), '--lk-bar': rnd(6, 14, 'px') }; }
+  });
+
+  /* ---------- 挂接：一层一件，只写 vars 与 data-look ---------- */
+  var applied = [];
+
+  function clearVars(el) {
+    applied.forEach(function (k) { el.style.removeProperty(k); });
+    applied = [];
+  }
+
+  PV.useLook = function (l, ctx) {
+    if (typeof l === 'string') l = PV.part('look', l);
+    if (!l) l = PV.part('look', PV.defaults.look);
+    var el = PV.layer();
+    if (!el) return l ? l.key : null;
+    clearVars(el);
+    el.dataset.look = l ? l.key : 'none';
+    var v = l ? l.vars : null;
+    if (v) {
+      if (typeof v === 'function') v = v(ctx || {});
+      Object.keys(v).forEach(function (k) {
+        el.style.setProperty(k, v[k]);
+        applied.push(k);
+      });
+    }
+    return l ? l.key : null;
+  };
+  PV.lookKey = function () {
+    var el = PV.layer();
+    return el ? (el.dataset.look || 'none') : null;
+  };
+  PV.rollLook = function (ctx, opts) {
+    if (opts.look) return PV.part('look', opts.look);
+    if (PV.rolling.look === false) return PV.part('look', PV.defaults.look);
+    return PV.choose('look', ctx, opts) || PV.part('look', 'none');
   };
 })();
 

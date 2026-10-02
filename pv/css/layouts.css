@@ -24,7 +24,12 @@
 .jv-tile { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 14px; align-content: center; justify-items: center; width: 100%; }
 .jv-tile .jv-w { font-size: 26px; font-weight: 800; }
 
-.jv-scatter { width: 100%; height: 100%; position: relative; }
+/* 注意：.jv-scatter / .jv-cad 这两个类是打在**行元素本身**上的（.jv-line.jv-scatter），
+ * 而行已经是 position:absolute; inset:0。这里绝不能重写 position——
+ * 改成 relative 会让行掉回普通流：三条线（当前行 + 前后幽灵行）从叠在一起变成竖着排队，
+ * 后两条直接排到舞台外面去（实测 token 落在 y=1161/1483，而舞台只有 540 高）。
+ * 百分比 top/left 需要一个已定位的包含块，.jv-line 本身就是，不需要再包一层。*/
+.jv-scatter { width: 100%; height: 100%; }
 .jv-scatter .jv-w { position: absolute; font-size: 24px; font-weight: 700; }
 
 .jv-ring svg { width: 100%; height: 100%; }
@@ -96,7 +101,7 @@
   white-space: nowrap; text-shadow: 0 0 24px color-mix(in srgb, var(--jv-acc) 35%, transparent);
 }
 
-.jv-cad { width: 100%; height: 100%; position: relative; }
+.jv-cad { width: 100%; height: 100%; }   /* position 同上不重写 */
 .jv-cad .jv-w { position: absolute; font-weight: 800; letter-spacing: .02em; }
 .jv-cad .deco { position: absolute; pointer-events: none; opacity: .35; animation: jvDrift 9s ease-in-out infinite alternate; }
 @keyframes jvDrift { 0% { transform: translate(0, 0) rotate(0deg); } 100% { transform: translate(10px, -14px) rotate(18deg); } }

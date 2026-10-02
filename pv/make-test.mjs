@@ -168,6 +168,11 @@ ${js}
   sw.oninput = function () { PV.bgSwap = Number(sw.value); swv.textContent = sw.value; };
   gBg.appendChild(swl); gBg.appendChild(sw); gBg.appendChild(swv);
 
+  var gLook = group('外观');
+  PV.parts('look').forEach(function (d) {
+    btn(gLook, d.nm, function () { PV.show(line, { force: true, look: d.key }); show(); });
+  });
+
   var gFx = group('滑块');
   ['motion', 'glitch', 'chroma', 'texture', 'density', 'decor'].forEach(function (k) {
     var s = document.createElement('input');
@@ -209,7 +214,7 @@ ${js}
     if (!p) return;
     var ci = PV.cutsInfo ? PV.cutsInfo() : { cut: 0, n: 1 };
     planEl.textContent = 'cut ' + (ci.cut + 1) + '/' + ci.n + '  ⟵  ' +
-      [p.layout.key, p.face ? 'face:' + p.face.key : 'face:—', p.bg ? 'bg:' + p.bg.key : 'bg:—',
+      [p.layout.key, p.face ? 'face:' + p.face.key : 'face:—', p.look ? 'look:' + p.look.key : 'look:—', p.bg ? 'bg:' + p.bg.key : 'bg:—',
       p.enter.key, p.hold.key, p.exit.key, p.transition.key, p.camera.key,
       'decor[' + p.decor.map(function (d) { return d.key; }).join(',') + ']',
       'treat[' + p.treatment.map(function (d) { return d.key; }).join(',') + ']'].join(' / ');

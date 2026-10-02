@@ -9,7 +9,7 @@
   'use strict';
   var PV = window.PV || (window.PV = {});
 
-  var GROUPS = ['mood', 'style', 'face', 'bg', 'layout', 'enter', 'hold', 'exit', 'decor', 'treatment', 'camera', 'transition'];
+  var GROUPS = ['mood', 'style', 'face', 'look', 'bg', 'layout', 'enter', 'hold', 'exit', 'decor', 'treatment', 'camera', 'transition'];
   var reg = {}, order = {};
   GROUPS.forEach(function (g) { reg[g] = {}; order[g] = []; });
 
@@ -63,6 +63,8 @@
 
   /* ---------- 演出强度 ---------- */
   PV.fx = { motion: 0.6, glitch: 0.2, chroma: 0.2, decor: 0.5, density: 0.7, texture: 0.2, bgSwitch: 0 };
+  /* 开机默认值留一份：体检要靠它把上游强度钉住（PV.fx 会被气氛与音频每帧改写）*/
+  PV.FX0 = Object.assign({}, PV.fx);
 
   /* ---------- 气氛：决不是换皮，是换抽签分布 + 换滑块 ---------- */
   /* decor 这一列是后补的：先前没有一档气氛设过它，于是它恒等于1，
@@ -269,8 +271,9 @@
     /* ⑥ 字体：风格可以钉死（新闻就该黑体），没钉就按气氛/强调抽；
      * auto 风格不抢字体——那是“跟 App 主题”的意思，连字体一起跟才对 */
     var fc = PV.rollFace ? PV.rollFace(ctx, opts) : null;
+    var lk = PV.rollLook ? PV.rollLook(ctx, opts) : null;
     var bgPart = PV.rollBg ? PV.rollBg(ctx, opts) : null;
-    if (ctx.style && ctx.style.id === 'auto' && !PV.faceManual) fc = null;
+    if (ctx.style && ctx.style.id === 'auto' && !PV.faceManual && !opts.face) fc = null;
     /* decor / treatment 可叠 0..n 件；外部传字符串 = 只用那一件 */
     function stack(group) {
       var raw = opts[group];
@@ -299,6 +302,7 @@
     return {
       layout: lay,
       face: fc,
+      look: lk,
       bg: bgPart,
       enter: enterPart,
       hold: PV.choose('hold', ctx, opts) || PV.part('hold', PV.defaults.hold),
@@ -388,6 +392,7 @@
     if (!made.el.parentNode) swap();      // 衔接件没调 swap 时的兜底
 
     if (S.tag) S.tag.textContent = 'LAYOUT · ' + plan.layout.nm + (plan.face ? ' · ' + plan.face.nm : '') +
+      (plan.look && plan.look.key !== 'none' ? ' · ' + plan.look.nm : '') +
       (PV.mood ? ' · ' + PV.mood : '') +
       (S.cuts && S.cuts.length > 1 ? ' · ' + (S.cutI + 1) + '/' + S.cuts.length : '') +
       (PV.audioChain ? ' · 音' + PV.audioChain() : '');
@@ -402,6 +407,8 @@
     else if (PV.clearFace) PV.clearFace();
     /* 背景先铺：它在最底下一层，背面动画不影响上面的几何 */
     if (plan.bg && PV.useBg) { var bgc = PV.useBg(plan.bg, made.ctx); if (bgc) PV.addStop(bgc); }
+    /* 字形外观：只写涂装变量，与登场/保持/镜头/守卫互不抢属性 */
+    if (PV.useLook) PV.useLook(plan.look, made.ctx);
     /* 守卫先跑：此时只有版式写好的位置与旋转，还没有任何动画 transform，
      * 量到的就是落点。守卫自己只写 left/top 与 --fx/--fy/--fk，
      * 后面的登场/保持/镜头层照旧动 transform，互不抢占。 */
@@ -434,10 +441,26 @@
     var sb = stage.getBoundingClientRect();
     if (sb.width < 40 || sb.height < 40) return;
     var PAD = 12;
+    var lo = sb.left + PAD, hi = sb.right - PAD, vt = sb.top + PAD, vb = sb.bottom - PAD;
     el.style.removeProperty('--fx'); el.style.removeProperty('--fy'); el.style.removeProperty('--fk');
 
     var toks = Array.prototype.slice.call(el.querySelectorAll('.jv-w'));
+    /* 上一段的单字修正（--gdx/--gdy）不能遗留给这一段 */
+    toks.forEach(function (w) {
+      w.style.removeProperty('--gdx'); w.style.removeProperty('--gdy');
+    });
     if (!toks.length) return;
+
+    /* 单侧修正量：over0 = 离左/上界的欠量（负数才算越界），over1 = 超出右/下界的量（正数才算）。
+     * 方呀验算（不是拍脑袋）：左边欠 138px → 应当往**右** +138 = -(over0)；
+     * 右边多 82px → 应当往**左** -82 = -(over1)。所以修正量 = -(over0 + over1)。
+     * 两边都越界（它本身比安全区宽）不平移，平移只会把一头按下另一头翘起——
+     * 上一版先写成 over0-over1（双反），又写成相加不平移，都不对。*/
+    function sideFix(over0, over1) {
+      var a = over0 < 0 ? over0 : 0, b = over1 > 0 ? over1 : 0;
+      if (a && b) return 0;
+      return -(a + b);
+    }
 
     function rects() {
       var minL = 1e9, maxR = -1e9, minT = 1e9, maxB = -1e9;
@@ -474,30 +497,41 @@
       }
     }
 
-    /* b) 整行并集还是出界：先缩，缩完剩下的再平移 */
-    var u = rects();
-    if (!u) return;
-    var lo = sb.left + PAD, hi = sb.right - PAD, vt = sb.top + PAD, vb = sb.bottom - PAD;
-    var k = Math.min(1, (hi - lo) / Math.max(1, u.maxR - u.minL), (vb - vt) / Math.max(1, u.maxB - u.minT));
-    k = Math.max(0.5, k);
-    var ox = Math.max(0, u.maxR * 1 - hi) + Math.min(0, u.minL - lo);
-    if (k < 0.999) {
-      el.style.setProperty('--fk', k.toFixed(3));
-      /* 缩放绕元素中心，所以缩放后的边界要按中心重算，不能简单乘 k */
-      var cxm = (u.minL + u.maxR) / 2, cym = (u.minT + u.maxB) / 2;
-      var hw = (u.maxR - u.minL) / 2 * k, hh = (u.maxB - u.minT) / 2 * k;
-      var s2 = stage.getBoundingClientRect();
-      var ncx = s2.left + s2.width / 2 + (cxm - (s2.left + s2.width / 2)) * k;
-      var ncy = s2.top + s2.height / 2 + (cym - (s2.top + s2.height / 2)) * k;
-      ox = Math.max(0, ncx + hw - hi) + Math.min(0, ncx - hw - lo);
-      var oy = Math.max(0, ncy + hh - vb) + Math.min(0, ncy - hh - vt);
-      if (ox) el.style.setProperty('--fx', ox.toFixed(1) + 'px');
-      if (oy) el.style.setProperty('--fy', oy.toFixed(1) + 'px');
-    } else {
-      var oy2 = Math.max(0, u.maxB - vb) + Math.min(0, u.minT - vt);
-      if (ox) el.style.setProperty('--fx', ox.toFixed(1) + 'px');
-      if (oy2) el.style.setProperty('--fy', oy2.toFixed(1) + 'px');
+    /* b) 整行并集还是出界：先缩，缩完剩下的再平移。
+     * 这里不靠“算出缩放后的边界”（上一版就是这么写的，符号写反还把字往下推，
+     * 而且绕中心缩放的投影算不精），而是每修正一次就重量一次——
+     * getBoundingClientRect 读到的是应用 --fk/--fy 之后的真实矩形，迭代两轮就能收敛。*/
+    var u2 = rects();
+    if (!u2) return;
+    var kk = Math.min(1, (hi - lo) / Math.max(1, u2.maxR - u2.minL), (vb - vt) / Math.max(1, u2.maxB - u2.minT));
+    kk = Math.max(0.5, kk);
+    if (kk < 0.999) el.style.setProperty('--fk', kk.toFixed(3));
+    var fxA = 0, fyA = 0;
+    for (var it = 0; it < 3; it++) {
+      var u3 = rects();
+      if (!u3) break;
+      var dx = sideFix(u3.minL - lo, u3.maxR - hi);
+      var dy = sideFix(u3.minT - vt, u3.maxB - vb);
+      if (!dx && !dy) break;
+      fxA += dx; fyA += dy;
+      el.style.setProperty('--fx', fxA.toFixed(1) + 'px');
+      el.style.setProperty('--fy', fyA.toFixed(1) + 'px');
     }
+
+    /* c) 整行缩过、挪过，仍有个别字出头（长拉丁词换行、某些字体比预期宽）——这种字单挑出来挪。
+     * 不能写 left/top：版式可能给散落字写了 left:34%，写成像素就跳位了。
+     * 所以用独立的 --gdx/--gdy 走 .jv-w 的 translate（与版式的 transform、保持层的 --drift 互不抢）。*/
+    toks.forEach(function (w) {
+      var r = w.getBoundingClientRect();
+      if (!r.width && !r.height) return;
+      var ddx = sideFix(r.left - lo, r.right - hi);
+      var ddy = sideFix(r.top - vt, r.bottom - vb);
+      if (!ddx && !ddy) return;
+      var px = parseFloat(w.style.getPropertyValue('--gdx')) || 0;
+      var py = parseFloat(w.style.getPropertyValue('--gdy')) || 0;
+      w.style.setProperty('--gdx', (px + ddx).toFixed(1) + 'px');
+      w.style.setProperty('--gdy', (py + ddy).toFixed(1) + 'px');
+    });
   }
   PV.fitGuard = fitGuard;
 

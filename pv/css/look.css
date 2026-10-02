@@ -1,0 +1,144 @@
+/* PV 引擎 · ⑩ 字形外观层样式
+ * 只作用在 i.jv-t 上（登场层的那个内层），只写涂装属性。
+ * 幅度一律走 .pv-jv 上的 --lk-* 变量，由 21-looks.js 每件自己掷；
+ * 变量没给时下面的 fallback 就是这件的默认长相。
+ */
+
+/* ---------- 描边族 ---------- */
+.pv-jv[data-look="outline"] .jv-t,
+.pv-jv[data-look="outlineFill"] .jv-t,
+.pv-jv[data-look="doubleOutline"] .jv-t,
+.pv-jv[data-look="dotted"] .jv-t,
+.pv-jv[data-look="echoOutline"] .jv-t,
+.pv-jv[data-look="stencil"] .jv-t {
+  -webkit-text-stroke: var(--lk-sw, .05em) var(--jv-acc);
+  color: var(--lk-fill, transparent);
+  paint-order: stroke fill;
+}
+.pv-jv[data-look="doubleOutline"] .jv-t {
+  text-shadow: var(--lk-ring, 3px) var(--lk-ring, 3px) 0 color-mix(in srgb, var(--jv-acc) 45%, transparent);
+}
+/* 点线缘：整字按横向节距切片，读起来就是虚线描的 */
+.pv-jv[data-look="dotted"] .jv-t {
+  -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 var(--lk-dash, 4px), transparent 0 calc(var(--lk-dash, 4px) * 2));
+  mask-image: repeating-linear-gradient(90deg, #000 0 var(--lk-dash, 4px), transparent 0 calc(var(--lk-dash, 4px) * 2));
+}
+.pv-jv[data-look="echoOutline"] .jv-t {
+  text-shadow:
+    var(--lk-echo, 10px) var(--lk-echo, 10px) 0 color-mix(in srgb, var(--jv-acc) 22%, transparent),
+    calc(var(--lk-echo, 10px) * -1) calc(var(--lk-echo, 10px) * -1) 0 color-mix(in srgb, var(--jv-acc) 14%, transparent);
+}
+
+/* ---------- 阴影族（方向由 --lk-dx/--lk-dy 给单位less 步长，CSS 乘 px） ---------- */
+.pv-jv[data-look="extrude"] .jv-t {
+  text-shadow:
+    calc(var(--lk-dx, .7) * 1px) calc(var(--lk-dy, .7) * 1px) 0 var(--lk-sh),
+    calc(var(--lk-dx, .7) * 2px) calc(var(--lk-dy, .7) * 2px) 0 var(--lk-sh),
+    calc(var(--lk-dx, .7) * 3px) calc(var(--lk-dy, .7) * 3px) 0 var(--lk-sh),
+    calc(var(--lk-dx, .7) * 4px) calc(var(--lk-dy, .7) * 4px) 0 var(--lk-sh),
+    calc(var(--lk-dx, .7) * 5px) calc(var(--lk-dy, .7) * 5px) 0 var(--lk-sh),
+    calc(var(--lk-dx, .7) * 6px) calc(var(--lk-dy, .7) * 6px) 0 var(--lk-sh2),
+    calc(var(--lk-dx, .7) * 7px) calc(var(--lk-dy, .7) * 7px) 0 var(--lk-sh2),
+    calc(var(--lk-dx, .7) * 8px) calc(var(--lk-dy, .7) * 8px) 3px rgba(0, 0, 0, .35);
+}
+.pv-jv[data-look="longShadow"] .jv-t {
+  text-shadow:
+    calc(var(--lk-dx, 1) * 1px) calc(var(--lk-dy, 1) * 1px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 2px) calc(var(--lk-dy, 1) * 2px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 3px) calc(var(--lk-dy, 1) * 3px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 4px) calc(var(--lk-dy, 1) * 4px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 5px) calc(var(--lk-dy, 1) * 5px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 6px) calc(var(--lk-dy, 1) * 6px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 7px) calc(var(--lk-dy, 1) * 7px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 8px) calc(var(--lk-dy, 1) * 8px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 9px) calc(var(--lk-dy, 1) * 9px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 10px) calc(var(--lk-dy, 1) * 10px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 11px) calc(var(--lk-dy, 1) * 11px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 12px) calc(var(--lk-dy, 1) * 12px) 0 var(--lk-sh3),
+    calc(var(--lk-dx, 1) * 13px) calc(var(--lk-dy, 1) * 13px) 0 var(--lk-sh4),
+    calc(var(--lk-dx, 1) * 14px) calc(var(--lk-dy, 1) * 14px) 4px var(--lk-sh4);
+}
+.pv-jv[data-look="hardShadow"] .jv-t {
+  text-shadow: calc(var(--lk-dx, 3) * 1px) calc(var(--lk-dy, 3) * 1px) 0 color-mix(in srgb, var(--jv-acc) 85%, var(--jv-bg));
+}
+.pv-jv[data-look="softShadow"] .jv-t {
+  text-shadow: 0 var(--lk-soft, .45em) var(--lk-soft, .45em) rgba(0, 0, 0, .55);
+}
+.pv-jv[data-look="glow"] .jv-t {
+  text-shadow:
+    0 0 calc(var(--lk-glow, .6em) * .4) color-mix(in srgb, var(--jv-acc) 80%, #fff),
+    0 0 var(--lk-glow, .6em) var(--jv-acc),
+    0 0 calc(var(--lk-glow, .6em) * 2) color-mix(in srgb, var(--jv-acc) 45%, transparent);
+}
+
+/* ---------- 填充族：一律 clip 到字上 ---------- */
+.pv-jv[data-look="gradientV"] .jv-t,
+.pv-jv[data-look="splitColor"] .jv-t,
+.pv-jv[data-look="halftone"] .jv-t,
+.pv-jv[data-look="stripes"] .jv-t,
+.pv-jv[data-look="hatch"] .jv-t,
+.pv-jv[data-look="stencil"] .jv-t {
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.pv-jv[data-look="gradientV"] .jv-t {
+  background-image: linear-gradient(var(--lk-dir, 180deg), var(--jv-fg), color-mix(in srgb, var(--jv-acc) 75%, var(--jv-fg)));
+}
+.pv-jv[data-look="splitColor"] .jv-t {
+  background-image: linear-gradient(180deg, var(--jv-fg) var(--lk-stop, 50%), var(--jv-acc) var(--lk-stop, 50%));
+}
+.pv-jv[data-look="halftone"] .jv-t {
+  background-image: radial-gradient(var(--jv-fg) 0 var(--lk-dot, 4px), transparent var(--lk-dot, 4px));
+  background-size: calc(var(--lk-dot, 4px) * 2.2) calc(var(--lk-dot, 4px) * 2.2);
+}
+.pv-jv[data-look="stripes"] .jv-t {
+  background-image: repeating-linear-gradient(var(--lk-ang, 90deg), var(--jv-fg) 0 2px, transparent 2px var(--lk-pitch, 6px));
+}
+.pv-jv[data-look="hatch"] .jv-t {
+  background-image: repeating-linear-gradient(48deg, var(--jv-fg) 0 1px, transparent 1px var(--lk-pitch, 3px));
+}
+/* 镂空：条纹填充 + 描边，中间再抹几道横杠 */
+.pv-jv[data-look="stencil"] .jv-t {
+  background-image: linear-gradient(var(--jv-fg), var(--jv-fg));
+  -webkit-mask-image: repeating-linear-gradient(0deg, transparent 0 var(--lk-bar, 10px), #000 var(--lk-bar, 10px) calc(var(--lk-bar, 10px) + 2px));
+  mask-image: repeating-linear-gradient(0deg, transparent 0 var(--lk-bar, 10px), #000 var(--lk-bar, 10px) calc(var(--lk-bar, 10px) + 2px));
+}
+
+/* ---------- 线与框族 ---------- */
+.pv-jv[data-look="marker"] .jv-t {
+  background-image: linear-gradient(transparent var(--lk-mk, 68%), color-mix(in srgb, var(--jv-acc) 55%, transparent) var(--lk-mk, 68%));
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+}
+.pv-jv[data-look="underline"] .jv-t {
+  text-decoration: underline;
+  text-decoration-thickness: var(--lk-ul, 3px);
+  text-decoration-color: var(--jv-acc);
+  text-underline-offset: .14em;
+}
+.pv-jv[data-look="strike"] .jv-t {
+  text-decoration: line-through;
+  text-decoration-thickness: .07em;
+  text-decoration-color: var(--jv-acc);
+}
+.pv-jv[data-look="boxed"] .jv-t {
+  display: inline-block;
+  border: var(--lk-bw, 1.5px) solid var(--jv-acc);
+  padding: var(--lk-pad, 4px) calc(var(--lk-pad, 4px) + 2px);
+  background: color-mix(in srgb, var(--jv-acc) 12%, transparent);
+}
+/* 傍点：日文竖排着重号，CJK 原生特性，不需要素材 */
+.pv-jv[data-look="emphasisDots"] .jv-t {
+  text-emphasis: filled dot var(--jv-acc);
+  -webkit-text-emphasis: filled dot var(--jv-acc);
+  text-emphasis-position: over right;
+}
+.pv-jv[data-look="alternate"] .jv-w:nth-child(even) .jv-t { color: var(--jv-acc); }
+.pv-jv[data-look="italic"] .jv-t { font-style: italic; }
+
+/* 阴影色：主体压暗，末端更淡，全部从当前风格的 acc/bg 混出来，跟配色走 */
+.pv-jv {
+  --lk-sh: color-mix(in srgb, var(--jv-acc) 42%, var(--jv-bg));
+  --lk-sh2: color-mix(in srgb, var(--jv-acc) 26%, var(--jv-bg));
+  --lk-sh3: color-mix(in srgb, var(--jv-acc) 20%, var(--jv-bg));
+  --lk-sh4: color-mix(in srgb, var(--jv-acc) 9%, var(--jv-bg));
+}

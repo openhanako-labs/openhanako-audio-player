@@ -39,6 +39,9 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 /* 外层归版式（位置/字号/旋转），内层归登场层（位移/淡入）——
  * 旧实现两件事写在一个元素上，jzWin 的 transform:none 会永久吃掉版式的旋转 */
 .jv-w { display: inline-block; white-space: pre; }
+/* 守卫的单字修正走独立 translate：版式写的是 transform（旋转）、保持层写 --drift-*，
+ * 三个各自一个属性，谁也不盖谁 */
+.jv-w { translate: var(--gdx, 0px) var(--gdy, 0px); }
 .jv-t { display: inline-block; font-style: inherit; }
 
 @keyframes jvRise { 0% { opacity: 0; transform: translateY(.5em); } 100% { opacity: 1; transform: none; } }
