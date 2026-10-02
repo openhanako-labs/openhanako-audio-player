@@ -1,0 +1,40 @@
+/* PV 引擎 · 舞台与层容器
+ * PV 用自己的层 #pvJv，不写 folia 的 #pvTrack：
+ * 退出 PV 时 folia 的 DOM 从头到尾没被动过，不需要任何“恢复”补丁。
+ */
+.pv-stage {
+  /* 兜底放在父层：写在 .pv-jv 自己身上的话，会盖掉从 #pvStage 继承来的内联值，
+   * 导致 useStyle() 设的 --jv-bg 永远不生效（实测踩过） */
+  --jv-bg: var(--card-bg);
+  --jv-fg: var(--text);
+  --jv-acc: var(--accent);
+}
+.pv-jv {
+  position: absolute; inset: 0; z-index: 20;
+  display: none; overflow: hidden;
+  background: var(--jv-bg); color: var(--jv-fg);
+  transition: background .45s ease, color .45s ease;
+}
+body.jizura-mode:not(.view-compact) .pv-jv { display: block; }
+body.jizura-mode:not(.view-compact) .pv-stage { display: flex; }
+body.jizura-mode:not(.view-compact) .pv-bg { display: none; }
+/* folia 的行在 PV 下不可见，但保留 DOM —— 退出时立刻能用 */
+body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
+
+.jv-track { position: absolute; inset: 0; z-index: 2; will-change: transform; }
+
+.jv-line {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: 36px;
+  opacity: 0; transition: opacity .45s ease;
+}
+.jv-line.show { opacity: 1; }
+.jv-line.jv-out { opacity: 0; }
+
+/* 外层归版式（位置/字号/旋转），内层归登场层（位移/淡入）——
+ * 旧实现两件事写在一个元素上，jzWin 的 transform:none 会永久吃掉版式的旋转 */
+.jv-w { display: inline-block; white-space: pre; }
+.jv-t { display: inline-block; font-style: inherit; }
+
+@keyframes jvRise { 0% { opacity: 0; transform: translateY(.5em); } 100% { opacity: 1; transform: none; } }

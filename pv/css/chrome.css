@@ -1,0 +1,55 @@
+/* PV 引擎 · 舞台附件样式 */
+
+.jv-tag {
+  position: absolute; top: 10px; left: 12px; z-index: 30;
+  font-family: monospace; font-size: 9px; letter-spacing: .12em;
+  color: var(--jv-fg); opacity: .55; pointer-events: none;
+}
+
+.jv-dice {
+  position: absolute; top: 10px; right: 12px; z-index: 30;
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 1px solid var(--jv-acc, #D4AF37);
+  background: rgba(0, 0, 0, .35); color: var(--jv-acc, #D4AF37);
+  font-size: 15px; cursor: pointer; display: grid; place-items: center;
+  transition: transform .4s cubic-bezier(.34, 1.56, .64, 1);
+  backdrop-filter: blur(4px);
+}
+.jv-dice:hover { transform: rotate(120deg) scale(1.1); }
+.jv-dice:active { transform: rotate(360deg) scale(.92); }
+
+.jv-ghost {
+  position: absolute; left: 50%; transform: translateX(-50%); z-index: 2;
+  font-size: 13px; letter-spacing: .05em; color: var(--jv-fg); opacity: .5;
+  pointer-events: none; white-space: nowrap; max-width: 80%; overflow: hidden; text-overflow: ellipsis;
+}
+.jv-ghost.up { top: 12%; }
+.jv-ghost.dn { bottom: 12%; }
+
+.jv-bar {
+  position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); z-index: 30;
+  display: flex; gap: 6px; padding: 6px 10px;
+  background: rgba(0, 0, 0, .35); border-radius: 16px; backdrop-filter: blur(4px);
+}
+.jv-dot {
+  width: 14px; height: 14px; border-radius: 50%; cursor: pointer; padding: 0;
+  border: 1.5px solid var(--d-acc);
+  background: linear-gradient(135deg, var(--d-bg) 45%, var(--d-acc));
+  transition: transform .15s;
+}
+.jv-dot:hover { transform: scale(1.3); }
+.jv-dot.on { box-shadow: 0 0 0 2px var(--jv-bg), 0 0 0 3.5px var(--d-acc); }
+
+/* 粒子层（decor/particles） */
+.jv-particles { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 1; }
+.jv-particles i {
+  position: absolute; border-radius: 50%; background: var(--jv-acc); opacity: 0;
+  animation: jvFloat linear infinite;
+}
+.jv-particles i.sq { border-radius: 1px; background: none; border: 1px solid var(--jv-acc); }
+@keyframes jvFloat {
+  0% { transform: translateY(30px) rotate(0deg); opacity: 0; }
+  15% { opacity: .28; }
+  80% { opacity: .22; }
+  100% { transform: translateY(-70px) rotate(160deg); opacity: 0; }
+}

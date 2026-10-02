@@ -23,3 +23,6 @@ __pycache__/
 bus-queue.json
 bus-state.json
 plugin-data/
+
+# PV 预览台（构建产物，用 node pv/make-test.mjs 重新生成）
+pv/test.html

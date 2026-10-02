@@ -44,14 +44,21 @@ TENCENT_COOKIE=uin=xxx; qqmusic_key=xxx; ...
 ## 开发
 
 ```
-tools/inject-*.mjs   功能注入脚本（可重复执行，断言锚点命中恰好 1 次）
-tools/fix-*.mjs      修复脚本
+pv/build.mjs         文字 PV 层构建（幂等，可反复重跑）
+pv/                  PV 层的源：src/ 部件 + css/ 样式，详见 pv/README.md
+pv/serve.mjs         本地静态服务（宿主浏览器不吃 file://）
+pv/make-test.mjs     生成 pv/test.html 预览台，不放歌也能逐版式看
+tools/inject-*.mjs   非 PV 功能的一次性注入脚本
+tools/fix-*.mjs      非 PV 修复脚本
 tools/bump-build.mjs 构建号三处同步（_build.json + index.html + standalone.html）
 ```
 
-**两条铁律**：
+**三条铁律**：
 - `ui/index.html` 与 `ui/standalone.html` 是内容相同的双副本——改动必须同步，改完跑 `bump-build.mjs`
 - 主 script 是一整个大 IIFE——需要访问内部变量的代码必须注入到 IIFE 内部（以现有代码为锚点），独立 script 块只能做纯 DOM/CSS 操作
+- **文字 PV 不再走 `tools/inject-*`**：改 `pv/src`、`pv/css`，然后 `node pv/build.mjs`。`ui/index.html` 里 `PV:BEGIN/END` 之间的内容是构建产物，手改会被下次构建冲掉
+
+> 为什么：旧的 `inject-*.mjs` 链用一次性 `replaceOnce`，锚点被自己替换后就不能重跑（`inject-jizura.mjs` 在 HEAD 上已必然抛「命中 0 次」），html 漂出了脚本能复现的范围。PV 层改成幂等流水线：拆旧块 → 剥遗留 → 接钩子 → 插新块 → 写盘前四项自锁，不对就拒写。迁移前的脚本留在 `pv/_legacy/` 只读存档。
 
 ## 致谢
 

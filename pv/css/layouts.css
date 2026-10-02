@@ -1,0 +1,123 @@
+/* PV 引擎 · 版式层样式（21 件，与 pv/src/02-layouts.js 一一对应）
+ * 全部由 .jz-* 迁到 .jv-* 命名空间；.jz-gpill（播放列表的组标签胶囊）不属于 PV，未改名也不受影响。
+ * 旧「氛围层」里对 .jz-pill .pd 的二次覆盖已合并成一条最终值。
+ */
+
+/* --- 12 基础 --- */
+.jv-center { flex-direction: column; text-align: center; }
+.jv-center .cur { font-size: 34px; font-weight: 800; letter-spacing: .06em; }
+
+.jv-mix { text-align: center; line-height: 1.15; }
+.jv-mix .big { font-size: 44px; font-weight: 900; }
+.jv-mix .sm { font-size: 15px; opacity: .65; margin: 0 10px; }
+
+.jv-tategaki { writing-mode: vertical-rl; flex-direction: row; }
+.jv-tategaki .cur { font-size: 28px; font-weight: 700; letter-spacing: .35em; max-height: 300px; }
+
+.jv-band { flex-direction: column; }
+.jv-band .bandrow {
+  background: var(--jv-acc); color: var(--jv-bg);
+  font-size: 24px; font-weight: 800; padding: 8px 28px;
+  transform: rotate(-2deg); letter-spacing: .08em; box-shadow: 0 4px 24px rgba(0, 0, 0, .25);
+}
+
+.jv-tile { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 14px; align-content: center; justify-items: center; width: 100%; }
+.jv-tile .jv-w { font-size: 26px; font-weight: 800; }
+
+.jv-scatter { width: 100%; height: 100%; position: relative; }
+.jv-scatter .jv-w { position: absolute; font-size: 24px; font-weight: 700; }
+
+.jv-ring svg { width: 100%; height: 100%; }
+
+.jv-wave { width: 100%; display: flex; justify-content: center; align-items: flex-end; gap: 2px; }
+.jv-wave .jv-w { font-size: 30px; font-weight: 800; }
+
+.jv-break { flex-direction: column; text-align: center; }
+.jv-break .cur { font-size: 52px; font-weight: 900; letter-spacing: .02em; transform: scaleX(1.12); }
+.jv-break .sub2 { font-size: 11px; font-family: monospace; letter-spacing: .3em; margin-top: 10px; opacity: .6; }
+
+.jv-label { flex-direction: column; }
+.jv-label .tagbox {
+  border: 2px solid currentColor; padding: 10px 22px; font-size: 26px; font-weight: 800;
+  letter-spacing: .1em; position: relative; background: var(--jv-bg);
+}
+.jv-label .tagbox::before {
+  content: 'No.'attr(data-n); position: absolute; top: -9px; left: 10px;
+  background: var(--jv-acc); color: var(--jv-bg); font-size: 9px; font-family: monospace;
+  padding: 1px 6px; letter-spacing: .15em;
+}
+
+.jv-type { font-family: 'Consolas', monospace; font-size: 22px; font-weight: 700; letter-spacing: .04em; }
+.jv-type .caret {
+  display: inline-block; width: .6em; height: 1.1em; background: var(--jv-acc);
+  vertical-align: -0.15em; margin-left: 2px; animation: jvBlink 1s steps(1) infinite;
+}
+@keyframes jvBlink { 50% { opacity: 0; } }
+
+.jv-caption { flex-direction: column; justify-content: flex-end; align-items: flex-start; padding: 44px; }
+.jv-caption .capbar {
+  background: var(--jv-bg); border: 1px solid currentColor; font-size: 20px; font-weight: 700;
+  padding: 8px 18px; box-shadow: 4px 4px 0 var(--jv-acc);
+}
+
+/* --- 7 补齐 --- */
+.jv-diag { overflow: hidden; }
+.jv-diag .bd { position: absolute; width: 200%; left: -50%; top: 50%; background: var(--jv-acc); height: 74px; transform: translateY(-50%) rotate(-14deg); opacity: .9; }
+.jv-diag .bd2 { height: 14px; background: var(--jv-fg); opacity: .15; transform: translateY(-50%) rotate(-14deg) translateY(-92px); }
+.jv-diag .dt { position: relative; z-index: 2; color: var(--jv-bg); font-weight: 800; font-size: 30px; letter-spacing: .1em; transform: rotate(-14deg); }
+
+.jv-circle .disc { position: absolute; width: 230px; height: 230px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, var(--jv-acc), transparent 140%); box-shadow: 0 0 60px color-mix(in srgb, var(--jv-acc) 40%, transparent); }
+.jv-circle .ct { position: relative; z-index: 2; color: var(--jv-bg); font-weight: 800; font-size: 19px; text-align: center; width: 170px; line-height: 1.4; }
+
+.jv-stack .sk {
+  font-size: 38px; font-weight: 900; letter-spacing: .04em; white-space: nowrap;
+  text-shadow: 0 6px 0 color-mix(in srgb, var(--jv-fg) 70%, transparent),
+    0 12px 0 color-mix(in srgb, var(--jv-fg) 45%, transparent),
+    0 18px 0 color-mix(in srgb, var(--jv-fg) 25%, transparent),
+    0 24px 0 color-mix(in srgb, var(--jv-fg) 12%, transparent);
+}
+
+.jv-pill .pd {
+  position: absolute; display: flex; align-items: center; justify-content: center;
+  height: 30px; min-width: 88px; padding: 0 12px; border-radius: 20px;
+  border: 1.5px solid var(--jv-acc); font-size: 9px; color: var(--jv-fg); opacity: .65; white-space: nowrap;
+}
+.jv-pill .pt2 { top: 16%; left: 50%; }
+.jv-pill .pb2 { bottom: 16%; left: 50%; }
+.jv-pill .pl {
+  background: linear-gradient(135deg, var(--jv-acc), color-mix(in srgb, var(--jv-acc) 55%, #000));
+  color: var(--jv-bg); font-weight: 800; font-size: 26px; letter-spacing: .08em;
+  padding: 14px 34px; border-radius: 34px; position: relative; z-index: 2;
+  box-shadow: 0 6px 30px color-mix(in srgb, var(--jv-acc) 35%, transparent);
+}
+
+.jv-cond .cd {
+  font-size: 44px; letter-spacing: .14em; transform: scaleX(.48) scaleY(1.22); font-weight: 800;
+  white-space: nowrap; text-shadow: 0 0 24px color-mix(in srgb, var(--jv-acc) 35%, transparent);
+}
+
+.jv-cad { width: 100%; height: 100%; position: relative; }
+.jv-cad .jv-w { position: absolute; font-weight: 800; letter-spacing: .02em; }
+.jv-cad .deco { position: absolute; pointer-events: none; opacity: .35; animation: jvDrift 9s ease-in-out infinite alternate; }
+@keyframes jvDrift { 0% { transform: translate(0, 0) rotate(0deg); } 100% { transform: translate(10px, -14px) rotate(18deg); } }
+
+.jv-ren { flex-direction: column; gap: 14px; text-align: center; }
+.jv-ren .prev, .jv-ren .next { font-size: 15px; opacity: .5; letter-spacing: .06em; }
+.jv-ren .cur { font-size: 34px; font-weight: 800; letter-spacing: .05em; }
+.jv-ren .rule { width: 56px; height: 2px; background: var(--jv-acc); margin: 2px auto; opacity: .7; }
+
+/* --- 2 专用 --- */
+.jv-title { flex-direction: column; }
+.jv-title .tt { font-size: 64px; font-weight: 900; letter-spacing: .22em; color: var(--jv-acc); text-shadow: 0 0 40px color-mix(in srgb, var(--jv-acc) 45%, transparent); padding-left: .22em; }
+.jv-title .sb { font-size: 12px; letter-spacing: .4em; color: var(--jv-fg); opacity: .6; margin-top: 16px; font-family: monospace; }
+
+.jv-interlude { flex-direction: column; }
+.jv-interlude .dg { position: absolute; inset: 0; opacity: .3; background-image: radial-gradient(color-mix(in srgb, var(--jv-acc) 45%, transparent) 1.5px, transparent 2px); background-size: 26px 26px; }
+.jv-interlude .ct2 { position: relative; z-index: 2; font-size: 52px; letter-spacing: .1em; font-family: monospace; color: var(--jv-acc); font-weight: 700; font-variant-numeric: tabular-nums; }
+.jv-interlude svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.jv-interlude svg circle { fill: none; stroke: var(--jv-acc); stroke-width: .8; transform-origin: center; transform-box: fill-box; animation: jvBr 3.2s ease-in-out infinite; }
+.jv-interlude svg circle:nth-child(2) { animation-delay: .7s; }
+.jv-interlude svg circle:nth-child(3) { animation-delay: 1.4s; }
+.jv-interlude svg circle:nth-child(4) { animation-delay: 2.1s; }
+@keyframes jvBr { 0%, 100% { transform: scale(.85); opacity: .12; } 50% { transform: scale(1.1); opacity: .7; } }
+.jv-interlude .nt { position: relative; z-index: 2; font-size: 34px; color: var(--jv-acc); }
