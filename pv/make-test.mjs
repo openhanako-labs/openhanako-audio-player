@@ -155,6 +155,17 @@ ${js}
     ' 候选（量不到的已保留在栏里，由 CSS 自己跳）';
   gFace.appendChild(fr);
 
+  var gBg = group('背景');
+  PV.parts('bg').forEach(function (b) {
+    btn(gBg, b.nm, function () { PV.show(line, { force: true, bg: b.key }); show(); });
+  });
+  var sw = document.createElement('input');
+  sw.type = 'range'; sw.min = '0'; sw.max = '1'; sw.step = '0.05'; sw.value = String(PV.bgSwap);
+  var swv = document.createElement('span'); swv.className = 'fxv'; swv.textContent = sw.value;
+  var swl = document.createElement('span'); swl.className = 'fxv'; swl.textContent = '换率';
+  sw.oninput = function () { PV.bgSwap = Number(sw.value); swv.textContent = sw.value; };
+  gBg.appendChild(swl); gBg.appendChild(sw); gBg.appendChild(swv);
+
   var gFx = group('滑块');
   ['motion', 'glitch', 'chroma', 'texture', 'density'].forEach(function (k) {
     var s = document.createElement('input');
@@ -196,9 +207,12 @@ ${js}
     if (!p) return;
     var ci = PV.cutsInfo ? PV.cutsInfo() : { cut: 0, n: 1 };
     planEl.textContent = 'cut ' + (ci.cut + 1) + '/' + ci.n + '  ⟵  ' +
-      [p.layout.key, p.face ? 'face:' + p.face.key : 'face:—', p.enter.key, p.hold.key, p.exit.key, p.transition.key, p.camera.key,
+      [p.layout.key, p.face ? 'face:' + p.face.key : 'face:—', p.bg ? 'bg:' + p.bg.key : 'bg:—',
+      p.enter.key, p.hold.key, p.exit.key, p.transition.key, p.camera.key,
       'decor[' + p.decor.map(function (d) { return d.key; }).join(',') + ']',
       'treat[' + p.treatment.map(function (d) { return d.key; }).join(',') + ']'].join(' / ');
+    var bh = PV.bgHost ? PV.bgHost() : null;
+    if (bh) stat.textContent = Object.entries(PV.stats()).map(function (e) { return e[0] + ' ' + e[1]; }).join('  ·  ') + '   当前背景:' + (bh.dataset.bg || '—');
     var ct = document.getElementById('cutPlan');
     if (ct) ct.textContent = (ci.times || []).map(function (t, k) {
       return (k === ci.cut ? '▶' : ' ') + (k + 1) + ' [' + (t[0] / 1000).toFixed(2) + '→' + (t[1] / 1000).toFixed(2) + ']';

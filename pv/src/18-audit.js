@@ -83,6 +83,7 @@
             try {
               p = PV.show(li, {
                 force: true, keepCuts: true, cutI: ci, layout: lay.key,
+                bg: 'solid',
                 enter: 'none', hold: 'none', exit: 'none', transition: 'cut', camera: 'none',
                 decor: [], treatment: []
               });

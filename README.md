@@ -18,7 +18,7 @@ Hana 的音频播放器 App：本地音乐与在线音乐播放，歌词驱动�
 
 **视觉舞台**（顶栏三模式胶囊切换）
 - **标准**——黑胶唱盘（播放旋转 / 暂停即停）+ 队列
-- **PV**——文字 PV 舞台：[JIZURA](https://github.com/852wa/JIZURA) 式随机排版引擎，21 种构图每行抽签（中央 / 竖排 / 斜带 / 円環 / 星散 / 連行…），🎲 骰子或 R 键一键重摇（おまかせ）。逐字扫光用 [folia](https://github.com/chthollyphile/folia-major) 的 MonetGlow 包络公式（smoothstep 升起→驻留→衰减），帧级同步音频（rAF 驱动，不走 4Hz 的 timeupdate）。封面取色背景、全局漂浮粒子、前后行参与排版
+- **PV**——文字 PV 舞台：[JIZURA](https://github.com/852wa/JIZURA) 式随机排版引擎，每段（一行可再切分）从 12 层里各抽一件：气氛 / 配色 / 字体 / **背景** / 版式（21 种）/ 登场 / 保持 / 退场 / 衔接 / 镜头 / 装饰 / 处理，共 133 件，🎲 骰子或 R 键一键重摇（おまかせ）。逐字扫光用 [folia](https://github.com/chthollyphile/folia-major) 的 MonetGlow 包络公式（smoothstep 升起→驻留→衰减），帧级同步音频（rAF 驱动，不走 4Hz 的 timeupdate），拍点会推镜头震动与背景呼吸。封面取色、歌词行内可写 `/` 分段、`*强调*`、行末 `!`、`\|注釈`
 - **歌词**——AMLL 式滚动窗：当前行居中放大，焦外虚化，逐字高亮
 
 **主题**

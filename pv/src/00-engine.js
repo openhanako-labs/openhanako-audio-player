@@ -9,7 +9,7 @@
   'use strict';
   var PV = window.PV || (window.PV = {});
 
-  var GROUPS = ['mood', 'style', 'face', 'layout', 'enter', 'hold', 'exit', 'decor', 'treatment', 'camera', 'transition'];
+  var GROUPS = ['mood', 'style', 'face', 'bg', 'layout', 'enter', 'hold', 'exit', 'decor', 'treatment', 'camera', 'transition'];
   var reg = {}, order = {};
   GROUPS.forEach(function (g) { reg[g] = {}; order[g] = []; });
 
@@ -261,6 +261,7 @@
     /* ⑥ 字体：风格可以钉死（新闻就该黑体），没钉就按气氛/强调抽；
      * auto 风格不抢字体——那是“跟 App 主题”的意思，连字体一起跟才对 */
     var fc = PV.rollFace ? PV.rollFace(ctx, opts) : null;
+    var bgPart = PV.rollBg ? PV.rollBg(ctx, opts) : null;
     if (ctx.style && ctx.style.id === 'auto' && !PV.faceManual) fc = null;
     /* decor / treatment 可叠 0..n 件；外部传字符串 = 只用那一件 */
     function stack(group) {
@@ -286,6 +287,7 @@
     return {
       layout: lay,
       face: fc,
+      bg: bgPart,
       enter: enterPart,
       hold: PV.choose('hold', ctx, opts) || PV.part('hold', PV.defaults.hold),
       exit: PV.choose('exit', ctx, opts) || PV.part('exit', PV.defaults.exit),
@@ -385,6 +387,8 @@
   function applyIn(plan, made) {
     if (plan.face && PV.useFace) PV.useFace(plan.face);
     else if (PV.clearFace) PV.clearFace();
+    /* 背景先铺：它在最底下一层，背面动画不影响上面的几何 */
+    if (plan.bg && PV.useBg) { var bgc = PV.useBg(plan.bg, made.ctx); if (bgc) PV.addStop(bgc); }
     /* 守卫先跑：此时只有版式写好的位置与旋转，还没有任何动画 transform，
      * 量到的就是落点。守卫自己只写 left/top 与 --fx/--fy/--fk，
      * 后面的登场/保持/镜头层照旧动 transform，互不抢占。 */

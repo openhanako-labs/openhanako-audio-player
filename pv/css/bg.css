@@ -1,0 +1,35 @@
+/* PV 引擎 · ⑧ 背景层样式
+ * .jv-bg-layer 只建一个，换件时靠 JS 抹旧属性——所以这里的动画名必须和 19-bg.js 里
+ * 写的 animation 名一一对上，改了那边记得改这边。
+ */
+
+.jv-bg-layer {
+  position: absolute; inset: 0; z-index: 0;
+  pointer-events: none;
+  background-repeat: repeat;
+  transition: opacity .5s ease;
+}
+
+@keyframes jvBgBeam {
+  0% { background-position: -60% 0; }
+  100% { background-position: 160% 0; }
+}
+@keyframes jvBgZoom {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.22); }
+}
+@keyframes jvBgScan {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 40px; }
+}
+@keyframes jvBgDrift {
+  0% { background-position: 0 0; }
+  100% { background-position: 120px -180px; }
+}
+@keyframes jvBgHue {
+  0%, 100% { filter: hue-rotate(0deg); }
+  50% { filter: hue-rotate(28deg); }
+}
+
+/* 扫光与同心圈要能真的动起来：background-position / transform 都得可动画 */
+.jv-bg-layer[data-bg="beam"] { background-size: 220% 100%; }
