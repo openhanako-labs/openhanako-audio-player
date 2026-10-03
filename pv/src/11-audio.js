@@ -56,11 +56,19 @@
 
   /* 一句话回答「声音现在归谁」：截图里看到就能直接判。
    *  core = core 接了元素，PV 只读它摊的频谱（App 里正常状态）
+   *  core(挂起) = core 接了元素，但它的 AudioContext 是 suspended —— 这就是静音的来源：
+   *    元素被接进图之后，声音只能从图里出去，图挂起 = 无声，且绑定不可逆，
+   *    只能靠 core 自己 resume（或刷新页面）。
    *  pv   = PV 自建图（只应该出现在预览台）
    *  wait = 开播了但还没等到 core 的频谱
-   *  off  = 谁都没接：拍点不驱动，但声音一定正常 */
+   *  off  = 谁都没接：拍点不驱动，但声音一定正常（元素走原生出口）*/
   PV.audioChain = function () {
-    if (window.__reactiveReady || A.mode === 'host') return ':core';
+    if (window.__reactiveReady || A.mode === 'host') {
+      var st = window.__reactiveState;
+      if (st === 'suspended') return ':core(挂起)';
+      if (st === 'closed') return ':core(已关)';
+      return ':core';
+    }
     if (A.mode === 'own') return ':pv';
     var el = audioEl();
     if (el && !el.paused && !el.ended && hostWanted()) return ':wait';
