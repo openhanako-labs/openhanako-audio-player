@@ -38,6 +38,8 @@
   /* ---------- 随机：沿用旧实现的 LCG，同 seed 出同结果 ---------- */
   var _seed = 1;
   PV.seed = function (v) { _seed = (v >>> 0) || 1; };
+  /* 取当前种子：报告类工具要“量完再恢复原状”，没这个口子就只能弄脏随机流*/
+  PV.seedValue = function () { return _seed; };
   PV.getSeed = function () { return _seed; };
   PV.rnd = function (a) {
     _seed = (_seed * 1664525 + 1013904223) >>> 0;
@@ -111,6 +113,8 @@
   var S = {
     lyrics: [], idx: -1, style: null, stage: null, layer: null, track: null,
     cur: null, lastLayout: '', stops: [], tag: null, ghosts: { up: null, dn: null },
+    /* 近 N 段抽过的件，按层记（⑳ 的近窗去重用）*/
+    recent: { layout: [], bg: [], look: [], camera: [], enter: [], exit: [], transition: [], hold: [] },
     cuts: null, cutI: 0, cutsLine: -1
   };
   PV.S = S;
@@ -204,7 +208,17 @@
     });
     if (!ok.length) ok = all.filter(function (d) { return !d.sp && !d.special; });
     if (!ok.length) ok = [PV.part(group, PV.defaults[group]) || all[0]];
-    if (group === 'layout') return PV.pickNot(ok, S.lastLayout);
+    /* 近窗去重：先按窗口筛掉近 N 段抽过的件，再走其它规则。
+     * （上一版我把这段写在 pickNot 的 return **后面**，而 layout 一定会提前 return——
+     * 等于这个旋钮对最该起作用的那一层完全没接上，报告量出 51.3% 才发现。）*/
+    var win = PV.dedupe && PV.dedupe[group];
+    if (win > 0 && ok.length > 1) {
+      var rec = (S.recent[group] || []), cut = rec.slice(Math.max(0, rec.length - win));
+      var fresh = ok.filter(function (d) { return cut.indexOf(d.key) < 0; });
+      if (fresh.length) ok = fresh;
+    }
+    /* 窗口筛完只剩一个候选时，pickNot 也救不了——先走窗口，再避开上一轮*/
+    if (group === 'layout' && ok.length > 1) return PV.pickNot(ok, S.lastLayout);
     var p = weighted(ok, ctx);
     if (ok.length > 1 && p.key === opts.avoid) p = weighted(ok.filter(function (d) { return d.key !== p.key; }), ctx);
     return p;
@@ -375,6 +389,8 @@
     var prev = S.cur, oldPlan = S.plan;
     S.idx = i;
     S.lastLayout = plan.layout.key;
+    /* 记进近窗：只记参与抽签的层（写死的件也算“近几段都一样”，不该占名额）*/
+    if (PV.recordRecent) PV.recordRecent(plan);
     S.plan = plan;
     S.cur = made.el;
     S.cutT = performance.now();
@@ -385,8 +401,12 @@
       if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
       prev = null;
     };
+    /* ① 送走上一行。
+     * 但若本段的转场声明了 ownsPrev（⑳ 真合成类转场），prev 就交给转场支配：
+     * 两局同抢一个 prev 会打架（退场把它淡掉，转场又想拿着它做互补遮罩）。*/
     var ex = oldPlan && oldPlan.exit ? oldPlan.exit : PV.part('exit', PV.defaults.exit);
-    if (prev) {
+    var handsPrev = plan.transition && plan.transition.ownsPrev;
+    if (prev && !handsPrev) {
       /* 用上一行自己的 ctx：退场件要知道自己是谁的退场 */
       if (ex && ex.play) ex.play(oldPlan ? oldPlan.ctx : plan.ctx, prev, drop);
       else drop();
@@ -403,7 +423,7 @@
       made.el.classList.add('show');
       applyIn(plan, made);
     };
-    if (plan.transition && plan.transition.play) plan.transition.play(plan.ctx, prev, made.el, swap);
+    if (plan.transition && plan.transition.play) plan.transition.play(plan.ctx, prev, made.el, swap, drop);
     else swap();
     if (!made.el.parentNode) swap();      // 衔接件没调 swap 时的兜底
 

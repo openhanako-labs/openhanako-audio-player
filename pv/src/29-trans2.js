@@ -22,6 +22,8 @@
     return a;
   }
   function D(ms) { return Math.round(ms * (0.7 + 0.6 * PV.fx.motion)); }
+  /* 延时收尾：注册成 stop，退出 PV 时不会吊着一个已失效的定时器 */
+  function setAfter(ms, fn) { var t = setTimeout(fn, ms); return function () { clearTimeout(t); }; }
 
   /* 斜带擦：clip-path 用多边形扫过（我们的 wipe 是直边，这里是斜边） */
   PV.reg('transition', 'diagWipe', {
@@ -49,48 +51,65 @@
     }
   });
 
-  /* 观音开门：左右两半各退开 */
+  /* 开门（⑳ 真合成）：旧行从中间合拢关掉，新行从中间拉开——两帧互补 */
   PV.reg('transition', 'doors', {
-    nm: '开门', tags: ['graphic', 'pop', 'editorial'], w: 0.7,
-    play: function (c, prev, next, swap) {
+    nm: '开门', tags: ['graphic', 'pop', 'editorial'], w: 0.7, ownsPrev: 1,
+    play: function (c, prev, next, swap, drop) {
       swap();
-      an(next, [
-        { clipPath: 'inset(0 50% 0 50%)', opacity: 1 },
-        { clipPath: 'inset(0 0 0 0)', opacity: 1 }
-      ], { duration: D(400), fill: 'both', easing: 'cubic-bezier(.5,0,.15,1)' });
-      if (prev) an(prev, [{ opacity: 1 }, { opacity: 0 }], { duration: D(200), fill: 'both' });
+      var d = D(420);
+      if (next) an(next, [{ clipPath: 'inset(0 50% 0 50%)' }, { clipPath: 'inset(0 0 0 0)' }],
+        { duration: d, fill: 'both', easing: 'cubic-bezier(.5,0,.2,1)' });
+      if (prev) an(prev, [{ clipPath: 'inset(0 0 0 0)', opacity: 1 },
+        { clipPath: 'inset(0 50% 0 50%)', opacity: 0 }],
+        { duration: d, fill: 'both', easing: 'ease-in' });
+      PV.addStop(setAfter(d + 20, drop));
     }
   });
 
-  /* 百叶：竖向多条同时展开（用 steps + clip 近似） */
+  /* 百叶（⑳ 真合成）：N 片竖条依次揭掉旧行、揭开新行。
+   * prev 逐条 clip 掉、next 逐条 clip 显——两边互补，才真的是“两帧合成”。*/
   PV.reg('transition', 'blinds', {
     nm: '百叶', tags: ['graphic', 'glitch'], w: 0.6,
-    when: function () { return PV.fx.motion > 0.3; },
-    play: function (c, prev, next, swap) {
+    when: function () { return PV.fx.motion > 0.3; }, ownsPrev: 1,
+    play: function (c, prev, next, swap, drop) {
       swap();
-      var n = 6 + Math.round(PV.rnd(6));
-      an(next, [
-        { clipPath: 'inset(0 100% 0 0)' },
-        { clipPath: 'inset(0 0 0 0)' }
-      ], { duration: D(460), fill: 'both', easing: 'steps(' + n + ', end)' });
+      var n = 5 + Math.round(PV.rnd(5)), step = 46, dur = D(200), tot = dur + step * n;
+      for (var i = 0; i < n; i++) {
+        var l = (i * 100 / n).toFixed(3), r = ((n - i - 1) * 100 / n).toFixed(3);
+        var clip = 'inset(0 ' + r + '% 0 ' + l + '%)';
+        if (prev) an(prev, [{ clipPath: 'inset(0 0 0 0)' }, { clipPath: clip }],
+          { duration: dur, delay: i * step, fill: 'both', easing: 'ease-in' });
+        if (next) an(next, [{ clipPath: clip }, { clipPath: 'inset(0 0 0 0)' }],
+          { duration: dur, delay: i * step, fill: 'both', easing: 'ease-out' });
+      }
+      PV.addStop(setAfter(tot + 30, drop));
     }
   });
 
-  /* 市松推入：棋盘格揭开（conic-gradient 做遮罩 + 位移近似） */
+  /* 市松推（⑳ 真合成）：棋盘遮罩尺寸从小到大——旧行用反相遮罩同时退场。
+   * 两件共用一个 mask 表达式，只是一个从疏到密、一个从密到疏。*/
   PV.reg('transition', 'checkerIn', {
-    nm: '市松推', tags: ['graphic', 'pop'], w: 0.5,
-    play: function (c, prev, next, swap) {
+    nm: '市松推', tags: ['graphic', 'pop'], w: 0.5, ownsPrev: 1,
+    play: function (c, prev, next, swap, drop) {
       swap();
-      next.style.setProperty('mask-image', 'repeating-conic-gradient(#000 0 25%, transparent 0 50%)');
-      next.style.setProperty('mask-size', '16% 26%');
-      an(next, [
-        { opacity: 0, maskSize: '16% 26%' },
-        { opacity: 1, maskSize: '6% 9%', offset: 0.7 },
-        { opacity: 1, maskSize: '400% 400%' }
-      ], { duration: D(520), fill: 'both', easing: 'ease-in-out' });
-      PV.addStop(function () {
-        next.style.removeProperty('mask-image'); next.style.removeProperty('mask-size');
+      var d = D(520), mask = 'repeating-conic-gradient(#000 0 25%, transparent 0 50%)';
+      [next, prev].forEach(function (el, idx) {
+        if (!el) return;
+        el.style.setProperty('-webkit-mask-image', mask);
+        el.style.setProperty('mask-image', mask);
+        an(el, [
+          { maskSize: (idx ? '6% 9%' : '400% 400%'), opacity: idx ? 1 : 1 },
+          { maskSize: (idx ? '400% 400%' : '6% 9%'), opacity: idx ? 0 : 1 }
+        ], { duration: d, fill: 'both', easing: 'ease-in-out' });
       });
+      PV.addStop(setAfter(d + 30, function () {
+        [next, prev].forEach(function (el) {
+          if (!el) return;
+          el.style.removeProperty('-webkit-mask-image'); el.style.removeProperty('mask-image');
+          el.style.removeProperty('opacity');
+        });
+        drop();
+      }));
     }
   });
 

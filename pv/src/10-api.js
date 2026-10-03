@@ -29,6 +29,7 @@
     PV.startLoop();
     if (PV.applyMonoStack) PV.applyMonoStack();     // ⑥ 等宽链给 type 版式与小字用
     if (PV.audioStart) PV.audioStart();          // ③ 音频驱动：跟着 PV 开，不单独常驻
+    if (PV.tuneRestore) PV.tuneRestore();        // ⑲ 把上次选的档位贴回来
     if (!PV._booted) {
       PV._booted = true;
       document.addEventListener('pv:cut', function () { PV.markStyle(); });
