@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1003120343";
+  window.__HANA_BUILD = "1003121957";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -3942,12 +3942,33 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 /* 根因：.jv-d 基类是 inset:0（四边钉住）。只写 left/bottom 的话，
  * 另两边还是 0 → 元素被拉满整块舞台（实测“正字计数”975×102、“时间码”横贯全宽）。
  * ⑤ 就是靠 `inset:auto` 治过这个，这批新件又漏了——一次性在开头写清。*/
-.jv-d.jv-regmark, .jv-d.jv-swatches, .jv-d.jv-tally, .jv-d.jv-dimline,
-.jv-d.jv-ruler, .jv-d.jv-timecode, .jv-d.jv-datestamp, .jv-d.jv-tape,
-.jv-d.jv-circline, .jv-d.jv-scribble, .jv-d.jv-seal, .jv-d.jv-burstlines,
-.jv-d.jv-sqrings, .jv-d.jv-notes {
-  inset: auto;            /* 先解开四边，再按件自己定位 */
-  width: auto; height: auto;
+/* 角落件的正确摆法（⑬ 修过一次又错了一次）：
+ *  `.jv-d` 基类是 inset:0（四边钉死）。只写 left/bottom 时另两边仍是 0 → 被拉成满幅；
+ *  但改成 `inset:auto` 也不对：在 flex 容器（.jv-line 是 flex）里，
+ *  只给单边的绝对定位元素会退回**静态位置**，而静态位置按 flex 对齐算 = 居中
+ *  ——实测落款离右边 466px、下边 254px，印就压在正文上。
+ *  所以：容器始绠保持 inset:0 当满幅框架，可见的东西给子元素，由框架的 flex 推到角。*/
+.jv-d.jv-seal, .jv-d.jv-timecode, .jv-d.jv-datestamp, .jv-d.jv-tally,
+.jv-d.jv-swatches, .jv-d.jv-dimline {
+  inset: 0;
+  display: flex;
+}
+.jv-d.jv-seal      { justify-content: flex-end; align-items: flex-end; padding: 0 3.5% 5% 0; }
+.jv-d.jv-timecode  { justify-content: flex-end; align-items: flex-start; padding: 12px 14px 0 0; }
+.jv-d.jv-datestamp { justify-content: flex-end; align-items: flex-end; padding: 0 16px 14px 0; }
+.jv-d.jv-tally     { justify-content: flex-start; align-items: flex-end; padding: 0 0 16px 16px; }
+.jv-d.jv-swatches  { justify-content: flex-end; align-items: flex-end; padding: 0 14px 14px 0; }
+.jv-d.jv-dimline   { justify-content: flex-start; align-items: flex-start; padding: 12% 0 0 10%; }
+
+/* 以上六件的样式都在 > i 上，容器只负责定位 */
+.jv-seal > i {
+  width: 38px; height: 38px; display: grid; place-items: center;
+  border: 2px solid color-mix(in srgb, var(--jv-acc) 55%, #c0392b);
+  border-radius: 6px; font-style: normal;
+  color: color-mix(in srgb, var(--jv-acc) 55%, #c0392b);
+  font-size: 20px; font-weight: 800;
+  background: color-mix(in srgb, var(--jv-acc) 9%, transparent);
+  transform: rotate(-6deg); opacity: .6;
 }
 
 .jv-d.jv-crop, .jv-d.jv-regmark, .jv-d.jv-swatches, .jv-d.jv-tally,
@@ -3996,19 +4017,36 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 .jv-guides > .h { position: absolute; left: 0; right: 0; height: 1px; background: color-mix(in srgb, var(--jv-acc) 60%, transparent); }
 .jv-guides > .h.a { top: 33.33%; } .jv-guides > .h.b { top: 66.66%; }
 
-.jv-timecode { right: 14px; top: 12px; font-family: monospace; font-size: 10px; letter-spacing: .18em;
-  color: var(--jv-acc); opacity: .8; border: 1px solid color-mix(in srgb, var(--jv-acc) 45%, transparent); padding: 2px 7px; }
+.jv-timecode {
+  font-family: monospace; font-size: 10px; letter-spacing: .18em;
+  color: var(--jv-acc); border: 1px solid color-mix(in srgb, var(--jv-acc) 45%, transparent);
+  padding: 2px 7px; font-style: normal;
+}
 
-.jv-datestamp { right: 16px; bottom: 14px; font-family: 'Consolas', monospace; font-size: 13px; letter-spacing: .14em;
-  color: color-mix(in srgb, var(--jv-acc) 85%, #f60); opacity: .85; text-shadow: 0 0 6px currentColor; }
+.jv-datestamp { font-family: 'Consolas', monospace; font-size: 13px; letter-spacing: .14em;
+  color: color-mix(in srgb, var(--jv-acc) 80%, #f60); opacity: .85; text-shadow: 0 0 6px currentColor; font-style: normal; }
 
 /* ---- 手绘与贴纸 ---- */
-.jv-tape { width: 92px; height: 26px; opacity: .8; }
-.jv-tape.tl { left: 10%; top: 16%; transform: rotate(-7deg); }
-.jv-tape.br { right: 10%; bottom: 18%; transform: rotate(5deg); }
-.jv-tape > i { position: absolute; inset: 0; background: color-mix(in srgb, var(--jv-acc) 34%, transparent);
+/* 胶带：容器推到角，内层负责斜放（和落款同一套框架模型）*/
+.jv-d.jv-tape { inset: 0; display: flex; }
+.jv-tape.tl { justify-content: flex-start; align-items: flex-start; padding: 16% 0 0 10%; }
+.jv-tape.br { justify-content: flex-end; align-items: flex-end; padding: 0 10% 18% 0; }
+.jv-tape > div { position: relative; width: 92px; height: 26px; opacity: .8; }
+.jv-tape > div > i { position: absolute; inset: 0; background: color-mix(in srgb, var(--jv-acc) 34%, transparent);
   border-inline: 2px dashed color-mix(in srgb, var(--jv-acc) 60%, transparent); }
-.jv-tape > i:nth-child(2) { transform: translateY(3px) rotate(2deg); opacity: .5; }
+.jv-tape > div > i:nth-child(2) { transform: translateY(3px) rotate(2deg); opacity: .5; }
+
+/* 六件的可见部分一律在子节点上，容器只管把东西推到角 */
+.jv-tally > div { display: flex; gap: 5px; align-items: flex-end; height: 30px; }
+.jv-tally > div > i { width: 3px; height: 100%; background: var(--jv-fg); }
+.jv-swatches > div { display: flex; gap: 3px; }
+.jv-swatches > div > i { width: 15px; height: 8px; background: var(--jv-fg); }
+.jv-swatches > div > i:nth-child(odd) { background: var(--jv-acc); }
+.jv-dimline > div { display: flex; align-items: center; width: 34%; opacity: .55; }
+.jv-dimline .bar { height: 1px; background: var(--jv-fg); }
+.jv-dimline .cap { width: 1px; height: 12px; background: var(--jv-fg); }
+.jv-dimline b { font-family: monospace; font-size: 9px; letter-spacing: .1em; margin-left: 6px;
+  color: var(--jv-acc); font-weight: 400; }
 
 .jv-circline { left: 50%; top: 50%; width: 62%; height: 46%; transform: translate(-50%, -50%);
   border: 2px solid color-mix(in srgb, var(--jv-acc) 70%, transparent);
@@ -4025,9 +4063,19 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 .jv-brackets > i:first-child { left: 6%; top: 22%; }
 .jv-brackets > i:last-child { right: 6%; bottom: 22%; }
 
-.jv-seal { right: 8%; bottom: 14%; width: 44px; height: 44px; display: grid; place-items: center;
-  border: 2px solid #c0392b; border-radius: 6px; color: #c0392b; font-size: 22px; font-weight: 800;
-  background: color-mix(in srgb, #c0392b 12%, transparent); transform: rotate(-6deg); opacity: .85; }
+/* 落款：印色不写死（本文件开头就定了“全用 fg/acc 混”），
+ * 从 acc 往暖红方向推一点——保留印章感又不和风格打架。
+ * 位置收到真正的角落、z-index 低于 token，不再压在正文上。*/
+.jv-seal {
+  right: 3.5%; bottom: 6%; width: 38px; height: 38px; z-index: 0;
+  display: grid; place-items: center;
+  border: 2px solid color-mix(in srgb, var(--jv-acc) 60%, #c0392b);
+  border-radius: 6px;
+  color: color-mix(in srgb, var(--jv-acc) 60%, #c0392b);
+  font-size: 20px; font-weight: 800;
+  background: color-mix(in srgb, var(--jv-acc) 10%, transparent);
+  transform: rotate(-6deg); opacity: .62;
+}
 
 /* ---- 光与几何 ---- */
 .jv-leak { inset: 0; mix-blend-mode: screen; opacity: .5; }
@@ -16711,7 +16759,7 @@ injectPills();
     apply: function (c) {
       var h = '';
       for (var i = 0; i < 5; i++) h += '<i style="opacity:' + (0.35 + n(c, 0.55)).toFixed(2) + '"></i>';
-      return add(c, el('jv-swatches', h));
+      return add(c, el('jv-swatches', '<div>' + h + '</div>'));
     }
   });
 
@@ -16720,7 +16768,7 @@ injectPills();
     apply: function (c) {
       var k = 1 + Math.round(n(c, 4)), h = '';
       for (var i = 0; i < k; i++) h += '<i></i>';
-      return add(c, el('jv-tally', h));
+      return add(c, el('jv-tally', '<div>' + h + '</div>'));
     }
   });
 
@@ -16731,7 +16779,7 @@ injectPills();
     when: function () { return PV.fx.decor > 0.35; },
     apply: function (c) {
       var w = (12 + n(c, 30)).toFixed(0);
-      return add(c, el('jv-dimline', '<i class="cap l"></i><i class="bar" style="width:' + w + '%"></i><i class="cap r"></i><span>' + w + 'u</span>'));
+      return add(c, el('jv-dimline', '<div><i class="cap l"></i><i class="bar" style="width:' + w + '%"></i><i class="cap r"></i><b>' + w + 'u</b></div>'));
     }
   });
 
@@ -16756,7 +16804,7 @@ injectPills();
     apply: function (c) {
       var t = Math.round((c.t0 || 0) / 1000), fr = Math.round(n(c, 24));
       var s = pad(Math.floor(t / 60)) + ':' + pad(t % 60) + ':' + pad(fr) + ':' + pad(Math.round(n(c, 30)));
-      return add(c, el('jv-timecode', s));
+      return add(c, el('jv-timecode', '<i>' + s + '</i>'));
     }
   });
 
@@ -16765,7 +16813,7 @@ injectPills();
     apply: function (c) {
       /* 像相机日期印：用真实当天，不把今天写死在代码里 */
       var d = new Date();
-      return add(c, el('jv-datestamp', "'" + pad(d.getFullYear() % 100) + ' ' + pad(d.getMonth() + 1) + ' ' + pad(d.getDate())));
+      return add(c, el('jv-datestamp', "<i>'" + pad(d.getFullYear() % 100) + ' ' + pad(d.getMonth() + 1) + ' ' + pad(d.getDate()) + '</i>'));
     }
   });
 
@@ -16775,7 +16823,7 @@ injectPills();
     nm: '胶带', tags: ['pop', 'editorial', 'calm'], w: 0.7,
     apply: function (c) {
       var side = n(c, 2) < 1 ? 'tl' : 'br';
-      return add(c, el('jv-tape ' + side, '<i></i><i></i>'));
+      return add(c, el('jv-tape ' + side, '<div><i></i><i></i></div>'));
     }
   });
 
@@ -16802,8 +16850,23 @@ injectPills();
   });
 
   PV.reg('decor', 'seal', {
-    nm: '落款', tags: ['emotional', 'editorial', 'calm'], w: 0.55,
-    apply: function (c) { return add(c, el('jv-seal', '印')); }
+    nm: '落款', tags: ['emotional', 'editorial', 'calm'], w: 0.35, sp: 1,
+    /* sp:1 = 不进随机池。用户看到红章的第一反应是“为什么会有一个印”——
+     * 说明它不是“点缀”而是“不明物体”。和条码同一处理：显式调用、预览台按钮还在，
+     * 但系统不会自己在歌词上盖印。*/
+    /* 两个门槛缺一不可：
+     *   · fit —— 拉丁行里没有适合入印的字，拿拉丁字塞进方印就是一块噪点；
+     *   · when —— 上一版什何门槛都没有，任何一行都可能被盖个红章（用户在
+     *     《死囚牢》上看到的就是这个），装饰件得看气氛脸色，不能人人有份。
+     * 另外：印文以前写死一个「印」字——和日期戳写死日期是同一类错。现在从本段取。*/
+    fit: function (c) { return !c.ltr && (c.text || '').replace(/[^一-龥]/g, '').length > 0; },
+    when: function () { return PV.fx.texture > 0.15 && PV.fx.decor > 0.35; },
+    apply: function (c) {
+      var han = (c.text || '').replace(/[^一-龥]/g, '');
+      // 取最后一个汉字：句尾字做落款比句首更像署名
+      var ch = han.charAt(han.length - 1) || '印';
+      return add(c, el('jv-seal', '<i>' + ch + '</i>'));
+    }
   });
 
   /* ---- 光与几何 ---- */

@@ -56,7 +56,7 @@
     apply: function (c) {
       var h = '';
       for (var i = 0; i < 5; i++) h += '<i style="opacity:' + (0.35 + n(c, 0.55)).toFixed(2) + '"></i>';
-      return add(c, el('jv-swatches', h));
+      return add(c, el('jv-swatches', '<div>' + h + '</div>'));
     }
   });
 
@@ -65,7 +65,7 @@
     apply: function (c) {
       var k = 1 + Math.round(n(c, 4)), h = '';
       for (var i = 0; i < k; i++) h += '<i></i>';
-      return add(c, el('jv-tally', h));
+      return add(c, el('jv-tally', '<div>' + h + '</div>'));
     }
   });
 
@@ -76,7 +76,7 @@
     when: function () { return PV.fx.decor > 0.35; },
     apply: function (c) {
       var w = (12 + n(c, 30)).toFixed(0);
-      return add(c, el('jv-dimline', '<i class="cap l"></i><i class="bar" style="width:' + w + '%"></i><i class="cap r"></i><span>' + w + 'u</span>'));
+      return add(c, el('jv-dimline', '<div><i class="cap l"></i><i class="bar" style="width:' + w + '%"></i><i class="cap r"></i><b>' + w + 'u</b></div>'));
     }
   });
 
@@ -101,7 +101,7 @@
     apply: function (c) {
       var t = Math.round((c.t0 || 0) / 1000), fr = Math.round(n(c, 24));
       var s = pad(Math.floor(t / 60)) + ':' + pad(t % 60) + ':' + pad(fr) + ':' + pad(Math.round(n(c, 30)));
-      return add(c, el('jv-timecode', s));
+      return add(c, el('jv-timecode', '<i>' + s + '</i>'));
     }
   });
 
@@ -110,7 +110,7 @@
     apply: function (c) {
       /* 像相机日期印：用真实当天，不把今天写死在代码里 */
       var d = new Date();
-      return add(c, el('jv-datestamp', "'" + pad(d.getFullYear() % 100) + ' ' + pad(d.getMonth() + 1) + ' ' + pad(d.getDate())));
+      return add(c, el('jv-datestamp', "<i>'" + pad(d.getFullYear() % 100) + ' ' + pad(d.getMonth() + 1) + ' ' + pad(d.getDate()) + '</i>'));
     }
   });
 
@@ -120,7 +120,7 @@
     nm: '胶带', tags: ['pop', 'editorial', 'calm'], w: 0.7,
     apply: function (c) {
       var side = n(c, 2) < 1 ? 'tl' : 'br';
-      return add(c, el('jv-tape ' + side, '<i></i><i></i>'));
+      return add(c, el('jv-tape ' + side, '<div><i></i><i></i></div>'));
     }
   });
 
@@ -147,8 +147,23 @@
   });
 
   PV.reg('decor', 'seal', {
-    nm: '落款', tags: ['emotional', 'editorial', 'calm'], w: 0.55,
-    apply: function (c) { return add(c, el('jv-seal', '印')); }
+    nm: '落款', tags: ['emotional', 'editorial', 'calm'], w: 0.35, sp: 1,
+    /* sp:1 = 不进随机池。用户看到红章的第一反应是“为什么会有一个印”——
+     * 说明它不是“点缀”而是“不明物体”。和条码同一处理：显式调用、预览台按钮还在，
+     * 但系统不会自己在歌词上盖印。*/
+    /* 两个门槛缺一不可：
+     *   · fit —— 拉丁行里没有适合入印的字，拿拉丁字塞进方印就是一块噪点；
+     *   · when —— 上一版什何门槛都没有，任何一行都可能被盖个红章（用户在
+     *     《死囚牢》上看到的就是这个），装饰件得看气氛脸色，不能人人有份。
+     * 另外：印文以前写死一个「印」字——和日期戳写死日期是同一类错。现在从本段取。*/
+    fit: function (c) { return !c.ltr && (c.text || '').replace(/[^一-龥]/g, '').length > 0; },
+    when: function () { return PV.fx.texture > 0.15 && PV.fx.decor > 0.35; },
+    apply: function (c) {
+      var han = (c.text || '').replace(/[^一-龥]/g, '');
+      // 取最后一个汉字：句尾字做落款比句首更像署名
+      var ch = han.charAt(han.length - 1) || '印';
+      return add(c, el('jv-seal', '<i>' + ch + '</i>'));
+    }
   });
 
   /* ---- 光与几何 ---- */
