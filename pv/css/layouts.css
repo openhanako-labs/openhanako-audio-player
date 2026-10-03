@@ -24,7 +24,14 @@
 .jv-tile { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 14px; align-content: center; justify-items: center; width: 100%; }
 .jv-tile .jv-w { font-size: 26px; font-weight: 800; }
 
-/* 注意：.jv-scatter / .jv-cad 这两个类是打在**行元素本身**上的（.jv-line.jv-scatter），
+/* ⑰ 转场用的栅线：栅线擦时扫过新行的那条亮线（跟着新建元素生灭，不用清场）*/
+.jv-trans-line {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 3px; z-index: 3;
+  background: var(--jv-acc); box-shadow: 0 0 14px var(--jv-acc);
+  pointer-events: none;
+}
+
+/* 根因：.jv-scatter / .jv-cad 这两个类是打在**行元素本身**上的（.jv-line.jv-scatter），
  * 而行已经是 position:absolute; inset:0。这里绝不能重写 position——
  * 改成 relative 会让行掉回普通流：三条线（当前行 + 前后幽灵行）从叠在一起变成竖着排队，
  * 后两条直接排到舞台外面去（实测 token 落在 y=1161/1483，而舞台只有 540 高）。

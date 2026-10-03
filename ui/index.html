@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1003110454";
+  window.__HANA_BUILD = "1003112402";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -3461,7 +3461,14 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 .jv-tile { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 14px; align-content: center; justify-items: center; width: 100%; }
 .jv-tile .jv-w { font-size: 26px; font-weight: 800; }
 
-/* 注意：.jv-scatter / .jv-cad 这两个类是打在**行元素本身**上的（.jv-line.jv-scatter），
+/* ⑰ 转场用的栅线：栅线擦时扫过新行的那条亮线（跟着新建元素生灭，不用清场）*/
+.jv-trans-line {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 3px; z-index: 3;
+  background: var(--jv-acc); box-shadow: 0 0 14px var(--jv-acc);
+  pointer-events: none;
+}
+
+/* 根因：.jv-scatter / .jv-cad 这两个类是打在**行元素本身**上的（.jv-line.jv-scatter），
  * 而行已经是 position:absolute; inset:0。这里绝不能重写 position——
  * 改成 relative 会让行掉回普通流：三条线（当前行 + 前后幽灵行）从叠在一起变成竖着排队，
  * 后两条直接排到舞台外面去（实测 token 落在 y=1161/1483，而舞台只有 540 高）。
@@ -17317,6 +17324,402 @@ injectPills();
         anim: 'jvBgVhs 6s linear infinite',
         op: (0.22 + 0.4 * PV.fx.glitch).toFixed(2)
       });
+    }
+  });
+})();
+
+/* PV 引擎 · 28 镜头扩充（⑯ camera +12）
+ *
+ * 归属：镜头只写 `.jv-track` 的 transform（translate / scale / rotate）。
+ * ⑬ 那轮补了规矩：applyIn 在换件前把 track 的 transform/filter 抹掉——
+ * 因为 .jv-track 是常驻节点，不清场的话上一段的推镜会永久留在画面上。
+ * 逐帧件一律返回 cleanup（PV.offFrame + 把 transform 归零）。
+ *
+ * 他们的 cam 池是 27 件（11p_looks.js 里 `reg('cam', …)`），这轮搬 12 件：
+ * 姿态类（俯仰 / 侧倾往复 / 钟摆 / 眩晕 / 浮动噪声）与运镜类（snap pan / 电梯 /
+ * 阶梯变焦 / 弹入 /  crash zoom / 地震 /  Rack focus / 周回）。
+ */
+(function () {
+  'use strict';
+  var PV = window.PV;
+
+  /* frame(c, fn, opts)：逐帧把 fn 返回的字符串写到 .jv-track 上。
+   * opts 只认 { origin }——别的键直接抛，不给静默丢弃留路（⑮ 立的规矩）。*/
+  function frame(c, fn, opts) {
+    var tr = c.track || PV.S.track;
+    if (!tr) return null;
+    opts = opts || {};
+    for (var key in opts) if (key !== 'origin') throw new Error('camera frame: 不认识的选项 ' + key);
+    if (opts.origin) tr.style.transformOrigin = opts.origin;
+    var fr = function () {
+      var s = fn(tr);
+      if (s) tr.style.transform = s;
+    };
+    fr();
+    PV.onFrame(fr);
+    return function () {
+      PV.offFrame(fr);
+      tr.style.removeProperty('transform');
+      if (opts.origin) tr.style.removeProperty('transform-origin');
+    };
+  }
+  function M(k) { return (k || 1) * (0.6 + 0.8 * PV.fx.motion); }   // 幅度跟着 motion 走
+
+  /* 俯仰：绕 X 轴的透视倾斜 */
+  PV.reg('camera', 'tiltDown', {
+    nm: '俯仰', tags: ['emotional', 'graphic'], w: 0.6,
+    apply: function (c) {
+      var amp = M(4.5);
+      return frame(c, function () {
+        var k = Math.sin((c.lt || 0) * 0.55);
+        return 'perspective(900px) rotateX(' + (k * amp).toFixed(2) + 'deg) scale(' + (1 + 0.012 * (1 - k)).toFixed(3) + ')';
+      });
+    }
+  });
+
+  /* 钟摆：绕顶边左右荡 */
+  PV.reg('camera', 'pendulum', {
+    nm: '钟摆', tags: ['calm', 'emotional', 'graphic'], w: 0.55,
+    when: function () { return PV.fx.motion > 0.3; },
+    apply: function (c) {
+      var amp = M(2.6);
+      return frame(c, function () {
+        var t = c.lt || 0, d = Math.exp(-t * 0.5);           // 衰减摆动
+        return 'rotate(' + (Math.sin(t * 2.6) * amp * d).toFixed(3) + 'deg)';
+      }, { origin: '50% 0%' });
+    }
+  });
+
+  /* 眩晕：缓慢推拉 + 微旋，越看越晃 */
+  PV.reg('camera', 'vertigo', {
+    nm: '眩晕', tags: ['glitch', 'horror', 'emotional'], w: 0.5,
+    when: function () { return PV.fx.glitch > 0.25 || PV.fx.motion > 0.6; },
+    apply: function (c) {
+      var a = M(1.6);
+      return frame(c, function () {
+        var t = c.lt || 0;
+        return 'scale(' + (1.02 + Math.sin(t * 0.9) * 0.03 * a).toFixed(4) + ') rotate(' +
+          (Math.sin(t * 0.6) * a).toFixed(3) + 'deg)';
+      });
+    }
+  });
+
+  /* 浮动噪声：两条不同频正弦叠加，像漂在水上 */
+  PV.reg('camera', 'floatNoise', {
+    nm: '浮动', tags: ['calm', 'emotional'], w: 0.7,
+    apply: function (c) {
+      var a = M(7);
+      return frame(c, function () {
+        var t = c.lt || 0;
+        var x = Math.sin(t * 0.7) * a + Math.sin(t * 1.9 + 1.2) * a * 0.4;
+        var y = Math.cos(t * 0.55) * a * 0.8 + Math.sin(t * 2.3) * a * 0.25;
+        return 'translate(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px)';
+      });
+    }
+  });
+
+  /* 快摇：段首一次甩动，之后定住 */
+  PV.reg('camera', 'snapPan', {
+    nm: '快摇', tags: ['pop', 'graphic', 'glitch'], w: 0.6,
+    when: function () { return PV.fx.motion > 0.45; },
+    apply: function (c) {
+      var dir = PV.rnd(2) < 1 ? 1 : -1, amp = M(9) * dir;
+      return frame(c, function () {
+        var t = c.lt || 0;
+        var k = t < 0.34 ? Math.sin((t / 0.34) * Math.PI) : 0;   // 只在前 1/3 秒甩
+        return 'translateX(' + (k * amp).toFixed(2) + 'px) rotate(' + (k * dir * 1.4).toFixed(2) + 'deg)';
+      });
+    }
+  });
+
+  /* 电梯：缓慢纵向位移，像升降 */
+  PV.reg('camera', 'elevator', {
+    nm: '升降', tags: ['editorial', 'calm', 'emotional'], w: 0.65,
+    apply: function (c) {
+      var amp = M(26), dir = PV.rnd(2) < 1 ? 1 : -1;
+      return frame(c, function () {
+        var t = Math.min(1, (c.lt || 0) / 5);
+        return 'translateY(' + (dir * amp * (t - 0.5)).toFixed(2) + 'px)';
+      });
+    }
+  });
+
+  /* 阶梯变焦：discrete 的几档推近，带机械感 */
+  PV.reg('camera', 'stepZoom', {
+    nm: '阶梯变焦', tags: ['glitch', 'graphic', 'pop'], w: 0.5,
+    when: function () { return PV.fx.glitch > 0.15; },
+    apply: function (c) {
+      var steps = 4 + Math.round(PV.rnd(3)), base = 1.02 + PV.rnd(0.05);
+      return frame(c, function () {
+        var t = c.lt || 0;
+        var idx = Math.floor(Math.min(1, t / 4.5) * steps);
+        var k = base + idx * 0.035 * M(1);
+        return 'scale(' + k.toFixed(4) + ')';
+      });
+    }
+  });
+
+  /* 弹入：段首过冲再回稳 */
+  PV.reg('camera', 'bounceIn', {
+    nm: '弹入', tags: ['pop', 'emotional'], w: 0.6,
+    apply: function (c) {
+      return frame(c, function () {
+        var t = c.lt || 0;
+        if (t > 0.9) return 'none';
+        var k = Math.exp(-t * 5.5) * Math.cos(t * 17) * 0.06 * M(1);
+        return 'scale(' + (1 + k).toFixed(4) + ')';
+      });
+    }
+  });
+
+  /* 砸近：前 200ms 从远处砸进来，配冲击型行 */
+  PV.reg('camera', 'crashZoom', {
+    nm: '砸近', tags: ['pop', 'glitch', 'horror'], w: 0.5, impact: 1,
+    when: function () { return PV.fx.motion > 0.4; },
+    apply: function (c) {
+      return frame(c, function () {
+        var t = c.lt || 0;
+        var k = Math.max(0, 1 - t / 0.36);
+        return 'scale(' + (1 + 0.42 * k * k).toFixed(4) + ')';
+      });
+    }
+  });
+
+  /* 地震：三轴同时抖，强度随时间衰减 */
+  PV.reg('camera', 'earthquake', {
+    nm: '地震', tags: ['horror', 'glitch'], w: 0.45,
+    when: function () { return PV.fx.glitch > 0.45; },
+    apply: function (c) {
+      var a = M(11);
+      return frame(c, function () {
+        var t = c.lt || 0, d = Math.exp(-t * 0.75);
+        var x = (Math.sin(t * 41.3) + Math.sin(t * 27.7)) * 0.5 * a * d;
+        var y = (Math.cos(t * 37.1) + Math.sin(t * 23.3)) * 0.5 * a * d;
+        return 'translate(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px) rotate(' +
+          (x * 0.06).toFixed(3) + 'deg)';
+      });
+    }
+  });
+
+  /* 跟焦：从糊到实（模糊写在 track 的 filter 上，与 --lk-* 的涂装无关） */
+  PV.reg('camera', 'rackFocus', {
+    nm: '跟焦', tags: ['emotional', 'calm'], w: 0.55,
+    apply: function (c) {
+      var tr = c.track || PV.S.track;
+      if (!tr) return null;
+      var fr = function () {
+        var t = c.lt || 0;
+        var b = Math.max(0, 5.5 - t * 4.4);
+        tr.style.filter = b > 0.05 ? 'blur(' + b.toFixed(2) + 'px)' : '';
+      };
+      fr();
+      PV.onFrame(fr);
+      return function () { PV.offFrame(fr); tr.style.removeProperty('filter'); };
+    }
+  });
+
+  /* 周回：沿小椭圆轨迹游走 */
+  PV.reg('camera', 'orbitDrift', {
+    nm: '周回', tags: ['graphic', 'emotional', 'pop'], w: 0.5,
+    when: function () { return PV.fx.motion > 0.35; },
+    apply: function (c) {
+      var a = M(13), ph = PV.rnd(6.28);
+      return frame(c, function () {
+        var t = (c.lt || 0) * 0.8 + ph;
+        return 'translate(' + (Math.cos(t) * a).toFixed(2) + 'px,' + (Math.sin(t * 1.13) * a * 0.55).toFixed(2) + 'px)';
+      });
+    }
+  });
+})();
+
+/* PV 引擎 · 29 转场扩充（⑰ transition +12）
+ *
+ * 契约（同 07-transition.js）：play(ctx, prev, next, swap)。
+ *   · swap() 负责把新行挂上、旧行摘掉——**必须调用**，不调就是白屏；
+ *   · 想在 swap 之前先演一段（旧行还在台上），就先动 prev，再在动画结束时 swap；
+ *   · 想在 swap 之后演（新行已上台），先 swap() 再动 next——我们的 wipe 系都是后者，
+ *     因为 swap 之后 DOM 稳定，不会出现"新旧两层同时在 clip 里打架"。
+ *
+ * 他们的 trans 池是 24 件（各包里的 `trReg(...)`）。这轮搬 12 件纯 clip / transform 能做的：
+ * 斜带擦、时钟擦、观音开门、百叶、市松推入、块溶、像素 mosaic、覆盖/揭开、
+ * 立方翻、短册移、闪接、 blink。
+ */
+(function () {
+  'use strict';
+  var PV = window.PV;
+
+  function an(el, kf, opt) {
+    if (!el) return null;
+    if (!el.animate) return null;
+    var a = el.animate(kf, opt);
+    PV.addStop(function () { try { a.cancel(); } catch (e) { } });
+    return a;
+  }
+  function D(ms) { return Math.round(ms * (0.7 + 0.6 * PV.fx.motion)); }
+
+  /* 斜带擦：clip-path 用多边形扫过（我们的 wipe 是直边，这里是斜边） */
+  PV.reg('transition', 'diagWipe', {
+    nm: '斜带擦', tags: ['graphic', 'pop'], w: 0.8,
+    play: function (c, prev, next, swap) {
+      swap();
+      var dir = PV.rnd(2) ? 1 : -1;
+      var from = dir > 0 ? 'polygon(0 100%, 0 100%, 0 0, 0 0)' : 'polygon(100% 0, 100% 0, 100% 100%, 100% 100%)';
+      next.style.clipPath = from;
+      an(next, [{ clipPath: from }, { clipPath: 'inset(0 0 0 0)' }],
+        { duration: D(420), fill: 'both', easing: 'cubic-bezier(.6,0,.2,1)' });
+      PV.addStop(function () { next.style.removeProperty('clip-path'); });
+    }
+  });
+
+  /* 时钟擦：从中心角度扫开（conic mask，DOM 上做不了 conic clip 就用旋转遮罩近似） */
+  PV.reg('transition', 'clockWipe', {
+    nm: '时钟擦', tags: ['graphic', 'editorial'], w: 0.6,
+    when: function () { return PV.fx.texture > 0.1; },
+    play: function (c, prev, next, swap) {
+      swap();
+      an(next, [{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0 0 0)' }],
+        { duration: D(520), fill: 'both', easing: 'steps(9, end)' });
+      PV.addStop(function () { next.style.removeProperty('clip-path'); });
+    }
+  });
+
+  /* 观音开门：左右两半各退开 */
+  PV.reg('transition', 'doors', {
+    nm: '开门', tags: ['graphic', 'pop', 'editorial'], w: 0.7,
+    play: function (c, prev, next, swap) {
+      swap();
+      an(next, [
+        { clipPath: 'inset(0 50% 0 50%)', opacity: 1 },
+        { clipPath: 'inset(0 0 0 0)', opacity: 1 }
+      ], { duration: D(400), fill: 'both', easing: 'cubic-bezier(.5,0,.15,1)' });
+      if (prev) an(prev, [{ opacity: 1 }, { opacity: 0 }], { duration: D(200), fill: 'both' });
+    }
+  });
+
+  /* 百叶：竖向多条同时展开（用 steps + clip 近似） */
+  PV.reg('transition', 'blinds', {
+    nm: '百叶', tags: ['graphic', 'glitch'], w: 0.6,
+    when: function () { return PV.fx.motion > 0.3; },
+    play: function (c, prev, next, swap) {
+      swap();
+      var n = 6 + Math.round(PV.rnd(6));
+      an(next, [
+        { clipPath: 'inset(0 100% 0 0)' },
+        { clipPath: 'inset(0 0 0 0)' }
+      ], { duration: D(460), fill: 'both', easing: 'steps(' + n + ', end)' });
+    }
+  });
+
+  /* 市松推入：棋盘格揭开（conic-gradient 做遮罩 + 位移近似） */
+  PV.reg('transition', 'checkerIn', {
+    nm: '市松推', tags: ['graphic', 'pop'], w: 0.5,
+    play: function (c, prev, next, swap) {
+      swap();
+      next.style.setProperty('mask-image', 'repeating-conic-gradient(#000 0 25%, transparent 0 50%)');
+      next.style.setProperty('mask-size', '16% 26%');
+      an(next, [
+        { opacity: 0, maskSize: '16% 26%' },
+        { opacity: 1, maskSize: '6% 9%', offset: 0.7 },
+        { opacity: 1, maskSize: '400% 400%' }
+      ], { duration: D(520), fill: 'both', easing: 'ease-in-out' });
+      PV.addStop(function () {
+        next.style.removeProperty('mask-image'); next.style.removeProperty('mask-size');
+      });
+    }
+  });
+
+  /* 块溶：mosaic 像素化后显形 */
+  PV.reg('transition', 'pixelate', {
+    nm: '像素化', tags: ['glitch', 'graphic'], w: 0.6,
+    when: function () { return PV.fx.glitch > 0.15; },
+    play: function (c, prev, next, swap) {
+      swap();
+      an(next, [
+        { filter: 'blur(9px) contrast(2.4)', opacity: 0, transform: 'scale(1.06)' },
+        { filter: 'blur(0px) contrast(1)', opacity: 1, transform: 'none' }
+      ], { duration: D(440), fill: 'both', easing: 'cubic-bezier(.2,.8,.2,1)' });
+    }
+  });
+
+  /* 覆盖：新行整块压进来（带底色，遮住旧行） */
+  PV.reg('transition', 'cover', {
+    nm: '覆盖', tags: ['editorial', 'graphic'], w: 0.6,
+    play: function (c, prev, next, swap) {
+      swap();
+      var dir = PV.rnd(2) < 1 ? 100 : -100;
+      an(next, [{ transform: 'translateX(' + dir + '%)' }, { transform: 'none' }],
+        { duration: D(420), fill: 'both', easing: 'cubic-bezier(.3,.9,.2,1)' });
+      if (prev) an(prev, [{ transform: 'none', opacity: 1 }, { transform: 'translateX(' + (-dir * 0.4) + '%)', opacity: .1 }],
+        { duration: D(420), fill: 'both' });
+    }
+  });
+
+  /* 立方翻：绕侧边 3D 转进来 */
+  PV.reg('transition', 'cubeTurn', {
+    nm: '立方翻', tags: ['graphic', 'pop'], w: 0.55,
+    when: function () { return PV.fx.motion > 0.3; },
+    play: function (c, prev, next, swap) {
+      swap();
+      var dir = PV.rnd(2) < 1 ? 1 : -1;
+      next.style.transformOrigin = dir > 0 ? 'left center' : 'right center';
+      an(next, [
+        { transform: 'perspective(1000px) rotateY(' + (dir * 78) + 'deg)', opacity: .3 },
+        { transform: 'perspective(1000px) rotateY(0deg)', opacity: 1 }
+      ], { duration: D(480), fill: 'both', easing: 'cubic-bezier(.3,.8,.2,1)' });
+      PV.addStop(function () { next.style.removeProperty('transform-origin'); });
+    }
+  });
+
+  /* 短册移：竖向三段依次落位 */
+  PV.reg('transition', 'sliceShiftIn', {
+    nm: '短册移', tags: ['graphic', 'glitch', 'pop'], w: 0.55,
+    play: function (c, prev, next, swap) {
+      swap();
+      var toks = (c.tokensEls || []).slice(0, 24);
+      toks.forEach(function (el, i) {
+        var d = (i % 3) * 70;
+        an(el, [{ transform: 'translateY(-1.6em)', opacity: 0 }, { transform: 'none', opacity: 1 }],
+          { duration: D(340), delay: d, fill: 'both', easing: 'cubic-bezier(.2,.9,.3,1)' });
+      });
+      if (!toks.length) an(next, [{ opacity: 0 }, { opacity: 1 }], { duration: D(300), fill: 'both' });
+    }
+  });
+
+  /* 闪接：白闪一下再显形（我们已有 flash 是整屏闪，这个是先闪后现） */
+  PV.reg('transition', 'flashCross', {
+    nm: '闪接', tags: ['pop', 'glitch', 'emotional'], w: 0.55,
+    when: function () { return PV.fx.motion > 0.35; },
+    play: function (c, prev, next, swap) {
+      swap();
+      an(next, [{ opacity: 0, filter: 'brightness(3.2)' }, { opacity: 1, filter: 'brightness(1)' }],
+        { duration: D(360), fill: 'both', easing: 'steps(3, end)' });
+    }
+  });
+
+  /* 眨眼：旧行瞬间消失，新行延迟出现（留半拍黑） */
+  PV.reg('transition', 'blink', {
+    nm: '眨眼', tags: ['emotional', 'editorial', 'horror'], w: 0.5,
+    play: function (c, prev, next, swap) {
+      if (prev) prev.style.opacity = '0';
+      var t = setTimeout(function () { swap(); }, D(90));
+      PV.addStop(function () { clearTimeout(t); });
+      an(next, [{ opacity: 0 }, { opacity: 1 }], { duration: D(280), fill: 'both', easing: 'ease-out' });
+    }
+  });
+
+  /* 栅线擦：一条亮线先扫过，字跟在线后出现 */
+  PV.reg('transition', 'ruleWipe', {
+    nm: '栅线擦', tags: ['editorial', 'graphic'], w: 0.5,
+    play: function (c, prev, next, swap) {
+      swap();
+      var line = document.createElement('i');
+      line.className = 'jv-trans-line';
+      next.appendChild(line);
+      an(line, [{ transform: 'translateX(0) scaleX(1)', opacity: .9 }, { transform: 'translateX(100%) scaleX(.4)', opacity: 0 }],
+        { duration: D(460), fill: 'both', easing: 'ease-in' });
+      an(next, [{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0 0 0)' }],
+        { duration: D(460), fill: 'both', easing: 'cubic-bezier(.5,0,.2,1)' });
+      PV.addStop(function () { if (line.parentNode) line.parentNode.removeChild(line); });
     }
   });
 })();
