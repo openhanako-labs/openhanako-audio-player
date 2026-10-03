@@ -17,7 +17,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PV = dirname(fileURLToPath(import.meta.url));
 const TARGETS = ['ui/index.html', 'ui/standalone.html'];
 
-const CSS_ORDER = ['css/base.css', 'css/layouts.css', 'css/layouts2.css', 'css/chrome.css', 'css/parts.css', 'css/decor.css', 'css/fonts.css', 'css/bg.css', 'css/look.css'];
+const CSS_ORDER = ['css/base.css', 'css/layouts.css', 'css/layouts2.css', 'css/chrome.css', 'css/parts.css', 'css/decor.css', 'css/decor2.css', 'css/fonts.css', 'css/bg.css', 'css/look.css'];
 const JS_ORDER = [
   'src/00-engine.js', 'src/01-styles.js', 'src/02-layouts.js',
   'src/03-enter.js', 'src/04-hold.js', 'src/05-exit.js',
@@ -26,7 +26,7 @@ const JS_ORDER = [
   'src/13-syntax.js', 'src/12-cuts.js',
   'src/14-decor.js', 'src/15-treat.js', 'src/16-trans.js', 'src/17-faces.js',
   'src/18-audit.js', 'src/19-bg.js', 'src/21-looks.js', 'src/22-layouts2.js',
-  'src/23-enter2.js', 'src/24-exit2.js'
+  'src/23-enter2.js', 'src/24-exit2.js', 'src/25-decor2.js'
 ];
 
 const CSS_B = '/* ===== PV:BEGIN 文字PV引擎（pv/ 目录构建产物，勿手改） ===== */';

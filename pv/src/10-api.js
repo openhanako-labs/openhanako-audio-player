@@ -121,13 +121,16 @@
     if (PV.active()) PV.exit(); else PV.enter();
   };
 
-  /* R 键 */
+  /* R 键重掷；T 键开关配牌读数（默认关） */
   document.addEventListener('keydown', function (e) {
     if (!PV.active()) return;
+    var t = e.target || {};
+    if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
     if (e.key === 'r' || e.key === 'R') {
-      var t = e.target || {};
-      if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
       PV.omakase();
+    } else if (e.key === 't' || e.key === 'T') {
+      PV.tagOn = !PV.tagOn;
+      PV.applyTag(PV.lastPlan());
     }
   });
 

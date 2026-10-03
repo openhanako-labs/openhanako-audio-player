@@ -4,15 +4,13 @@
   position: absolute; top: 10px; left: 12px; z-index: 30;
   font-family: monospace; font-size: 9px; letter-spacing: .12em;
   color: var(--jv-fg); opacity: .55;
-  /* 原本 pointer-events:none，点不动。现在它自己就是一个开关：
-   * 点一下循环 全量 → 只留版式 → 关掉，所以得能吃事件（但不能挡操作：只有文字那一小条可点）*/
-  pointer-events: auto; cursor: pointer; padding: 4px 6px; margin: -4px -6px;
+  /* 默认整个件都不显示（PV.tagOn=false，按 T 唤出）。显示时也不抢交互：
+   * 上一版给了它 pointer-events:auto 当按钮，既然改成按键开关，就不该再有个隐形热区 */
+  pointer-events: none;
   transition: opacity .5s ease;
 }
-.jv-tag:hover { opacity: .95; }
-/* 空闲 1.4s 后淡到一边：读数是给调参的，不是给看歌词时盯着的 */
-.jv-tag.dim { opacity: .2; }
-.jv-tag.dim:hover { opacity: .8; }
+/* 开着时闲一会儿就再淡一点：别抢看词 */
+.jv-tag.dim { opacity: .22; }
 
 .jv-dice {
   position: absolute; top: 10px; right: 12px; z-index: 30;

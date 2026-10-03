@@ -97,6 +97,8 @@ ${js}
   try { localStorage.removeItem('hana_audio_reactive'); } catch (e) { }
   /* 预览台里 PV 自己接元素是安全的（这里没有 core 会输）；App 里这个开关默认 false */
   PV.audioOwn = true;
+  /* 预览台就是看配牌的，读数默认开着；App 里默认关（按 T 唤出）*/
+  PV.tagOn = true;
   document.body.classList.add('jizura-mode');
   PV.setLyrics(LINES);
   PV.useStyle(savedStyle);

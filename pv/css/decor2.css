@@ -1,0 +1,137 @@
+/* PV 引擎 · ⑬ 装饰扩充样式（21 件，与 pv/src/25-decor2.js 一一对应）
+ * 全部 .jv-d 已在 decor.css 里钉了 writing-mode:horizontal-tb 与 z-index，
+ * 这里只画形状。颜色一律从 --jv-fg / --jv-acc 混出来，跟风格条走，不写死色值。
+ */
+
+/* 根因：.jv-d 基类是 inset:0（四边钉住）。只写 left/bottom 的话，
+ * 另两边还是 0 → 元素被拉满整块舞台（实测“正字计数”975×102、“时间码”横贯全宽）。
+ * ⑤ 就是靠 `inset:auto` 治过这个，这批新件又漏了——一次性在开头写清。*/
+.jv-d.jv-regmark, .jv-d.jv-swatches, .jv-d.jv-tally, .jv-d.jv-dimline,
+.jv-d.jv-ruler, .jv-d.jv-timecode, .jv-d.jv-datestamp, .jv-d.jv-tape,
+.jv-d.jv-circline, .jv-d.jv-scribble, .jv-d.jv-seal, .jv-d.jv-burstlines,
+.jv-d.jv-sqrings, .jv-d.jv-notes {
+  inset: auto;            /* 先解开四边，再按件自己定位 */
+  width: auto; height: auto;
+}
+
+.jv-d.jv-crop, .jv-d.jv-regmark, .jv-d.jv-swatches, .jv-d.jv-tally,
+.jv-d.jv-dimline, .jv-d.jv-ruler, .jv-d.jv-guides, .jv-d.jv-timecode,
+.jv-d.jv-datestamp, .jv-d.jv-tape, .jv-d.jv-circline, .jv-d.jv-scribble,
+.jv-d.jv-brackets, .jv-d.jv-seal, .jv-d.jv-leak, .jv-d.jv-burstlines,
+.jv-d.jv-sqrings, .jv-d.jv-plusgrid, .jv-d.jv-checker, .jv-d.jv-hanzi,
+.jv-d.jv-notes, .jv-d.jv-ruled { position: absolute; pointer-events: none; }
+
+/* ---- 纸面与印张 ---- */
+.jv-crop { inset: 0; }
+.jv-crop > i { position: absolute; width: 26px; height: 26px; border: 1px solid color-mix(in srgb, var(--jv-fg) 55%, transparent); }
+.jv-crop > i:nth-child(1) { left: 12px; top: 12px; border-right: 0; border-bottom: 0; }
+.jv-crop > i:nth-child(2) { right: 12px; top: 12px; border-left: 0; border-bottom: 0; }
+.jv-crop > i:nth-child(3) { left: 12px; bottom: 12px; border-right: 0; border-top: 0; }
+.jv-crop > i:nth-child(4) { right: 12px; bottom: 12px; border-left: 0; border-top: 0; }
+
+.jv-regmark { left: 16px; bottom: 16px; width: 46px; height: 46px; opacity: .5; }
+.jv-regmark > i { position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; border: 1px solid var(--jv-fg); }
+.jv-regmark > i.b { width: 12px; height: 12px; margin: -6px 0 0 -6px; border-color: var(--jv-acc); }
+.jv-regmark::after { content: ''; position: absolute; inset: 0; background: linear-gradient(var(--jv-fg), var(--jv-fg)) 50% 0/1px 100% no-repeat, linear-gradient(var(--jv-fg), var(--jv-fg)) 0 50%/100% 1px no-repeat; }
+
+.jv-ruled { left: 5%; right: 5%; top: 18%; bottom: 18%; opacity: .16;
+  background: repeating-linear-gradient(to bottom, transparent 0 33px, color-mix(in srgb, var(--jv-fg) 60%, transparent) 33px 34px); }
+
+.jv-swatches { right: 14px; bottom: 14px; display: flex; gap: 3px; opacity: .8; }
+.jv-swatches > i { width: 15px; height: 8px; background: var(--jv-fg); }
+.jv-swatches > i:nth-child(odd) { background: var(--jv-acc); }
+
+.jv-tally { left: 16px; bottom: 16px; display: flex; gap: 5px; align-items: flex-end; height: 30px; opacity: .55; }
+.jv-tally > i { width: 3px; height: 100%; background: var(--jv-fg); }
+.jv-tally > i:nth-child(5) { position: absolute; left: -2px; top: 50%; width: 30px; height: 3px; transform: rotate(-24deg); }
+
+/* ---- 标注与测量 ---- */
+.jv-dimline { left: 10%; top: 12%; height: 16px; display: flex; align-items: center; opacity: .55; }
+.jv-dimline > .bar { position: static; height: 1px; background: var(--jv-fg); }
+.jv-dimline > .cap { position: static; width: 1px; height: 12px; background: var(--jv-fg); }
+.jv-dimline > span { position: static; font-family: monospace; font-size: 9px; letter-spacing: .1em; margin-left: 6px; color: var(--jv-acc); }
+
+.jv-ruler { left: 0; right: 0; top: 10px; height: 16px; display: flex; gap: 5px; align-items: flex-end; opacity: .38; }
+.jv-ruler > i { flex: 1; background: color-mix(in srgb, var(--jv-fg) 70%, transparent); max-width: 2px; }
+
+.jv-guides { inset: 0; opacity: .3; }
+.jv-guides > .v { position: absolute; top: 0; bottom: 0; width: 1px; background: color-mix(in srgb, var(--jv-acc) 60%, transparent); }
+.jv-guides > .v.a { left: 33.33%; } .jv-guides > .v.b { left: 66.66%; }
+.jv-guides > .h { position: absolute; left: 0; right: 0; height: 1px; background: color-mix(in srgb, var(--jv-acc) 60%, transparent); }
+.jv-guides > .h.a { top: 33.33%; } .jv-guides > .h.b { top: 66.66%; }
+
+.jv-timecode { right: 14px; top: 12px; font-family: monospace; font-size: 10px; letter-spacing: .18em;
+  color: var(--jv-acc); opacity: .8; border: 1px solid color-mix(in srgb, var(--jv-acc) 45%, transparent); padding: 2px 7px; }
+
+.jv-datestamp { right: 16px; bottom: 14px; font-family: 'Consolas', monospace; font-size: 13px; letter-spacing: .14em;
+  color: color-mix(in srgb, var(--jv-acc) 85%, #f60); opacity: .85; text-shadow: 0 0 6px currentColor; }
+
+/* ---- 手绘与贴纸 ---- */
+.jv-tape { width: 92px; height: 26px; opacity: .8; }
+.jv-tape.tl { left: 10%; top: 16%; transform: rotate(-7deg); }
+.jv-tape.br { right: 10%; bottom: 18%; transform: rotate(5deg); }
+.jv-tape > i { position: absolute; inset: 0; background: color-mix(in srgb, var(--jv-acc) 34%, transparent);
+  border-inline: 2px dashed color-mix(in srgb, var(--jv-acc) 60%, transparent); }
+.jv-tape > i:nth-child(2) { transform: translateY(3px) rotate(2deg); opacity: .5; }
+
+.jv-circline { left: 50%; top: 50%; width: 62%; height: 46%; transform: translate(-50%, -50%);
+  border: 2px solid color-mix(in srgb, var(--jv-acc) 70%, transparent);
+  border-radius: 48% 52% 45% 55% / 56% 44% 58% 42%; opacity: .55; }
+
+.jv-scribble { left: 12%; right: 12%; height: 12px; opacity: .7; }
+.jv-scribble.under { bottom: 20%; } .jv-scribble.through { top: 50%; }
+.jv-scribble svg { width: 100%; height: 12px; }
+.jv-scribble path { fill: none; stroke: var(--jv-acc); stroke-width: 2.4; stroke-linecap: round; }
+
+.jv-brackets { inset: 0; }
+.jv-brackets > i { position: absolute; font-style: normal; font-size: 46px; font-weight: 700;
+  color: color-mix(in srgb, var(--jv-fg) 65%, transparent); }
+.jv-brackets > i:first-child { left: 6%; top: 22%; }
+.jv-brackets > i:last-child { right: 6%; bottom: 22%; }
+
+.jv-seal { right: 8%; bottom: 14%; width: 44px; height: 44px; display: grid; place-items: center;
+  border: 2px solid #c0392b; border-radius: 6px; color: #c0392b; font-size: 22px; font-weight: 800;
+  background: color-mix(in srgb, #c0392b 12%, transparent); transform: rotate(-6deg); opacity: .85; }
+
+/* ---- 光与几何 ---- */
+.jv-leak { inset: 0; mix-blend-mode: screen; opacity: .5; }
+.jv-leak.l { background: radial-gradient(60% 90% at 0% 30%, color-mix(in srgb, var(--jv-acc) 55%, #ff9), transparent 62%); }
+.jv-leak.r { background: radial-gradient(60% 90% at 100% 70%, color-mix(in srgb, var(--jv-acc) 55%, #f9a), transparent 62%); }
+
+/* 放射线：容器不能是 0x0 的“原点”——子条写百分比宽度时，
+ * 百分比对零尺寸父级求值就是 0，整件东西根本画不出来（实测 33 根全 0x2）。
+ * 给它一个真尺寸，旋转原点仍然放在锁定的那个角上。*/
+.jv-burstlines { width: 44%; height: 52%; }
+.jv-burstlines.tl { left: 0; top: 0; }
+.jv-burstlines.br { right: 0; bottom: 0; }
+.jv-burstlines > i { position: absolute; left: 50%; top: 50%; width: 50%; height: 2px; transform-origin: 0 50%;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--jv-fg) 55%, transparent), transparent); }
+
+/* 同心方：同理，容器得给真尺寸（原来 1px×1px，子块的 18% 就是 0.18px）*/
+.jv-sqrings { left: 50%; top: 50%; width: 56%; height: 62%; transform: translate(-50%, -50%); }
+.jv-sqrings > i { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  border: 1px solid color-mix(in srgb, var(--jv-acc) 40%, transparent); }
+
+/* 加号阵：两条细线在一个单元格内交叉，平铺出来就是一排排 +。
+ * （写成两条规则会前一条死掉——之就刚写过一份被自己盖掉的废规则）*/
+.jv-plusgrid { inset: 0; opacity: .3;
+  --pl: color-mix(in srgb, var(--jv-fg) 55%, transparent);
+  background-image:
+    linear-gradient(to right, transparent calc(50% - .5px), var(--pl) calc(50% - .5px) calc(50% + .5px), transparent calc(50% + .5px)),
+    linear-gradient(to bottom, transparent calc(50% - .5px), var(--pl) calc(50% - .5px) calc(50% + .5px), transparent calc(50% + .5px));
+  background-size: 34px 34px; }
+
+.jv-checker { left: 0; right: 0; height: 22px; opacity: .35;
+  background: repeating-conic-gradient(color-mix(in srgb, var(--jv-fg) 55%, transparent) 0 25%, transparent 0 50%) 0 0/22px 22px; }
+.jv-checker.top { top: 0; } .jv-checker.bot { bottom: 0; }
+
+.jv-hanzi { inset: 0; display: grid; place-items: center; font-size: min(46vh, 40vw); font-weight: 900;
+  color: var(--jv-fg); opacity: .06; line-height: 1; letter-spacing: -.04em; }
+
+.jv-notes { inset: 0; }
+.jv-notes > i { position: absolute; font-style: normal; color: color-mix(in srgb, var(--jv-acc) 80%, var(--jv-fg));
+  animation: jvNoteFloat 3.4s ease-in-out infinite; }
+@keyframes jvNoteFloat {
+  0%, 100% { transform: translateY(0) rotate(-6deg); opacity: .35; }
+  50% { transform: translateY(-14px) rotate(8deg); opacity: .9; }
+}

@@ -66,6 +66,11 @@
   /* 开机默认值留一份：体检要靠它把上游强度钉住（PV.fx 会被气氛与音频每帧改写）*/
   PV.FX0 = Object.assign({}, PV.fx);
 
+  /* 配牌读数默认**关掉**：它是给我们调参用的，不该在正常看词时占住左上角。
+   * 上一轮我先做的是“淡到 20%”——那是降噪，而用户要的是去掉。
+   * 需要时按 T 唤出；预览台（test.html）自己把它打开（那边本来就是看配牌的）。*/
+  PV.tagOn = false;
+
   /* ---------- 气氛：决不是换皮，是换抽签分布 + 换滑块 ---------- */
   /* decor 这一列是后补的：先前没有一档气氛设过它，于是它恒等于1，
    * 所有「decor > 0.5 才进池」的门槛全部恒真，装饰抽得像筛子漏——
@@ -411,28 +416,24 @@
   };
 
   /* ---------- 配牌读数（.jv-tag）----------
-   * 这行字是调试用的，不是演出的一部分：所以它要么淡着，要么听你点。
-   * mode: full（全量）/ brief（只留版式）/ off（关掉）；空闲 1.4s 自动淡到一边。*/
+   * 调试件，默认关（PV.tagOn=false）。按 T 开关；打开时空闲 1.4s 淡一些，
+   * 免得盯着读数不看字；鼠标靠近回到全量。*/
   var tagTimer = null;
-  PV.tagOn = true;
   PV.lastPlan = function () { return null; };
   PV.applyTag = function (plan) {
     var t = PV.S.tag;
     if (!t) return;
-    var mode = t.dataset.mode || 'full';
-    if (!PV.tagOn || mode === 'off') { t.style.display = 'none'; return; }
+    if (!PV.tagOn) { t.style.display = 'none'; return; }
     t.style.display = '';
     if (!plan) { t.textContent = 'LAYOUT · —'; return; }
     var nm = function (x) { return x && x.nm ? x.nm : ''; };
-    var bits = ['LAYOUT', nm(plan.layout) || (plan.mood ? plan.mood : '—')];
-    if (mode === 'full') {
-      if (plan.face) bits.push(nm(plan.face));
-      if (plan.look && plan.look.key !== 'none') bits.push(nm(plan.look));
-      if (plan.bg) bits.push(nm(plan.bg));
-      if (PV.mood) bits.push(PV.mood);
-      if (PV.S.cuts && PV.S.cuts.length > 1) bits.push((PV.S.cutI + 1) + '/' + PV.S.cuts.length);
-      if (PV.audioChain) bits.push('音' + PV.audioChain().slice(1));
-    }
+    var bits = ['LAYOUT', nm(plan.layout) || '—'];
+    if (plan.face) bits.push(nm(plan.face));
+    if (plan.look && plan.look.key !== 'none') bits.push(nm(plan.look));
+    if (plan.bg) bits.push(nm(plan.bg));
+    if (PV.mood) bits.push(PV.mood);
+    if (PV.S.cuts && PV.S.cuts.length > 1) bits.push((PV.S.cutI + 1) + '/' + PV.S.cuts.length);
+    if (PV.audioChain) bits.push('音' + PV.audioChain());
     t.textContent = bits.join(' · ');
     t.classList.remove('dim');
     if (tagTimer) clearTimeout(tagTimer);
@@ -452,6 +453,13 @@
     fitGuard(made.ctx);
     if (plan.enter && plan.enter.apply) plan.enter.apply(made.ctx, made.toks);
     if (plan.hold && plan.hold.apply) { var sh = plan.hold.apply(made.ctx, made.el); if (sh) PV.addStop(sh); }
+    /* 镜头写在常驻的 .jv-track 上：不清场的话，上一段的推镜/荷兰角会永久留在画面上
+     * （实测 track 停在 1030x628 @-35,-44，把满幅装饰件顶出舞台）。
+     * 与背景/外观同一条规矩：换件前先抹掉上一件写的属性。*/
+    if (S.track) {
+      S.track.style.removeProperty('transform');
+      S.track.style.removeProperty('filter');
+    }
     if (plan.camera && plan.camera.apply) { var sc = plan.camera.apply(made.ctx, S.track); if (sc) PV.addStop(sc); }
     plan.decor.forEach(function (d) { if (d.apply) { var s = d.apply(made.ctx, made.el); if (s) PV.addStop(s); } });
     plan.treatment.forEach(function (d) { if (d.apply) { var s2 = d.apply(made.ctx, made.el); if (s2) PV.addStop(s2); } });
