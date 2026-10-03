@@ -20,9 +20,9 @@
 | `transition` | 新旧两行怎么接 | 12 | `cut` |
 | `camera` | 整屏镜头 | 8 | `none` |
 | `decor` | 可叠 0..n 的附加图形（⑬ 扩到 40 件） | 40 | `particles` |
-| `treatment` | 逐字 / 整屏处理 | 11 | `sweep` |
+| `treatment` | 逐字 / 整屏处理（⑭ 扩到 25 件） | 25 | `sweep` |
 
-共 223 件（13 层）。叠加上限：`PV.decorMax = 2`、`PV.treatMax = 1`（在默认那几件之外再抽几件）。实测手拉满五件处理会把字完全淹掉，**上限比数量重要**。
+共 237 件（13 层）。叠加上限：`PV.decorMax = 2`、`PV.treatMax = 1`（在默认那几件之外再抽几件）。实测手拉满五件处理会把字完全淹掉，**上限比数量重要**。
 
 默认件就是 ① 之前旧实现的行为，所以不抽签时画面一模一样；变了的是**其余各层现在真的有事可做**。
 
@@ -58,6 +58,7 @@ pv/
   src/23-enter2.js ⑪ 登场扩充 12 件（翻入/旋入/幕升/弹入/抖定/摆入…）
   src/24-exit2.js  ⑫ 退场扩充 10 件（上浮/侧飘/旋出/化开/倒序退/碎落/甩出…）
   src/25-decor2.js ⑬ 装饰扩充 22 件（裁切标/稿纸线/时间码/胶带/放射线/汉字水印…）
+  src/26-treat2.js   ⑭ 处理扩充 14 件（大小律动/摇摆字/逐字填色/虚实推进/原稿用紙…）
   css/base.css       层容器与舞台规则
   css/layouts.css    版式规则
   css/chrome.css     附件规则
@@ -547,6 +548,40 @@ decor 18 → 40 件。JIZURA 那边是 100 件（按 `DEF.xxx = { name: ... }` �
 现在 `PV.tagOn` 默认 false，App 里进 PV 什么都不显示；**按 T 开关**。
 上版加的“点一下循环三态”也撤了：默认不显示的东西留个隐形热区，只会误触。
 预览台反过来默认开着（`pv/make-test.mjs` 里 `PV.tagOn = true`）。
+
+## ⑭ 处理扩充（pv/src/26-treat2.js）
+
+JIZURA 的 27 件文字处理是 **canvas 逐字画的**（`ctx.save/translate/vbands`），我们这层是 DOM/CSS，
+所以搬的是**效果不是代码**——14 件全用 CSS 原语重写：
+
+节奏姿态：大小律动(scale) · 摇摆字(rotate) · 基线错落(translateY) · 逐字抖动(逐帧)
+时间进度：逐字填色(clip-path) · 虚实推进(blur) · 余韵渐隐(filter opacity) · 逐字换色(hue-rotate)
+印刷切版：错位切断 · 逐字色版错位(drop-shadow) · 原稿用紙(outline) · 逐字圈 · 字距拉开 · 一字加亮
+
+### 归属先划清（⑩ 学的教训）
+
+| 属性 | 归谁 |
+|---|---|
+| `.jv-w` transform | 版式（位置与旋转） |
+| `.jv-w` translate | 守卫 `--gdx/--gdy` + 本层 `--ttx/--tty`（在 base.css 里合成） |
+| `.jv-w` rotate / scale | 本层 `--ttrot` / `--ttscale` |
+| `i.jv-t` transform / opacity / filter | 登场层（WAAPI） |
+| `i.jv-t` 涂装（stroke/shadow/clip） | ⑩ 外观层 |
+
+所以本层**不碰 opacity、不碰 transform、不碰 text-shadow**：要淡用 `filter: opacity()`，
+要糊用 `filter: blur()`，填色用 `clip-path`（外观层的点线缘用 mask，不撞）。
+
+### 两个自己犯的错，都是量具拓出来的
+
+1. `style.setProperty('clipPath', …)` **静默失效**——setProperty 只认 CSS 写法（`clip-path`）。
+   karaokeFill 就这样整件没作用而且不报错。判据是「每件到底改到几个字的内联样式」。
+2. `softfocus` 的门槛 `texture>.45 && motion<.6` 七档气氛**没有一档能同时满足**——
+   等于永远抽不到，是死旋钮的件版。放宽到 `.3` 后 calm 与 emotional 可达。
+   顺手拿「注入假音频」把八层扫了一遍：处理/装饰/背景/保持/镜头**未出现列表全空**，
+   门槛没有一件是死的。
+
+验证：14 件逐件量作用字数全部生效、换件后无残留；注入假音频 800 段零遗漏；
+1200 段帧消费者 2–3 波动不累积；`PV.audit()` 五项 0/0/0/0/0。
 
 ## 待填
 
