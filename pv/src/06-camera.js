@@ -28,7 +28,7 @@
     frame: function (c) {
       var m = c._cam || (c._cam = { k: 0.04, rot: 0 });
       var p = prog(c);
-      c.track.style.transform = 'scale(' + (1 + m.k * p).toFixed(4) + ') rotate(' + (m.rot * p).toFixed(2) + 'deg)';
+      c.track.style.transform = PV.tfScale(1 + m.k * p, 'rotate(' + (m.rot * p).toFixed(2) + 'deg)');
     }
   });
 
@@ -37,7 +37,7 @@
     apply: function (c) { c._cam = { k: 0.03 + 0.05 * PV.fx.motion }; },
     frame: function (c) {
       var m = c._cam || { k: 0.04 };
-      c.track.style.transform = 'scale(' + (1 + m.k * (1 - prog(c))).toFixed(4) + ')';
+      c.track.style.transform = PV.tfScale(1 + m.k * (1 - prog(c)));
     }
   });
 
@@ -48,7 +48,7 @@
     frame: function (c) {
       var m = c._cam || { x: 1, rot: 0 };
       var p = prog(c);
-      c.track.style.transform = 'translateX(' + (m.x * p * 10).toFixed(2) + 'px) rotate(' + (m.rot * p).toFixed(2) + 'deg)';
+      c.track.style.transform = PV.tfMove(m.x * p * 10, 0, 'rotate(' + (m.rot * p).toFixed(2) + 'deg)');
     }
   });
 
@@ -58,7 +58,7 @@
     apply: function (c) { c._cam = { a: (PV.rnd(2) < 1 ? -1 : 1) * (1.5 + 4.5 * PV.fx.motion) }; },
     frame: function (c) {
       var m = c._cam || { a: 3 };
-      c.track.style.transform = 'rotate(' + m.a.toFixed(2) + 'deg) scale(1.035)';
+      c.track.style.transform = PV.tfScale(1.035, 'rotate(' + m.a.toFixed(2) + 'deg)');
     }
   });
 
@@ -70,7 +70,7 @@
       var s = Math.floor(performance.now() / 90);
       var a = PV.fx.motion * 3.2;
       var dx = (sr(s) - 0.5) * a, dy = (sr(s + 91) - 0.5) * a, dr = (sr(s + 17) - 0.5) * a * 0.35;
-      c.track.style.transform = 'translate(' + dx.toFixed(2) + 'px,' + dy.toFixed(2) + 'px) rotate(' + dr.toFixed(2) + 'deg)';
+      c.track.style.transform = PV.tfMove(dx, dy, 'rotate(' + dr.toFixed(2) + 'deg)');
     }
   });
 
@@ -83,7 +83,7 @@
       if (b && b.len) k = Math.max(0, 1 - b.since / (b.len * 0.5));
       else if (e != null) k = e;
       var s = 1 + k * (0.015 + 0.06 * PV.fx.motion);
-      c.track.style.transform = 'scale(' + s.toFixed(4) + ')';
+      c.track.style.transform = PV.tfScale(s);
     }
   });
 
@@ -94,7 +94,9 @@
     frame: function (c) {
       var m = c._cam || { y: -1 };
       var p = prog(c);
-      c.track.style.transform = 'translateY(' + (m.y * p * 16).toFixed(2) + 'px) scale(' + (1 + 0.03 * p).toFixed(4) + ')';
+      c.track.style.transform = PV.tfMove(0, m.y * p * 16, 'scale(' + (1 + 0.03 * p).toFixed(4) + ')');
     }
   });
 })();
+
+

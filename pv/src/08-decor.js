@@ -133,15 +133,18 @@
       var src = c.el;
       if (!src) return null;
       var d = (1 + 3.4 * PV.fx.chroma).toFixed(2);
+      /* 只剩一层残影。原来是两层（青、红各一份整行副本）——那就是用户说的
+       * 「歌词都重叠到一起」：chroma 高时两层透明度到 .58，看着就是第二行字。
+       * 双色错位用一层就足够读到，不想碰 text-shadow 是因为那是 ⑩ 外观层的地盘。*/
       var g1 = clone(src, 'jv-ghostA', d + 'px ' + (-d) + 'px', 'color-mix(in srgb,var(--jv-acc) 70%,#0ff)');
-      var g2 = clone(src, 'jv-ghostB', (-d) + 'px ' + d + 'px', 'color-mix(in srgb,var(--jv-acc) 55%,#f08)');
+      var g2 = null;
       function clone(el, cls, tr, col) {
         var n = el.cloneNode(true);
         n.className = el.className + ' ' + cls;
         n.setAttribute('aria-hidden', 'true');
         Array.prototype.forEach.call(n.querySelectorAll('.jv-t'), function (t) { t.style.color = col; t.style.textShadow = 'none'; });
         n.style.transform = 'translate(' + tr + ')';
-        n.style.opacity = String(0.28 + 0.3 * PV.fx.chroma);
+        n.style.opacity = String(Math.min(.34, 0.18 + 0.2 * PV.fx.chroma));   /* 残影是色边，不是第二行歌词：上限 .34 */
         el.parentNode.insertBefore(n, el);
         return n;
       }

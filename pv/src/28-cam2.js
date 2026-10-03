@@ -83,7 +83,7 @@
         var t = c.lt || 0;
         var x = Math.sin(t * 0.7) * a + Math.sin(t * 1.9 + 1.2) * a * 0.4;
         var y = Math.cos(t * 0.55) * a * 0.8 + Math.sin(t * 2.3) * a * 0.25;
-        return 'translate(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px)';
+        return PV.tfMove(x, y);
       });
     }
   });
@@ -97,7 +97,7 @@
       return frame(c, function () {
         var t = c.lt || 0;
         var k = t < 0.34 ? Math.sin((t / 0.34) * Math.PI) : 0;   // 只在前 1/3 秒甩
-        return 'translateX(' + (k * amp).toFixed(2) + 'px) rotate(' + (k * dir * 1.4).toFixed(2) + 'deg)';
+        return PV.tfMove(k * amp, 0, 'rotate(' + (k * dir * 1.4).toFixed(2) + 'deg)');
       });
     }
   });
@@ -109,7 +109,7 @@
       var amp = M(26), dir = PV.rnd(2) < 1 ? 1 : -1;
       return frame(c, function () {
         var t = Math.min(1, (c.lt || 0) / 5);
-        return 'translateY(' + (dir * amp * (t - 0.5)).toFixed(2) + 'px)';
+        return PV.tfMove(0, dir * amp * (t - 0.5));
       });
     }
   });
@@ -124,7 +124,7 @@
         var t = c.lt || 0;
         var idx = Math.floor(Math.min(1, t / 4.5) * steps);
         var k = base + idx * 0.035 * M(1);
-        return 'scale(' + k.toFixed(4) + ')';
+        return PV.tfScale(k);
       });
     }
   });
@@ -137,7 +137,7 @@
         var t = c.lt || 0;
         if (t > 0.9) return 'none';
         var k = Math.exp(-t * 5.5) * Math.cos(t * 17) * 0.06 * M(1);
-        return 'scale(' + (1 + k).toFixed(4) + ')';
+        return PV.tfScale(1 + k);
       });
     }
   });
@@ -150,7 +150,7 @@
       return frame(c, function () {
         var t = c.lt || 0;
         var k = Math.max(0, 1 - t / 0.36);
-        return 'scale(' + (1 + 0.42 * k * k).toFixed(4) + ')';
+        return PV.tfScale(1 + 0.42 * k * k);
       });
     }
   });
@@ -196,8 +196,10 @@
       var a = M(13), ph = PV.rnd(6.28);
       return frame(c, function () {
         var t = (c.lt || 0) * 0.8 + ph;
-        return 'translate(' + (Math.cos(t) * a).toFixed(2) + 'px,' + (Math.sin(t * 1.13) * a * 0.55).toFixed(2) + 'px)';
+        return PV.tfMove(Math.cos(t) * a, Math.sin(t * 1.13) * a * 0.55);
       });
     }
   });
 })();
+
+

@@ -18,7 +18,7 @@
     nm: '呼吸', tags: ['calm', 'emotional'], w: 1,
     frame: function (c) {
       var k = 1 + Math.sin(c.lt * 1.5) * (0.004 + 0.011 * PV.fx.motion);
-      c.el.style.transform = 'scale(' + k.toFixed(4) + ')';
+      c.el.style.transform = PV.tfScale(k);
     }
   });
 
@@ -87,7 +87,8 @@
       if (b && b.len) k = Math.max(0, 1 - b.since / (b.len * 0.55));
       else if (e != null) k = e;
       var s = 1 + k * (0.012 + 0.05 * PV.fx.motion);
-      c.el.style.transform = 'scale(' + s.toFixed(4) + ')';
+      c.el.style.transform = PV.tfScale(s);
     }
   });
 })();
+

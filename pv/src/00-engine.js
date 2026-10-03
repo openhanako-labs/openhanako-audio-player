@@ -387,6 +387,9 @@
     if (!made) return;
 
     var prev = S.cur, oldPlan = S.plan;
+    /* 开新一段前先把台上多余的行扫掉。上一段可能正在等一个延时 drop，
+     * 而那个延时会被下面的 stopAll 取消掉——旧行就再没人摘了。*/
+    trimTrack(prev, null);
     S.idx = i;
     S.lastLayout = plan.layout.key;
     /* 记进近窗：只记参与抽签的层（写死的件也算“近几段都一样”，不该占名额）*/
@@ -419,9 +422,15 @@
         if (n !== prev && n.classList && n.classList.contains('jv-line')) n.parentNode.removeChild(n);
       });
       S.track.appendChild(made.el);
+      /* 兜底上限：看得见的行 ≤2、连残影 ≤3。不能指望每个件都自律地 drop——
+       * 延时 drop 会被下一段的 stopAll 取消，残影件又多开了几份同文字的整行。*/
+      trimTrack(prev, made.el);
       /* 容器自身的 opacity 过渡属于衔接层，这里直接上 show（与旧实现一致） */
       made.el.classList.add('show');
       applyIn(plan, made);
+      /* 再清一次：残影/切片类件是在 applyIn 里才 clone 出整行的，
+       * 只靠上面那次 trim 限不住它们（实测 track 里仍有 4 个整行）。*/
+      trimTrack(prev, made.el);
     };
     if (plan.transition && plan.transition.play) plan.transition.play(plan.ctx, prev, made.el, swap, drop);
     else swap();
@@ -619,6 +628,35 @@
       w.style.setProperty('--gdy', (py + ddy).toFixed(1) + 'px');
     });
   }
+  /* ---------- 台上整行数硬上限 ----------
+   * 实测到同时挂 5 个整行（用户看到的「歌词都重叠到一起」）。两类来源：
+   *   a) 退场/转场等的是延时 drop，而下一段的 stopAll 会 clearTimeout 掉它——旧行没人摘；
+   *   b) 整行克隆件（色偏 ghostA/B、残影、切片）自己带 .jv-line 类，一叠就是几份同文字。
+   * 不指望每个件自律：看得见的真行最多 2（退场中的 + 刚上的），连残影总共最多 3。
+   * 克隆一律带 aria-hidden，靠它区分「看得见的行」与残影——chroma 那件本来就标了。*/
+  function trimTrack(keepA, keepB) {
+    var tr = S.track, lay = S.layer || PV.layer();
+    if (!tr) return;
+    /* 扫整层而不是只扫 track 的子元素：实测多余的整行不一定挂在 track 下
+     * （只按 track.children 清时，layer 里仍有 4 份同文字的行），
+     * 限不住就等于没限。*/
+    var kids = lay ? Array.prototype.slice.call(lay.querySelectorAll('.jv-line')) : [];
+    if (kids.length <= 2) return;
+    function pinned(n) { return n === keepA || n === keepB; }
+    var real = kids.filter(function (n) { return !n.hasAttribute('aria-hidden'); });
+    var ghosts = kids.filter(function (n) { return n.hasAttribute('aria-hidden'); });
+    var doomed = [];
+    /* 先丢残影（它本来就只是拖影，丢了不心疼），再丢多余的真行 */
+    var gKeep = Math.max(0, 3 - real.length);
+    var gDoom = ghosts.filter(function (n) { return !pinned(n); });
+    gDoom.slice(0, Math.max(0, gDoom.length - gKeep)).forEach(function (n) { doomed.push(n); });
+    var rDoom = real.filter(function (n) { return !pinned(n); });
+    rDoom.slice(0, Math.max(0, rDoom.length - Math.max(0, 2 - real.filter(pinned).length)))
+      .forEach(function (n) { doomed.push(n); });
+    doomed.forEach(function (n) { if (n.parentNode) n.parentNode.removeChild(n); });
+  }
+  PV.trimTrack = trimTrack;
+
   PV.fitGuard = fitGuard;
 
     /* ---------- 全局帧循环 ----------

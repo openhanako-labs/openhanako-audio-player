@@ -2330,7 +2330,7 @@ try {
 <script>
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1003121957";
+  window.__HANA_BUILD = "1003124740";
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -12796,6 +12796,9 @@ injectPills();
     if (!made) return;
 
     var prev = S.cur, oldPlan = S.plan;
+    /* 开新一段前先把台上多余的行扫掉。上一段可能正在等一个延时 drop，
+     * 而那个延时会被下面的 stopAll 取消掉——旧行就再没人摘了。*/
+    trimTrack(prev, null);
     S.idx = i;
     S.lastLayout = plan.layout.key;
     /* 记进近窗：只记参与抽签的层（写死的件也算“近几段都一样”，不该占名额）*/
@@ -12828,9 +12831,15 @@ injectPills();
         if (n !== prev && n.classList && n.classList.contains('jv-line')) n.parentNode.removeChild(n);
       });
       S.track.appendChild(made.el);
+      /* 兜底上限：看得见的行 ≤2、连残影 ≤3。不能指望每个件都自律地 drop——
+       * 延时 drop 会被下一段的 stopAll 取消，残影件又多开了几份同文字的整行。*/
+      trimTrack(prev, made.el);
       /* 容器自身的 opacity 过渡属于衔接层，这里直接上 show（与旧实现一致） */
       made.el.classList.add('show');
       applyIn(plan, made);
+      /* 再清一次：残影/切片类件是在 applyIn 里才 clone 出整行的，
+       * 只靠上面那次 trim 限不住它们（实测 track 里仍有 4 个整行）。*/
+      trimTrack(prev, made.el);
     };
     if (plan.transition && plan.transition.play) plan.transition.play(plan.ctx, prev, made.el, swap, drop);
     else swap();
@@ -13028,6 +13037,35 @@ injectPills();
       w.style.setProperty('--gdy', (py + ddy).toFixed(1) + 'px');
     });
   }
+  /* ---------- 台上整行数硬上限 ----------
+   * 实测到同时挂 5 个整行（用户看到的「歌词都重叠到一起」）。两类来源：
+   *   a) 退场/转场等的是延时 drop，而下一段的 stopAll 会 clearTimeout 掉它——旧行没人摘；
+   *   b) 整行克隆件（色偏 ghostA/B、残影、切片）自己带 .jv-line 类，一叠就是几份同文字。
+   * 不指望每个件自律：看得见的真行最多 2（退场中的 + 刚上的），连残影总共最多 3。
+   * 克隆一律带 aria-hidden，靠它区分「看得见的行」与残影——chroma 那件本来就标了。*/
+  function trimTrack(keepA, keepB) {
+    var tr = S.track, lay = S.layer || PV.layer();
+    if (!tr) return;
+    /* 扫整层而不是只扫 track 的子元素：实测多余的整行不一定挂在 track 下
+     * （只按 track.children 清时，layer 里仍有 4 份同文字的行），
+     * 限不住就等于没限。*/
+    var kids = lay ? Array.prototype.slice.call(lay.querySelectorAll('.jv-line')) : [];
+    if (kids.length <= 2) return;
+    function pinned(n) { return n === keepA || n === keepB; }
+    var real = kids.filter(function (n) { return !n.hasAttribute('aria-hidden'); });
+    var ghosts = kids.filter(function (n) { return n.hasAttribute('aria-hidden'); });
+    var doomed = [];
+    /* 先丢残影（它本来就只是拖影，丢了不心疼），再丢多余的真行 */
+    var gKeep = Math.max(0, 3 - real.length);
+    var gDoom = ghosts.filter(function (n) { return !pinned(n); });
+    gDoom.slice(0, Math.max(0, gDoom.length - gKeep)).forEach(function (n) { doomed.push(n); });
+    var rDoom = real.filter(function (n) { return !pinned(n); });
+    rDoom.slice(0, Math.max(0, rDoom.length - Math.max(0, 2 - real.filter(pinned).length)))
+      .forEach(function (n) { doomed.push(n); });
+    doomed.forEach(function (n) { if (n.parentNode) n.parentNode.removeChild(n); });
+  }
+  PV.trimTrack = trimTrack;
+
   PV.fitGuard = fitGuard;
 
     /* ---------- 全局帧循环 ----------
@@ -13503,7 +13541,7 @@ injectPills();
     nm: '呼吸', tags: ['calm', 'emotional'], w: 1,
     frame: function (c) {
       var k = 1 + Math.sin(c.lt * 1.5) * (0.004 + 0.011 * PV.fx.motion);
-      c.el.style.transform = 'scale(' + k.toFixed(4) + ')';
+      c.el.style.transform = PV.tfScale(k);
     }
   });
 
@@ -13572,10 +13610,11 @@ injectPills();
       if (b && b.len) k = Math.max(0, 1 - b.since / (b.len * 0.55));
       else if (e != null) k = e;
       var s = 1 + k * (0.012 + 0.05 * PV.fx.motion);
-      c.el.style.transform = 'scale(' + s.toFixed(4) + ')';
+      c.el.style.transform = PV.tfScale(s);
     }
   });
 })();
+
 
 /* PV 引擎 · 05 退场层 exit
  * play(ctx, el, drop)：把上一行送走，动画收尾必须调 drop()（引擎负责摘掉元素）。
@@ -13726,7 +13765,7 @@ injectPills();
     frame: function (c) {
       var m = c._cam || (c._cam = { k: 0.04, rot: 0 });
       var p = prog(c);
-      c.track.style.transform = 'scale(' + (1 + m.k * p).toFixed(4) + ') rotate(' + (m.rot * p).toFixed(2) + 'deg)';
+      c.track.style.transform = PV.tfScale(1 + m.k * p, 'rotate(' + (m.rot * p).toFixed(2) + 'deg)');
     }
   });
 
@@ -13735,7 +13774,7 @@ injectPills();
     apply: function (c) { c._cam = { k: 0.03 + 0.05 * PV.fx.motion }; },
     frame: function (c) {
       var m = c._cam || { k: 0.04 };
-      c.track.style.transform = 'scale(' + (1 + m.k * (1 - prog(c))).toFixed(4) + ')';
+      c.track.style.transform = PV.tfScale(1 + m.k * (1 - prog(c)));
     }
   });
 
@@ -13746,7 +13785,7 @@ injectPills();
     frame: function (c) {
       var m = c._cam || { x: 1, rot: 0 };
       var p = prog(c);
-      c.track.style.transform = 'translateX(' + (m.x * p * 10).toFixed(2) + 'px) rotate(' + (m.rot * p).toFixed(2) + 'deg)';
+      c.track.style.transform = PV.tfMove(m.x * p * 10, 0, 'rotate(' + (m.rot * p).toFixed(2) + 'deg)');
     }
   });
 
@@ -13756,7 +13795,7 @@ injectPills();
     apply: function (c) { c._cam = { a: (PV.rnd(2) < 1 ? -1 : 1) * (1.5 + 4.5 * PV.fx.motion) }; },
     frame: function (c) {
       var m = c._cam || { a: 3 };
-      c.track.style.transform = 'rotate(' + m.a.toFixed(2) + 'deg) scale(1.035)';
+      c.track.style.transform = PV.tfScale(1.035, 'rotate(' + m.a.toFixed(2) + 'deg)');
     }
   });
 
@@ -13768,7 +13807,7 @@ injectPills();
       var s = Math.floor(performance.now() / 90);
       var a = PV.fx.motion * 3.2;
       var dx = (sr(s) - 0.5) * a, dy = (sr(s + 91) - 0.5) * a, dr = (sr(s + 17) - 0.5) * a * 0.35;
-      c.track.style.transform = 'translate(' + dx.toFixed(2) + 'px,' + dy.toFixed(2) + 'px) rotate(' + dr.toFixed(2) + 'deg)';
+      c.track.style.transform = PV.tfMove(dx, dy, 'rotate(' + dr.toFixed(2) + 'deg)');
     }
   });
 
@@ -13781,7 +13820,7 @@ injectPills();
       if (b && b.len) k = Math.max(0, 1 - b.since / (b.len * 0.5));
       else if (e != null) k = e;
       var s = 1 + k * (0.015 + 0.06 * PV.fx.motion);
-      c.track.style.transform = 'scale(' + s.toFixed(4) + ')';
+      c.track.style.transform = PV.tfScale(s);
     }
   });
 
@@ -13792,10 +13831,12 @@ injectPills();
     frame: function (c) {
       var m = c._cam || { y: -1 };
       var p = prog(c);
-      c.track.style.transform = 'translateY(' + (m.y * p * 16).toFixed(2) + 'px) scale(' + (1 + 0.03 * p).toFixed(4) + ')';
+      c.track.style.transform = PV.tfMove(0, m.y * p * 16, 'scale(' + (1 + 0.03 * p).toFixed(4) + ')');
     }
   });
 })();
+
+
 
 /* PV 引擎 · 07 衔接层 transition
  * play(ctx, prev, next, swap)：决定新行什么时候上、怎么上。
@@ -14048,15 +14089,18 @@ injectPills();
       var src = c.el;
       if (!src) return null;
       var d = (1 + 3.4 * PV.fx.chroma).toFixed(2);
+      /* 只剩一层残影。原来是两层（青、红各一份整行副本）——那就是用户说的
+       * 「歌词都重叠到一起」：chroma 高时两层透明度到 .58，看着就是第二行字。
+       * 双色错位用一层就足够读到，不想碰 text-shadow 是因为那是 ⑩ 外观层的地盘。*/
       var g1 = clone(src, 'jv-ghostA', d + 'px ' + (-d) + 'px', 'color-mix(in srgb,var(--jv-acc) 70%,#0ff)');
-      var g2 = clone(src, 'jv-ghostB', (-d) + 'px ' + d + 'px', 'color-mix(in srgb,var(--jv-acc) 55%,#f08)');
+      var g2 = null;
       function clone(el, cls, tr, col) {
         var n = el.cloneNode(true);
         n.className = el.className + ' ' + cls;
         n.setAttribute('aria-hidden', 'true');
         Array.prototype.forEach.call(n.querySelectorAll('.jv-t'), function (t) { t.style.color = col; t.style.textShadow = 'none'; });
         n.style.transform = 'translate(' + tr + ')';
-        n.style.opacity = String(0.28 + 0.3 * PV.fx.chroma);
+        n.style.opacity = String(Math.min(.34, 0.18 + 0.2 * PV.fx.chroma));   /* 残影是色边，不是第二行歌词：上限 .34 */
         el.parentNode.insertBefore(n, el);
         return n;
       }
@@ -17515,7 +17559,7 @@ injectPills();
         var t = c.lt || 0;
         var x = Math.sin(t * 0.7) * a + Math.sin(t * 1.9 + 1.2) * a * 0.4;
         var y = Math.cos(t * 0.55) * a * 0.8 + Math.sin(t * 2.3) * a * 0.25;
-        return 'translate(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px)';
+        return PV.tfMove(x, y);
       });
     }
   });
@@ -17529,7 +17573,7 @@ injectPills();
       return frame(c, function () {
         var t = c.lt || 0;
         var k = t < 0.34 ? Math.sin((t / 0.34) * Math.PI) : 0;   // 只在前 1/3 秒甩
-        return 'translateX(' + (k * amp).toFixed(2) + 'px) rotate(' + (k * dir * 1.4).toFixed(2) + 'deg)';
+        return PV.tfMove(k * amp, 0, 'rotate(' + (k * dir * 1.4).toFixed(2) + 'deg)');
       });
     }
   });
@@ -17541,7 +17585,7 @@ injectPills();
       var amp = M(26), dir = PV.rnd(2) < 1 ? 1 : -1;
       return frame(c, function () {
         var t = Math.min(1, (c.lt || 0) / 5);
-        return 'translateY(' + (dir * amp * (t - 0.5)).toFixed(2) + 'px)';
+        return PV.tfMove(0, dir * amp * (t - 0.5));
       });
     }
   });
@@ -17556,7 +17600,7 @@ injectPills();
         var t = c.lt || 0;
         var idx = Math.floor(Math.min(1, t / 4.5) * steps);
         var k = base + idx * 0.035 * M(1);
-        return 'scale(' + k.toFixed(4) + ')';
+        return PV.tfScale(k);
       });
     }
   });
@@ -17569,7 +17613,7 @@ injectPills();
         var t = c.lt || 0;
         if (t > 0.9) return 'none';
         var k = Math.exp(-t * 5.5) * Math.cos(t * 17) * 0.06 * M(1);
-        return 'scale(' + (1 + k).toFixed(4) + ')';
+        return PV.tfScale(1 + k);
       });
     }
   });
@@ -17582,7 +17626,7 @@ injectPills();
       return frame(c, function () {
         var t = c.lt || 0;
         var k = Math.max(0, 1 - t / 0.36);
-        return 'scale(' + (1 + 0.42 * k * k).toFixed(4) + ')';
+        return PV.tfScale(1 + 0.42 * k * k);
       });
     }
   });
@@ -17628,11 +17672,13 @@ injectPills();
       var a = M(13), ph = PV.rnd(6.28);
       return frame(c, function () {
         var t = (c.lt || 0) * 0.8 + ph;
-        return 'translate(' + (Math.cos(t) * a).toFixed(2) + 'px,' + (Math.sin(t * 1.13) * a * 0.55).toFixed(2) + 'px)';
+        return PV.tfMove(Math.cos(t) * a, Math.sin(t * 1.13) * a * 0.55);
       });
     }
   });
 })();
+
+
 
 /* PV 引擎 · 29 转场扩充（⑰ transition +12）
  *
@@ -18072,6 +18118,89 @@ injectPills();
       }));
     }
   });
+})();
+
+/* PV 引擎 · 32 运动幅度预算（修用户说的“抖动特别强烈”）
+ *
+ * 实测（glitch 气氛、逐帧采样 700ms 的位移范围）：
+ *   crashZoom 201×113px、bounceIn 50×28、hold:beat 横向 49px、earthquake 22×21
+ * crashZoom/bounceIn 那两条离谱，原因不是系数写大，而是**它们缩放的是整屏 .jv-track**：
+ * 离中心越远的字位移越大（半屏 × 0.42 ≈ 200px），跟字号无关。
+ *
+ * 三条规矩：
+ *   1. 整屏 scale 一律换算成"允许的边缘位移" —— PV.moveMax（默认 26px），
+ *      件里写的 s-1 会被 clamp 到 (moveMax / 半屏)。
+ *   2. 抖源互斥：camera 与 hold 同帧都抖时，hold 让位（实测 160 段里 4 次同时开）。
+ *      两件各自抖各自的不叫叠加，叫糊。
+ *   3. 件只读 PV.motionGain / PV.shakeGain，不在自己里乘 fx——缩放集中在引擎，
+ *      改观感不用翻十几个文件。
+ */
+(function () {
+  'use strict';
+  var PV = window.PV;
+
+  PV.moveMax = 26;      // 整屏位移/边缘摆幅上限（px）
+  PV.shakeGain = 1;     // 全局抖动系数（0.5 = 所有抖都温柔一半）
+
+  /* 哪些件属于"高频抖"：同帧只允许一个发声 */
+  var SHAKE = {
+    camera: { handheld: 1, beatZoom: 1, earthquake: 1, vertigo: 1, snapPan: 1, bounceIn: 1, crashZoom: 1, pendulum: 1, tiltDown: 1 },
+    hold: { jitter: 1, beat: 1 }
+  };
+
+  /* 整屏 scale 的预算换算：s 是想要的 scale，返回不超过 moveMax 边缘位移的 scale */
+  PV.scaleClamp = function (s) {
+    var st = PV.stage();
+    var half = st ? Math.max(1, st.getBoundingClientRect().width / 2) : 480;
+    var maxS = 1 + PV.moveMax / half;
+    if (s >= 1) return Math.min(s, maxS);
+    return Math.max(s, 2 - maxS);          // 缩小方向同理
+  };
+  /* 整屏平移的预算 */
+  PV.shiftClamp = function (px) {
+    var lim = PV.moveMax;
+    return Math.max(-lim, Math.min(lim, px));
+  };
+
+  /* ---------- 写 .jv-track 的 transform 只能经这两个入口 ----------
+   * 以前 10 处各自拼字符串，scale 想怎么写就怎么写，于是“整屏缩放”把边缘字
+   * 甩出 200px（半屏 × 0.42）。现在：件报它想要的值，这里统一钳位。
+   * 不用“每帧再重写一次”的夹法：那个依赖帧序，相机件会在同一帧里把大值写回去
+   * （我就是刚这么错过一次，看起来接上了其实没生效）。*/
+  PV.tfScale = function (s, extra) {
+    var st = PV.stage();
+    var half = st ? Math.max(1, st.getBoundingClientRect().width / 2) : 480;
+    var maxS = 1 + PV.moveMax / half;
+    s = s >= 1 ? Math.min(s, maxS) : Math.max(s, 2 - maxS);
+    return 'scale(' + s.toFixed(4) + ')' + (extra ? ' ' + extra : '');
+  };
+  PV.tfMove = function (x, y, extra) {
+    var lim = PV.moveMax;
+    x = Math.max(-lim, Math.min(lim, x * PV.shakeGain));
+    y = Math.max(-lim, Math.min(lim, y * PV.shakeGain));
+    return 'translate(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px)' + (extra ? ' ' + extra : '');
+  };
+
+  /* 包一层 camera/hold 的 apply：抖源互斥 + 全局抖动系数 + scale/位移 clamp */
+  function wrap(group, key) {
+    var d = PV.part(group, key);
+    if (!d || !d.apply || d.__wrapped) return;
+    var raw = d.apply;
+    d.__wrapped = 1;
+    d.apply = function (c, target) {
+      // 抖源互斥：camera 在抖时，hold 的抖动件直接退化成呼吸
+      if (group === 'hold' && SHAKE.hold[key] && PV.S.plan && PV.S.plan.camera &&
+          SHAKE.camera[PV.S.plan.camera.key] && PV.S.plan.camera.key !== 'none') {
+        var soft = PV.part('hold', 'breathe');
+        return soft && soft.apply ? soft.apply(c, target) : null;
+      }
+      var r = raw(c, target);
+      return r;
+    };
+  }
+  Object.keys(SHAKE.camera).forEach(function (k) { wrap('camera', k); });
+  Object.keys(SHAKE.hold).forEach(function (k) { wrap('hold', k); });
+  PV.MOTION_BUDGET = { moveMax: function () { return PV.moveMax; }, shake: SHAKE };
 })();
 
 })();
