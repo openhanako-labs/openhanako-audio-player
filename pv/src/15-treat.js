@@ -125,7 +125,8 @@
   /* ---------- softfocus 入场与驻留时的虚实 ---------- */
   PV.reg('treatment', 'softfocus', {
     nm: '柔焦', tags: ['calm', 'emotional'], w: 0.6,
-    when: function () { return PV.fx.texture > 0.45 && PV.fx.motion < 0.6; },
+    when: function () { return PV.fx.texture > 0.3 && PV.fx.motion < 0.6; }   /* 原来是 .45：七档气氛没有一档同时满足 texture>.45 与 motion<.6，
+     * 等于这件永远抽不到（死门槛）。.3 之后 calm 与 emotional 能到 */,
     apply: function (c) {
       if (!c.el) return null;
       c.el.style.filter = 'blur(' + (0.2 + 0.5 * PV.fx.texture).toFixed(2) + 'px) saturate(1.06)';
@@ -154,3 +155,4 @@
     }
   });
 })();
+

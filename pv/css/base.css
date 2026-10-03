@@ -41,7 +41,12 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 .jv-w { display: inline-block; white-space: pre; }
 /* 守卫的单字修正走独立 translate：版式写的是 transform（旋转）、保持层写 --drift-*，
  * 三个各自一个属性，谁也不盖谁 */
-.jv-w { translate: var(--gdx, 0px) var(--gdy, 0px); }
+.jv-w {
+  /* --gdx/--gdy 归守卫；--ttx/--tty/--ttrot/--ttscale 归⑭ 处理层（逐字）。 */
+  translate: calc(var(--gdx, 0px) + var(--ttx, 0px)) calc(var(--gdy, 0px) + var(--tty, 0px));
+  rotate: var(--ttrot, 0deg);
+  scale: var(--ttscale, 1);
+}
 .jv-t { display: inline-block; font-style: inherit; }
 
 @keyframes jvRise { 0% { opacity: 0; transform: translateY(.5em); } 100% { opacity: 1; transform: none; } }

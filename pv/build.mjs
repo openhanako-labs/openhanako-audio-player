@@ -26,7 +26,8 @@ const JS_ORDER = [
   'src/13-syntax.js', 'src/12-cuts.js',
   'src/14-decor.js', 'src/15-treat.js', 'src/16-trans.js', 'src/17-faces.js',
   'src/18-audit.js', 'src/19-bg.js', 'src/21-looks.js', 'src/22-layouts2.js',
-  'src/23-enter2.js', 'src/24-exit2.js', 'src/25-decor2.js'
+  'src/23-enter2.js', 'src/24-exit2.js', 'src/25-decor2.js',
+  'src/26-treat2.js'
 ];
 
 const CSS_B = '/* ===== PV:BEGIN 文字PV引擎（pv/ 目录构建产物，勿手改） ===== */';
@@ -266,3 +267,4 @@ if (REPORT) log.push('（PV 块内容不参与遗留剥离，构建产物勿手�
 
 console.log(log.join('\n'));
 console.log(CHECK ? '（--check：未写入）' : '✓ 写入完成。下一步：node tools/bump-build.mjs，然后在 Hana 里重新加载 App');
+
