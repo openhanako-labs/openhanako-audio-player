@@ -1,0 +1,17 @@
+/* PV 引擎 · ③续 真合成转场用到的自定义属性注册
+ *
+ * 时钟擦要动画 conic 遮罩的角度。CSS 只能动画**注册过**的自定义属性，
+ * 未注册的 `--cwA` 在 WAAPI 里不会插值（会直接跳到终值），所以这里必须注册。
+ * 不注册时的退化路径写在 31-trans2.js 里（走 steps 单向揭开），不会白屏。
+ */
+@property --cwA {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+/* conic 遮罩靠 --cwA 驱动：注册后 WAAPI 改 --cwA，mask-image 里的引用跟着走 */
+.jv-line[data-cw="1"] {
+  -webkit-mask-image: conic-gradient(from -90deg at 50% 50%, #000 var(--cwA), transparent 0);
+  mask-image: conic-gradient(from -90deg at 50% 50%, #000 var(--cwA), transparent 0);
+}

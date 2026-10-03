@@ -17,7 +17,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PV = dirname(fileURLToPath(import.meta.url));
 const TARGETS = ['ui/index.html', 'ui/standalone.html'];
 
-const CSS_ORDER = ['css/base.css', 'css/layouts.css', 'css/layouts2.css', 'css/chrome.css', 'css/parts.css', 'css/decor.css', 'css/decor2.css', 'css/fonts.css', 'css/bg.css', 'css/bg2.css', 'css/look.css'];
+const CSS_ORDER = ['css/base.css', 'css/layouts.css', 'css/layouts2.css', 'css/chrome.css', 'css/parts.css', 'css/decor.css', 'css/decor2.css', 'css/fonts.css', 'css/bg.css', 'css/bg2.css', 'css/look.css', 'css/trans2.css'];
 const JS_ORDER = [
   'src/00-engine.js', 'src/01-styles.js', 'src/02-layouts.js',
   'src/03-enter.js', 'src/04-hold.js', 'src/05-exit.js',
@@ -28,7 +28,7 @@ const JS_ORDER = [
   'src/18-audit.js', 'src/19-bg.js', 'src/21-looks.js', 'src/22-layouts2.js',
   'src/23-enter2.js', 'src/24-exit2.js', 'src/25-decor2.js',
   'src/26-treat2.js', 'src/27-bg2.js', 'src/28-cam2.js', 'src/29-trans2.js',
-  'src/30-tune.js'
+  'src/30-tune.js', 'src/31-trans3.js'
 ];
 
 const CSS_B = '/* ===== PV:BEGIN 文字PV引擎（pv/ 目录构建产物，勿手改） ===== */';

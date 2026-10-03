@@ -25,31 +25,9 @@
   /* 延时收尾：注册成 stop，退出 PV 时不会吊着一个已失效的定时器 */
   function setAfter(ms, fn) { var t = setTimeout(fn, ms); return function () { clearTimeout(t); }; }
 
-  /* 斜带擦：clip-path 用多边形扫过（我们的 wipe 是直边，这里是斜边） */
-  PV.reg('transition', 'diagWipe', {
-    nm: '斜带擦', tags: ['graphic', 'pop'], w: 0.8,
-    play: function (c, prev, next, swap) {
-      swap();
-      var dir = PV.rnd(2) ? 1 : -1;
-      var from = dir > 0 ? 'polygon(0 100%, 0 100%, 0 0, 0 0)' : 'polygon(100% 0, 100% 0, 100% 100%, 100% 100%)';
-      next.style.clipPath = from;
-      an(next, [{ clipPath: from }, { clipPath: 'inset(0 0 0 0)' }],
-        { duration: D(420), fill: 'both', easing: 'cubic-bezier(.6,0,.2,1)' });
-      PV.addStop(function () { next.style.removeProperty('clip-path'); });
-    }
-  });
+  /* diagWipe 已升级为真合成版，见 31-trans3.js（③ 续）*/
 
-  /* 时钟擦：从中心角度扫开（conic mask，DOM 上做不了 conic clip 就用旋转遮罩近似） */
-  PV.reg('transition', 'clockWipe', {
-    nm: '时钟擦', tags: ['graphic', 'editorial'], w: 0.6,
-    when: function () { return PV.fx.texture > 0.1; },
-    play: function (c, prev, next, swap) {
-      swap();
-      an(next, [{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0 0 0)' }],
-        { duration: D(520), fill: 'both', easing: 'steps(9, end)' });
-      PV.addStop(function () { next.style.removeProperty('clip-path'); });
-    }
-  });
+  /* clockWipe 已升级为真合成版，见 31-trans3.js（③ 续）*/
 
   /* 开门（⑳ 真合成）：旧行从中间合拢关掉，新行从中间拉开——两帧互补 */
   PV.reg('transition', 'doors', {
@@ -62,7 +40,10 @@
       if (prev) an(prev, [{ clipPath: 'inset(0 0 0 0)', opacity: 1 },
         { clipPath: 'inset(0 50% 0 50%)', opacity: 0 }],
         { duration: d, fill: 'both', easing: 'ease-in' });
-      PV.addStop(setAfter(d + 20, drop));
+      PV.addStop(setAfter(d + 20, function () {
+        if (next) { next.style.removeProperty('clip-path'); next.style.removeProperty('-webkit-mask-image'); next.style.removeProperty('mask-image'); }
+        drop();
+      }));
     }
   });
 
@@ -82,7 +63,14 @@
         if (next) an(next, [{ clipPath: clip }, { clipPath: 'inset(0 0 0 0)' }],
           { duration: dur, delay: i * step, fill: 'both', easing: 'ease-out' });
       }
-      PV.addStop(setAfter(tot + 30, drop));
+      PV.addStop(setAfter(tot + 30, function () {
+        [next, prev].forEach(function (el) {
+          if (!el) return;
+          el.style.removeProperty('clip-path');
+          el.style.removeProperty('-webkit-mask-image'); el.style.removeProperty('mask-image');
+        });
+        drop();
+      }));
     }
   });
 
@@ -155,20 +143,7 @@
     }
   });
 
-  /* 短册移：竖向三段依次落位 */
-  PV.reg('transition', 'sliceShiftIn', {
-    nm: '短册移', tags: ['graphic', 'glitch', 'pop'], w: 0.55,
-    play: function (c, prev, next, swap) {
-      swap();
-      var toks = (c.tokensEls || []).slice(0, 24);
-      toks.forEach(function (el, i) {
-        var d = (i % 3) * 70;
-        an(el, [{ transform: 'translateY(-1.6em)', opacity: 0 }, { transform: 'none', opacity: 1 }],
-          { duration: D(340), delay: d, fill: 'both', easing: 'cubic-bezier(.2,.9,.3,1)' });
-      });
-      if (!toks.length) an(next, [{ opacity: 0 }, { opacity: 1 }], { duration: D(300), fill: 'both' });
-    }
-  });
+  /* sliceShiftIn 已升级为真合成版，见 31-trans3.js（③ 续）*/
 
   /* 闪接：白闪一下再显形（我们已有 flash 是整屏闪，这个是先闪后现） */
   PV.reg('transition', 'flashCross', {
@@ -208,3 +183,4 @@
     }
   });
 })();
+

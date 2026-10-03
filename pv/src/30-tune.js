@@ -29,8 +29,11 @@
       if (!p) return;
       var arr = S.recent[g] || (S.recent[g] = []);
       if (arr[arr.length - 1] !== p.key) arr.push(p.key);
+      /* 满长时要从**队首**丢。上一版写的 `arr.length = keep` 是在 push 之后截尾，
+       * 正好把刚加进去的那个删掉——窗口在前 N 次之后就冻结了，
+       * 后面的抽取全部在和一串陈旧名单比，去重形同没接。*/
       var keep = Math.max(PV.dedupe[g] || 0, 8) + 2;
-      if (arr.length > keep) arr.length = keep;
+      if (arr.length > keep) arr.splice(0, arr.length - keep);
     });
   };
   PV.recentOf = function (g) { return (PV.S.recent && PV.S.recent[g]) || []; };
