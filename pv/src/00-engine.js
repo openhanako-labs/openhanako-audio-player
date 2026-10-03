@@ -628,6 +628,24 @@
       w.style.setProperty('--gdy', (py + ddy).toFixed(1) + 'px');
     });
   }
+  /* ---------- 整行克隆预算 ----------
+   * 用户报的“歌词重叠”定性为 B：同一句话有重影。一叠加就是三份：
+   *   · treatment/chroma  克隆当前行（青/红偏移副本）
+   *   · transition/trail    克隆上一行，起始 opacity 0.5
+   *   · transition/sliceIn  克隆新行做切片
+   * 同一句话最多被画三遍，字影叠字影就是这么来的。
+   * 所以：**同一时刻只允许一个整行克隆**，强度走 PV.ghostMax。后到的直接退化成无残影版本。*/
+  PV.ghostMax = 0.3;
+  var ghostOwner = null;
+  PV.requestGhost = function (owner) {
+    if (ghostOwner === owner) return true;
+    if (ghostOwner) return false;
+    ghostOwner = owner;
+    return true;
+  };
+  PV.releaseGhost = function (owner) { if (ghostOwner === owner) ghostOwner = null; };
+  PV.ghostOwner = function () { return ghostOwner; };
+
   /* ---------- 台上整行数硬上限 ----------
    * 实测到同时挂 5 个整行（用户看到的「歌词都重叠到一起」）。两类来源：
    *   a) 退场/转场等的是延时 drop，而下一段的 stopAll 会 clearTimeout 掉它——旧行没人摘；

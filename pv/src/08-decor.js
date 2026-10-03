@@ -132,6 +132,9 @@
     apply: function (c) {
       var src = c.el;
       if (!src) return null;
+      /* 整行克隆预算：衔接层已经拿走了残影名额（trail 正在拷上一行）时，
+       * 这件就不拷了——两层同文字叠加就是用户报的 B 类重叠。*/
+      if (PV.requestGhost && !PV.requestGhost('chroma')) return null;
       var d = (1 + 3.4 * PV.fx.chroma).toFixed(2);
       /* 只剩一层残影。原来是两层（青、红各一份整行副本）——那就是用户说的
        * 「歌词都重叠到一起」：chroma 高时两层透明度到 .58，看着就是第二行字。
@@ -150,6 +153,7 @@
       }
       return function () {
         [g1, g2].forEach(function (n) { if (n && n.parentNode) n.parentNode.removeChild(n); });
+        if (PV.releaseGhost) PV.releaseGhost('chroma');
       };
     }
   });
