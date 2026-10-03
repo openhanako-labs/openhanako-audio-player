@@ -1,0 +1,41 @@
+/* PV 引擎 · ⑮ 背景扩充用的动画
+ * 只给背景层用（.jv-bg-layer）。⑧ 的五个动画在 css/bg.css，这里补齐 ⑮ 新引用的六个。
+ * 注意：background-position / transform / filter 这三类才可在背景层上安全动画——
+ * 它只有一个节点，换件时 JS 会把属性抹掉，所以 animation 名必须和 27-bg2.js 一一对上。
+ */
+
+/* 摩尔纹：两层同心环错开位移，交叠处自然生出条纹 */
+@keyframes jvBgMoire {
+  0% { background-position: 0 0, 0 0; }
+  100% { background-position: 46px 30px, -38px 22px; }
+}
+
+/* 方洞：从中心往外呼吸式放大 */
+@keyframes jvBgTunnel {
+  0% { transform: scale(1); opacity: .5; }
+  100% { transform: scale(1.5); opacity: .9; }
+}
+
+/* 旋臂 / 万花筒：慢转与色相漂移 */
+@keyframes jvBgSpinSlow {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* 光芒：摆角，不是整圈转 */
+@keyframes jvBgRay {
+  0% { transform: rotate(-7deg) scale(1.05); }
+  100% { transform: rotate(7deg) scale(1.12); }
+}
+
+/* 极光：横向漂移 + 轻微伸缩，配合 screen 混合出流动感 */
+@keyframes jvBgAurora {
+  0% { background-position: -20% 0; transform: translateX(-6%) skewY(-1.2deg); }
+  100% { background-position: 120% 0; transform: translateX(6%) skewY(1.2deg); }
+}
+
+/* VHS 带：一条横向亮带自上而下走过 + 底纹抖动 */
+@keyframes jvBgVhs {
+  0% { background-position: 0 0, 0 -40%; }
+  100% { background-position: 0 0, 0 140%; }
+}

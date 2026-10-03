@@ -195,8 +195,12 @@
     cur = b.key;
     var el = bgHost();
     if (!el) return b;
-    /* 换件前抹掉上一件留下的样式，否则 background-image / animation 会串台 */
-    ['background-image', 'background-size', 'background', 'animation', 'opacity', 'mix-blend-mode'].forEach(function (k) {
+    /* 换件前抹掉上一件留下的样式，否则 background-image / animation 会串台。
+     * 清单要盖全：⑮ 加了带 mask / blend / position 的件后，这几个不在表里就会渗到下一段
+     * （实测 9 件背景换到纯色后 mask 还在，整块底被遮得只余一角）。*/
+    ['background-image', 'background-size', 'background-position', 'background',
+     'animation', 'opacity', 'mix-blend-mode', 'filter',
+     'mask-image', '-webkit-mask-image', 'mask-size', 'mask-position'].forEach(function (k) {
       el.style.removeProperty(k);
     });
     el.dataset.bg = b.key;
