@@ -81,12 +81,12 @@ const CORE_HOOKS = [
   {
     id: '胶囊按可用性出档',
     from: [
-      "  [['标准',0],['PV',2],['歌词',1]].forEach(function(it){",
-      "  [['标准',0],['PV',2],['歌词',1]].filter(function(it){ return it[1]!==2 || (window.PV&&PV.available); }).forEach(function(it){"
+      "  [['标准',0],['PV',2],['歌词',1],['沉浸',3]].forEach(function(it){",
+      "  [['标准',0],['PV',2],['歌词',1],['沉浸',3]].filter(function(it){ return it[1]!==2 || (window.PV&&PV.available); }).forEach(function(it){"
     ],
     /* 胶囊比 PV 块早执行，拿 window.PV 判永远是 false（实测三档被误降成两档）——
      * 所以用构建期就写好的标记：带 PV 块的包有 data-pv="1"，lite 包没这个属性。 */
-    to: "  [['标准',0],['PV',2],['歌词',1]].filter(function(it){ return it[1]!==2 || document.documentElement.dataset.pv==='1'; }).forEach(function(it){"
+    to: "  [['标准',0],['PV',2],['歌词',1],['沉浸',3]].filter(function(it){ return it[1]!==2 || document.documentElement.dataset.pv==='1'; }).forEach(function(it){"
   }
 ];
 const HTML_HOOKS = [

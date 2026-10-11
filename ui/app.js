@@ -6495,20 +6495,20 @@ try{
     return;
   }
 }catch(e){}
-/* D2. 顶栏三模式胶囊 */
-function curMode(){ return document.body.classList.contains('jizura-mode')?2:(document.body.classList.contains('lyrics-mode')?1:0); }
+/* D2. 顶栏四模式胶囊（标准/PV/歌词/沉浸） */
+function curMode(){ return document.body.classList.contains('immersive-mode')?3:(document.body.classList.contains('jizura-mode')?2:(document.body.classList.contains('lyrics-mode')?1:0)); }
 function setMode(m){
   var btn=document.getElementById('lyricModeBtn');
   if(!btn)return;
   var guard=0;
-  while(curMode()!==m&&guard++<5){ btn.click(); }
+  while(curMode()!==m&&guard++<6){ btn.click(); }
 }
 var header=document.querySelector('.header');
 var actions=document.querySelector('.header-actions');
 if(header&&actions&&!document.getElementById('modeCaps')){
   var caps=document.createElement('div');
   caps.className='mode-caps';caps.id='modeCaps';
-  [['标准',0],['PV',2],['歌词',1]].filter(function(it){ return it[1]!==2 || document.documentElement.dataset.pv==='1'; }).forEach(function(it){
+  [['标准',0],['PV',2],['歌词',1],['沉浸',3]].filter(function(it){ return it[1]!==2 || document.documentElement.dataset.pv==='1'; }).forEach(function(it){
     var b=document.createElement('button');
     b.className='mc';b.textContent=it[0];b.dataset.m=it[1];
     b.onclick=function(){setMode(it[1]);syncCaps();};
