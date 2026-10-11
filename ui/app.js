@@ -6235,7 +6235,7 @@ setTimeout(notifySize, 300);
       '<div class="theme-panel-head"><span>配色主题</span>' +
       '<button type="button" class="theme-panel-close">关闭</button></div>' +
       '<div class="theme-grid" id="themeGrid"></div>' +
-      '<div class="theme-panel-foot">配色与背景跟着主题走；明暗方向仍由右上角那个太阳/月亮管。' +
+      '<div class="theme-panel-foot">配色与背景跟着主题走；明暗方向由右上角主题按钮管——auto 跟随 Hana 宿主皮肤，也可手动锁定明暗。' +
       '<br>自定义：往 <code>hana_audio_theme_custom</code> 写一个数组（元素形状同预设）即会出现在这里。</div>' +
       '<div class="theme-toggle-row"><span>音频反应（背景随低频能量亮起）</span>' +
       '<button type="button" class="theme-panel-close" id="reactiveToggle">关</button></div>' +
