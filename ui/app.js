@@ -3147,6 +3147,110 @@ if(trks.length) {
   });
   if(trks.length!==_origLen) { saveTrks(); renderPL(); showToast('已清理 '+_origLen+' → '+trks.length+' 条重复',2000); }
 }
+
+// ── 拖拽排序（pointer 事件 + 纯几何函数）──────────────────────────
+// 几何与 DOM 分离：insertIndex 只吃 rects + pointerY，便于测试。
+function queueDragInsertIndex(pointerY, items) {
+  if (!items || !items.length) return 0;
+  var insertIndex = items[0].i;
+  var inside = false;
+  for (var k = 0; k < items.length; k++) {
+    var it = items[k];
+    if (pointerY >= it.rect.top && pointerY < it.rect.bottom) {
+      insertIndex = (pointerY - it.rect.top) < ((it.rect.bottom - it.rect.top) / 2) ? it.i : it.i + 1;
+      inside = true;
+      break;
+    }
+  }
+  if (!inside && pointerY >= items[items.length - 1].rect.bottom) {
+    insertIndex = items[items.length - 1].i + 1;
+  }
+  return insertIndex;
+}
+function isDragAllowed() {
+  try {
+    var favOnly = !!document.getElementById('favFilterBtn').classList.contains('active');
+    return !favOnly && (typeof currentGroup === 'undefined' || currentGroup === 'all');
+  } catch (e) { return false; }
+}
+function handleDragStart(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!isDragAllowed()) return;
+  var handle = e.currentTarget;
+  var el = handle.closest('.pl-item');
+  if (!el) return;
+  var dragIdx = parseInt(el.dataset.i);
+  if (isNaN(dragIdx)) return;
+  try { if (handle.setPointerCapture) handle.setPointerCapture(e.pointerId); } catch (_) {}
+  var plBody = document.getElementById('plBody');
+  var items = [];
+  plBody.querySelectorAll('.pl-item').forEach(function(item) {
+    items.push({ i: parseInt(item.dataset.i), rect: item.getBoundingClientRect(), el: item });
+  });
+  var startX = e.clientX, startY = e.clientY;
+  var dragState = { moved: false, y: e.clientY };
+  var indicator = document.createElement('div');
+  indicator.className = 'pl-drag-indicator';
+  function positionIndicator(y) {
+    var insertIndex = queueDragInsertIndex(y, items);
+    var nextItem = null;
+    for (var k = 0; k < items.length; k++) {
+      if (items[k].i === insertIndex) { nextItem = items[k].el; break; }
+    }
+    if (nextItem) {
+      var r = nextItem.getBoundingClientRect();
+      indicator.style.top = r.top + 'px';
+      indicator.style.left = r.left + 'px';
+      indicator.style.width = r.width + 'px';
+    } else {
+      var last = items[items.length - 1];
+      var lr = last.rect;
+      indicator.style.top = (lr.bottom - 1) + 'px';
+      indicator.style.left = lr.left + 'px';
+      indicator.style.width = lr.width + 'px';
+    }
+    indicator.style.display = 'block';
+  }
+  var onMove = function(ev) {
+    dragState.y = ev.clientY;
+    if (!dragState.moved) {
+      if (Math.abs(ev.clientY - startY) < 5 && Math.abs(ev.clientX - startX) < 5) return;
+      dragState.moved = true;
+      window.__plJustDragged = Date.now();
+      try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
+      el.classList.add('pl-dragging');
+      plBody.classList.add('pl-dragging');
+      document.body.appendChild(indicator);
+    }
+    positionIndicator(ev.clientY);
+  };
+  var onUp = function() {
+    try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
+    handle.removeEventListener('pointermove', onMove);
+    handle.removeEventListener('pointerup', onUp);
+    handle.removeEventListener('pointercancel', onUp);
+    el.classList.remove('pl-dragging');
+    plBody.classList.remove('pl-dragging');
+    indicator.remove();
+    if (!dragState.moved) return;
+    var insertIndex = queueDragInsertIndex(dragState.y, items);
+    var lo = Math.max(0, dragIdx);
+    var hi = Math.min(insertIndex, trks.length);
+    if (lo === hi) return;
+    var moved = trks.splice(lo, 1)[0];
+    var adjusted = hi > lo ? hi - 1 : hi;
+    trks.splice(adjusted, 0, moved);
+    if (idx === lo) idx = adjusted;
+    else if (lo < idx && adjusted >= idx) idx--;
+    else if (lo > idx && adjusted <= idx) idx++;
+    renderPL();
+    saveTrks();
+  };
+  handle.addEventListener('pointermove', onMove);
+  handle.addEventListener('pointerup', onUp);
+  handle.addEventListener('pointercancel', onUp);
+}
 // 为旧数据补 group 字段
 if(trks.length) {
   var needsGroup=false;
@@ -3555,7 +3659,7 @@ function renderPL() {
       var t=item.t, i=item.i;
       var a=i===idx;
       var star=isFav(t.url);
-      html+='<div class="pl-item'+(a?' active':'')+'" data-i="'+i+'" draggable="true">'
+      html+='<div class="pl-item'+(a?' active':'')+'" data-i="'+i+'" data-drag-enabled="'+isDragAllowed()+'">'
         +'<span class="pl-handle" title="拖动排序">⋮⋮</span>'
         +'<span class="pl-status">'+(a?'♫':(n+1))+'</span>'
         +'<span class="pl-name">'+esc(t.name)+(t.url?'':' <span style="color:var(--text-faint);font-size:9px">(未找到)</span>')+'</span>'
@@ -3702,6 +3806,7 @@ function renderPL() {
   document.getElementById('plBody').querySelectorAll('.pl-item').forEach(function(el){
     el.addEventListener('click',function(e){
       if(e.target.closest('.pl-rm')||e.target.closest('.pl-star')||e.target.closest('.pl-handle')||e.target.closest('.pl-retry'))return;
+      if(window.__plJustDragged && (Date.now() - window.__plJustDragged) < 300) { window.__plJustDragged = 0; return; }
       const i=parseInt(this.dataset.i);
       if(i===idx){toggle();return;}
       load(i);
@@ -3736,38 +3841,9 @@ function renderPL() {
       if(trks[i]) load(i);
     });
   });
-  // ── 拖拽排序 ──
-  var dragIdx=null;
-  document.getElementById('plBody').querySelectorAll('.pl-item').forEach(function(el){
-    el.addEventListener('dragstart',function(){
-      dragIdx=parseInt(this.dataset.i);
-      this.classList.add('dragging');
-    });
-    el.addEventListener('dragend',function(){
-      this.classList.remove('dragging');
-      document.getElementById('plBody').querySelectorAll('.pl-item').forEach(function(e){e.classList.remove('drag-over');});
-    });
-    el.addEventListener('dragover',function(e){
-      e.preventDefault();
-      this.classList.add('drag-over');
-    });
-    el.addEventListener('dragleave',function(){
-      this.classList.remove('drag-over');
-    });
-    el.addEventListener('drop',function(e){
-      e.preventDefault();
-      this.classList.remove('drag-over');
-      var dropIdx=parseInt(this.dataset.i);
-      if(dragIdx===null||dragIdx===dropIdx)return;
-      var moved=trks.splice(dragIdx,1)[0];
-      trks.splice(dropIdx,0,moved);
-      // 修正 idx
-      if(dragIdx===idx)idx=dropIdx;
-      else if(dragIdx<idx&&dropIdx>=idx)idx--;
-      else if(dragIdx>idx&&dropIdx<=idx)idx++;
-      renderPL();
-      saveTrks();
-    });
+  // ── 拖拽排序（pointer 事件，见 handleDragStart 定义在文件前部）──
+  document.getElementById('plBody').querySelectorAll('.pl-handle').forEach(function(h){
+    h.addEventListener('pointerdown', handleDragStart);
   });
 }
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }

@@ -436,13 +436,37 @@ body.view-compact .inst-code { display: none; }
 }
 .pl-item:hover .pl-rm { opacity:0.7; }
 .pl-item .pl-rm:hover { opacity:1; color:var(--accent); }
+/* 旧版 HTML5 drag 遗留类（已无监听器触发，保留不冲突） */
 .pl-item.dragging { opacity:0.4; }
 .pl-item.drag-over { border-top:2px solid var(--accent); }
 .pl-handle {
   cursor:grab; color:var(--text-faint); font-size:12px;
   flex-shrink:0; opacity:0; transition:opacity 0.12s;
+  touch-action:none; /* pointer 拖拽在触摸端不抢滚动手势 */
 }
 .pl-item:hover .pl-handle { opacity:0.5; }
+.pl-handle:active { cursor:grabbing; }
+
+/* 新版 pointer 拖拽（queueDragGeometry 视觉）*/
+.pl-dragging {
+  opacity:0.5;
+  box-shadow:0 6px 20px rgba(0,0,0,0.45);
+  z-index:5;
+  background:var(--surface-hover);
+}
+.pl-drag-indicator {
+  position:fixed;
+  height:2px;
+  background:var(--accent);
+  pointer-events:none;
+  z-index:9999;
+  box-shadow:0 0 6px var(--accent);
+  display:none;
+}
+.pl-body.pl-dragging .pl-star,
+.pl-body.pl-dragging .pl-rm,
+.pl-body.pl-dragging .pl-retry,
+.pl-body.pl-dragging .pl-handle:not(:active) { pointer-events:none; }
 
 .pl-empty { padding:16px 14px; text-align:center; color:var(--text-faint); font-size:12px; }
 
