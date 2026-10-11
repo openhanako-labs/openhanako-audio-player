@@ -4341,19 +4341,35 @@ document.getElementById('themeBtn').addEventListener('click',function(){
   }
 })();
 
-// ── 响应式断点检测 ──
-(function initResponsive() {
-  function updateBreakpoint() {
-    var w = window.innerWidth, base = 13;
-    if (w < 520) base = 12;
-    else if (w > 900) base = 14;
-    document.documentElement.style.setProperty('--font-base', base + 'px');
-    document.body.classList.remove('bp-narrow', 'bp-wide');
-    if (w < 520) document.body.classList.add('bp-narrow');
-    else if (w > 900) document.body.classList.add('bp-wide');
+// ── 卡片形态适配（data-layout）──
+// 用 ResizeObserver 观察 documentElement（html 元素），向 player-container 写 data-layout / data-ctl 属性。
+// CSS 用 [data-layout="..."] 属性选择器驱动布局，JS 只写属性、不直接改 style。
+(function initLayout() {
+  var player = document.querySelector('.player-container');
+  if (!player) return;
+
+  function applyLayout() {
+    // 观察 documentElement（html 元素），它的高度等于 iframe 的高度
+    var r = document.documentElement.getBoundingClientRect();
+    var w = r.width, h = r.height;
+    // 三档断点：wide（w≥720）/ compact（w<720 且 h<560）/ long（其余）
+    var next = w >= 720 ? 'wide' : (h < 560 ? 'compact' : 'long');
+    // 窄容器控制面密度
+    var density = w < 400 ? 'narrow' : 'normal';
+    if (player.getAttribute('data-layout') !== next) {
+      player.setAttribute('data-layout', next);
+    }
+    if (player.getAttribute('data-ctl') !== density) {
+      player.setAttribute('data-ctl', density);
+    }
   }
-  updateBreakpoint();
-  window.addEventListener('resize', updateBreakpoint);
+
+  applyLayout();
+  if (window.ResizeObserver) {
+    new ResizeObserver(applyLayout).observe(document.documentElement);
+  } else {
+    window.addEventListener('resize', applyLayout);
+  }
 })();
 
 // ── 音频元数据读取 ──

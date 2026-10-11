@@ -1797,3 +1797,70 @@ body.lyrics-mode:not(.view-compact) .pv-stage { flex:1 !important; width:100% !i
 body:not(.view-compact):not(.lyrics-mode) .now-playing-section .lyrics-section { flex:0 1 auto; max-height:22%; overflow-y:auto; }
 /* header 保险：任何情况下完整视图的顶栏都在文档流且可点 */
 body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
+
+
+/* ════════════════════════════════════════════════════════════════════
+   卡片形态适配（data-layout）
+   
+   三档断点：
+   - wide（w≥720）：现状宽布局（左右分栏）
+   - compact（w<720 且 h<560）：矮卡——非当前模式区域折叠，控制条紧凑
+   - long（其余）：舞台与队列上下堆叠，歌词只显当前句 ±1 行
+   
+   控制面密度（data-ctl）：
+   - narrow（w<400）：控件紧凑
+   - normal：默认
+   
+   注意：
+   1. 只动 transform/opacity，display 不能过渡
+   2. PV 舞台在 long/compact 下的表现用普通规则调，不碰 PV 块
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ── compact 形态：矮卡 ── */
+/* 隐藏播放列表，只保留当前播放 + 控制条 */
+.player-container[data-layout="compact"] .player-right { display: none; }
+
+/* 歌词区在 compact 下只显示当前句 */
+.player-container[data-layout="compact"] .lyrics-section { max-height: 40px; overflow: hidden; }
+.player-container[data-layout="compact"] .lyric-body { display: flex; flex-direction: column; justify-content: center; }
+.player-container[data-layout="compact"] .lyric-line:not(.is-current) { opacity: 0; height: 0; margin: 0; padding: 0; overflow: hidden; }
+.player-container[data-layout="compact"] .lyric-line.is-current { opacity: 1; height: auto; }
+
+/* 控制条紧凑：减小 padding 和间距 */
+.player-container[data-layout="compact"] .controls-section { padding: 8px 12px; }
+.player-container[data-layout="compact"] .np-cover { width: 48px; height: 48px; font-size: 20px; }
+.player-container[data-layout="compact"] .np-info { min-width: 0; }
+
+/* PV 舞台在 compact 下压缩 */
+.player-container[data-layout="compact"] .pv-stage { flex: 1; min-height: 0; }
+
+/* ── long 形态：长卡 ── */
+/* 舞台与队列上下堆叠：改为纵向布局 */
+.player-container[data-layout="long"] { flex-direction: column; }
+.player-container[data-layout="long"] .player-left { flex: 1; min-height: 0; }
+.player-container[data-layout="long"] .player-right { flex: 0 0 auto; max-height: 40%; overflow-y: auto; }
+
+/* 歌词区在 long 下显示当前句 ±1 行 */
+.player-container[data-layout="long"] .lyrics-section { max-height: 80px; overflow: hidden; }
+.player-container[data-layout="long"] .lyric-body { display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+.player-container[data-layout="long"] .lyric-line { opacity: 0.3; transition: opacity 0.3s; }
+.player-container[data-layout="long"] .lyric-line.is-current { opacity: 1; font-weight: 600; }
+.player-container[data-layout="long"] .lyric-line.is-near { opacity: 0.6; }
+
+/* PV 舞台在 long 下占满剩余空间 */
+.player-container[data-layout="long"] .pv-stage { flex: 1; min-height: 0; }
+
+/* ── data-ctl=narrow：控制面密度 ── */
+.player-container[data-ctl="narrow"] .controls-section .controls-main { gap: 6px; }
+.player-container[data-ctl="narrow"] .icon-btn { padding: 4px; }
+.player-container[data-ctl="narrow"] .icon-btn svg { width: 14px; height: 14px; }
+.player-container[data-ctl="narrow"] .vol-group { min-width: 60px; }
+.player-container[data-ctl="narrow"] .vol-slider { width: 40px; }
+
+/* ── 过渡动画（只动 transform/opacity）── */
+.player-container[data-layout] .player-left,
+.player-container[data-layout] .player-right,
+.player-container[data-layout] .lyrics-section,
+.player-container[data-layout] .pv-stage {
+  transition: flex 0.3s ease, max-height 0.3s ease, opacity 0.3s ease;
+}
