@@ -155,6 +155,17 @@
     /* 任何人直接换表（预览台、PV.demo、PV.audit）都得把同步缓存作废：
      * 否则 syncTable 会认为「还是那张表」，测试句就赖在画面上不走。*/
     PV._tblRef = null; PV._tblSig = null;
+    /* 确定性 seed：同词表 → 同演出（同 folia visualizerSeedHash 思路）。
+     * 词表内容即曲目指纹：行数 + 时间 + 逐字哈希进 LCG；
+     * omakase 主动重掷语义不变 —— 重掷后随机流延续，下次换表重新归位。 */
+    var h = 5381 >>> 0, i, s, j, txt;
+    for (i = 0; i < S.lyrics.length; i++) {
+      s = S.lyrics[i];
+      h = ((h * 33) ^ (s.time || 0) ^ (i * 2654435761)) >>> 0;
+      txt = s.text || '';
+      for (j = 0; j < txt.length; j++) h = ((h * 33) ^ txt.charCodeAt(j)) >>> 0;
+    }
+    PV.seed(h || 1);
   };
 
   /* ---------- ctx：所有层读同一个上下文 ---------- */
