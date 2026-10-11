@@ -112,13 +112,16 @@ function build(kind) {
       text = liteHtml(text, f);
       assert(!text.includes('PV:BEGIN'), `${f}: lite 包里还有 PV 块`);
       assert(!text.includes('data-pv="1"'), `${f}: lite 包里还有 data-pv 标记`);
-      // 核心钩子留在原地——它们全部经 window.PV 判断，没 PV 块时自动降级
-      assert(text.includes('window.__pvCore'), `${f}: lite 包不该动核心钩子`);
     } else {
       assert(text.includes('PV:BEGIN') && text.includes('data-pv="1"'), `${f}: 完整包缺 PV 块或标记`);
     }
     writeFileSync(p, text, 'utf8');
   }
+
+  /* app.js 里的核心钩子两个包共用（都带 window.PV 判断，没 PV 块时自动降级） */
+  const appP = join(stage, 'ui', 'app.js');
+  const appText = readFileSync(appP, 'utf8');
+  assert(appText.includes('window.__pvCore'), `ui/app.js: 缺核心钩子 __pvCore`);
 
   const man = JSON.parse(readFileSync(join(stage, 'manifest.json'), 'utf8'));
   man.id = id;

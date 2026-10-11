@@ -7,6 +7,9 @@
  * 陷入「检测到新构建 → reload → 嵌的还是旧号 → 再 reload」的死循环（10 秒一刷，
  * 播放被反复重置）。
  *
+ * 拆分后：__HANA_BUILD 的定义已经搬到 ui/head.js 里，两个 html 只引用不定义，
+ * 所以只需改 head.js 一处。
+ *
  * 用法：node tools/bump-build.mjs
  */
 import { readFileSync, writeFileSync } from "node:fs";
@@ -21,7 +24,7 @@ const build =
 
 writeFileSync(join(root, "ui/_build.json"), JSON.stringify({ build }));
 
-for (const name of ["ui/index.html", "ui/standalone.html"]) {
+for (const name of ["ui/head.js"]) {
   const p = join(root, name);
   const html = readFileSync(p, "utf8");
   const next = html.replace(
@@ -32,4 +35,4 @@ for (const name of ["ui/index.html", "ui/standalone.html"]) {
   writeFileSync(p, next);
 }
 
-console.log(`build = ${build}（_build.json + index.html + standalone.html 三处已同步）`);
+console.log(`build = ${build}（_build.json + head.js 两处已同步）`);

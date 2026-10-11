@@ -15,7 +15,9 @@ import { dirname, join } from 'node:path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PV = dirname(fileURLToPath(import.meta.url));
-const TARGETS = ['ui/index.html', 'ui/standalone.html'];
+const HTML_TARGETS = ['ui/index.html', 'ui/standalone.html'];
+/* 拆分后：核心钩子与降级钩子锚点从 html 迁到 app.js；PV 标记块仍内联在两个 html。 */
+const CORE_TARGET = 'ui/app.js';
 
 const CSS_ORDER = ['css/base.css', 'css/layouts.css', 'css/layouts2.css', 'css/chrome.css', 'css/parts.css', 'css/decor.css', 'css/decor2.css', 'css/fonts.css', 'css/bg.css', 'css/bg2.css', 'css/look.css', 'css/trans2.css'];
 const JS_ORDER = [
@@ -53,7 +55,9 @@ const CORE_HOOK = CORE_ANCHOR + '\n  window.__pvCore={render:function(){renderPv
  * 为什么要入构建：lite 包不带 PV 块，核心必须在 window.PV 不存在时自己降级——
  * 这种判断写在 html 里手改一次就没人能复现，正是刚拆掉的那种补丁链。 */
 const AVAIL = 'window.PV&&PV.available';
-const HOOKS = [
+/* 拆分后：5 条降级钩子在 app.js 里（CORE_TARGET）；
+ * 「构建期 PV 标记」仍在两个 html 里（HTML_TARGETS）。分开定义避免误伤。 */
+const CORE_HOOKS = [
   {
     id: 'renderPv 分支',
     from: "  function renderPv(){\n    if(document.body.classList.contains('jizura-mode')){",
@@ -83,7 +87,9 @@ const HOOKS = [
     /* 胶囊比 PV 块早执行，拿 window.PV 判永远是 false（实测三档被误降成两档）——
      * 所以用构建期就写好的标记：带 PV 块的包有 data-pv="1"，lite 包没这个属性。 */
     to: "  [['标准',0],['PV',2],['歌词',1]].filter(function(it){ return it[1]!==2 || document.documentElement.dataset.pv==='1'; }).forEach(function(it){"
-  },
+  }
+];
+const HTML_HOOKS = [
   {
     id: '构建期 PV 标记',
     from: ['<html lang="zh-CN">', '<html lang="zh">'],
@@ -189,13 +195,17 @@ function insertAt(html, needle, block, rel, label) {
   return html.slice(0, at) + block + '\n' + html.slice(at);
 }
 
-/* ---------- 5. 主流程 ---------- */
+/* ---------- 5. 主流程 ----------
+ * 拆分后：HTML 目标只负责 PV 块注入 + legacy 剥离；
+ * CORE 目标（app.js）负责核心钩子与降级钩子。 */
 const log = [];
-for (const rel of TARGETS) {
+
+/* ---------- 5a. HTML 目标：PV 块注入 + legacy 剥离 ---------- */
+for (const rel of HTML_TARGETS) {
   const p = join(ROOT, rel);
   let html = read(p);
   const before = html.length;
-  const migrated = { legacyCss: 0, legacyJs: 0, coreHook: false, hooks: 0, strippedBlocks: 0 };
+  const migrated = { legacyCss: 0, legacyJs: 0, strippedBlocks: 0 };
 
   /* ① 先拆掉所有旧 PV 块，让「剥遗留」面对一个没有 PV 内容的现场 */
   const b0 = allIndex(html, CSS_B).length + allIndex(html, JS_B).length;
@@ -218,6 +228,52 @@ for (const rel of TARGETS) {
   html = j.html;
   migrated.legacyJs = j.gone.length;
 
+  /* ③b 构建期标记钩子（html 专属：data-pv="1"） */
+  let htmlHooks = 0;
+  HTML_HOOKS.forEach((h) => {
+    if (html.includes(h.to)) return;
+    const alts = Array.isArray(h.from) ? h.from : [h.from];
+    const hit = alts.find((a) => count(html, a) === 1);
+    if (hit == null) {
+      const counts = alts.map((a) => count(html, a)).join('/');
+      die(`${rel}: 钩子「${h.id}」锚点命中 ${counts}（需要其中一条恰好 1 次），拒写`);
+    }
+    html = html.split(hit).join(h.to);
+    htmlHooks++;
+  });
+
+  /* ④ 插入新 PV 块（标记块位置不变：style 结尾 / body 结尾） */
+  html = insertAt(html, '</style>', CSS_BLOCK, rel, '样式结尾');
+  html = insertAt(html, '</body>', JS_BLOCK, rel, 'body 结尾');
+
+  /* ⑤ 写盘前自锁 */
+  const nCB = count(html, CSS_B), nCE = count(html, CSS_E), nJB = count(html, JS_B), nJE = count(html, JS_E);
+  if (!(nCB === 1 && nCE === 1 && nJB === 1 && nJE === 1))
+    die(`${rel}: PV 标记对数不对（CSS ${nCB}/${nCE}，JS ${nJB}/${nJE}），拒写`);
+  if (LEGACY_JS_ANCHORS.some(a => html.includes(a))) die(`${rel}: 旧 JIZURA 脚本仍在，拒写`);
+  if (!html.includes('.jz-gpill')) die(`${rel}: 播放列表的 .jz-gpill 被误删，拒写`);
+
+  const d = (html.length - before) / 1024;
+  log.push(`${rel}: ${before / 1024 | 0} KB → ${(html.length / 1024).toFixed(1)} KB（${d >= 0 ? '+' : ''}${d.toFixed(1)} KB）｜拆旧块 ${migrated.strippedBlocks} 处｜剥遗留 CSS ${migrated.legacyCss} 条 / JS ${migrated.legacyJs} 块`);
+  if (DBG) console.error(`[dbg] ${rel} CB=${nCB} CE=${nCE} JB=${nJB} JE=${nJE} len=${html.length}`);
+
+  if (CHECK) log.push(`${rel}: （--check）${JSON.stringify(migrated)}`);
+  else writeFileSync(p, html, 'utf8');
+}
+
+/* ---------- 5b. CORE 目标：核心钩子 + 降级钩子（app.js） ---------- */
+{
+  const rel = CORE_TARGET;
+  const p = join(ROOT, rel);
+  let html = read(p);
+  const before = html.length;
+  const migrated = { legacyJs: 0, coreHook: false, hooks: 0 };
+
+  /* ③ 剥遗留 JS */
+  const j = stripLegacyJs(html, rel);
+  html = j.html;
+  migrated.legacyJs = j.gone.length;
+
   /* ④ 核心钩子（幂等；用 split/join 而不是 replace，避开 $ 替换符） */
   if (html.includes('window.__pvCore=')) {
     migrated.coreHook = true;
@@ -228,8 +284,8 @@ for (const rel of TARGETS) {
     migrated.coreHook = true;
   }
 
-  /* ④b 降级钩子：没打上的打上，打过的跳过；from 可以是旧形列表（钩子自已进化时要能升级） */
-  HOOKS.forEach((h) => {
+  /* ④b 降级钩子：没打上的打上，打过的跳过；from 可以是旧形列表 */
+  CORE_HOOKS.forEach((h) => {
     if (html.includes(h.to)) return;
     const alts = Array.isArray(h.from) ? h.from : [h.from];
     const hit = alts.find((a) => count(html, a) === 1);
@@ -241,21 +297,13 @@ for (const rel of TARGETS) {
     migrated.hooks++;
   });
 
-  /* ⑤ 插入新块 */
-  html = insertAt(html, '</style>', CSS_BLOCK, rel, '样式结尾');
-  html = insertAt(html, '</body>', JS_BLOCK, rel, 'body 结尾');
-
-  /* ⑥ 写盘前自锁 */
-  const nCB = count(html, CSS_B), nCE = count(html, CSS_E), nJB = count(html, JS_B), nJE = count(html, JS_E);
-  if (!(nCB === 1 && nCE === 1 && nJB === 1 && nJE === 1))
-    die(`${rel}: PV 标记对数不对（CSS ${nCB}/${nCE}，JS ${nJB}/${nJE}），拒写`);
+  /* ⑤ 写盘前自锁 */
   if (LEGACY_JS_ANCHORS.some(a => html.includes(a))) die(`${rel}: 旧 JIZURA 脚本仍在，拒写`);
   if (count(html, 'window.__pvCore=') !== 1) die(`${rel}: __pvCore 钩子不是恰好一处，拒写`);
-  if (!html.includes('.jz-gpill')) die(`${rel}: 播放列表的 .jz-gpill 被误删，拒写`);
 
   const d = (html.length - before) / 1024;
-  log.push(`${rel}: ${before / 1024 | 0} KB → ${(html.length / 1024).toFixed(1)} KB（${d >= 0 ? '+' : ''}${d.toFixed(1)} KB）｜拆旧块 ${migrated.strippedBlocks} 处｜剥遗留 CSS ${migrated.legacyCss} 条 / JS ${migrated.legacyJs} 块｜降级钩子 ${migrated.hooks} 条`);
-  if (DBG) console.error(`[dbg] ${rel} CB=${nCB} CE=${nCE} JB=${nJB} JE=${nJE} len=${html.length}`);
+  log.push(`${rel}: ${before / 1024 | 0} KB → ${(html.length / 1024).toFixed(1)} KB（${d >= 0 ? '+' : ''}${d.toFixed(1)} KB）｜剥遗留 JS ${migrated.legacyJs} 块｜核心钩子 ${migrated.coreHook ? '已在' : '新打'}｜降级钩子 ${migrated.hooks} 条`);
+  if (DBG) console.error(`[dbg] ${rel} len=${html.length}`);
 
   if (CHECK) log.push(`${rel}: （--check）${JSON.stringify(migrated)}`);
   else writeFileSync(p, html, 'utf8');
