@@ -1,6 +1,12 @@
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1011153041";
+  window.__HANA_BUILD = "1011163548";
+
+  // __whenHana(cb)：SDK 就绪后回调；已就绪立即执行。事件见 index.html 的 module 胶水。
+  window.__whenHana = function (cb) {
+    if (window.__hana) { try { cb(window.__hana); } catch (e) {} return; }
+    window.addEventListener("hana-sdk-ready", function () { try { cb(window.__hana); } catch (e) {} }, { once: true });
+  };
 
   // ── 卡片高度：声明意图，不测自己 ──
   //
@@ -107,7 +113,7 @@
     }
     tellParent();
   }
-  report();
+  window.__whenHana(report);  // 首批上报：SDK 就绪后立即执行，不等重试
   setTimeout(report, 300);
   setTimeout(report, 800);
   setTimeout(report, 2000);

@@ -1384,6 +1384,7 @@ try {
 } catch (e) {
   console.warn("[hana] ready failed", e);
 }
+window.dispatchEvent(new Event("hana-sdk-ready"));
 </script>
 
 
