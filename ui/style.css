@@ -1,0 +1,1869 @@
+
+:root, [data-theme="dark"] {
+  --bg: #161618;
+  --surface: rgba(255,255,255,0.03);
+  --surface-hover: rgba(255,255,255,0.06);
+  --surface-active: rgba(255,255,255,0.08);
+  --border: rgba(255,255,255,0.08);
+  --border-strong: rgba(255,255,255,0.14);
+  --text: #e4e4e7;
+  --text-dim: rgba(255,255,255,0.4);
+  --text-faint: rgba(255,255,255,0.25);
+  --accent: #d49a6a;
+  --accent-glow: rgba(212,154,106,0.4);
+  --accent-soft: rgba(212,154,106,0.12);
+  --radius: 10px;
+  --card-bg: #1e1e22;
+  --font-base: 13px;
+  --font-scale: 1;
+  --fs-base: calc(var(--font-base) * var(--font-scale));
+  --lyric-color: var(--text-dim);
+  --lyric-active-color: var(--accent);
+  --lyric-chorus-color: var(--accent-glow);
+  --anim-speed: 1;
+  --anim-glow-intensity: 0;
+  --anim-pulse: 0;
+}
+[data-theme="light"] {
+  --bg: #FFF8E7;
+  --surface: rgba(0,0,0,0.03);
+  --surface-hover: rgba(0,0,0,0.05);
+  --surface-active: rgba(0,0,0,0.08);
+  --border: rgba(0,0,0,0.08);
+  --border-strong: rgba(0,0,0,0.14);
+  --text: #3d3320;
+  --text-dim: rgba(0,0,0,0.4);
+  --text-faint: rgba(0,0,0,0.25);
+  --accent: #c48454;
+  --accent-glow: rgba(196,132,84,0.3);
+  --accent-soft: rgba(196,132,84,0.1);
+  --card-bg: #ffffff;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; overflow:hidden; }
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--fs-base, 13px);
+  display: flex; flex-direction: column;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+  overflow-y: hidden;
+}
+
+/* ── 主容器 ── */
+.player-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ── 响应式布局 ── */
+/* 默认：垂直布局（侧边栏模式） */
+.player-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.player-left, .player-right { display: contents; }
+
+/* 弹出窗口模式：左右布局 */
+.player-popup .player-container {
+  flex-direction: row;
+}
+.player-popup .player-left {
+  width: 300px; display: flex; flex-direction: column;
+  border-right: 1px solid var(--border); overflow: hidden; flex-shrink: 0;
+}
+.player-popup .player-right {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
+}
+.player-popup .now-playing-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.player-popup .now-playing {
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 16px;
+}
+.player-popup .np-cover {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+.player-popup .np-info {
+  align-items: center;
+}
+.player-popup .lyrics-section {
+  flex: 1;
+  overflow: hidden;
+  min-height: 100px;
+}
+.player-popup .lyric-body {
+  max-height: none !important;
+  overflow-y: auto;
+}
+.player-popup .controls-section {
+  border-top: 1px solid var(--border);
+}
+
+/* ── Header ── */
+.header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 14px 8px;
+  flex-shrink:0;
+}
+.header-left { display:flex; align-items:center; gap:8px; }
+.header-icon {
+  width:22px; height:22px; border-radius:5px;
+  background:linear-gradient(135deg, var(--accent), #c48454);
+  display:flex; align-items:center; justify-content:center;
+  font-size:11px; flex-shrink:0;
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+.header-title {
+  font-weight:600; font-size:13px; letter-spacing:0.3px;
+  color: var(--text);
+}
+.header-actions { display:flex; gap:4px; }
+
+/* ── 实例徽章 ──
+ * 一摧长得一样的播放器窗口摆着时，谁在响看不出来。
+ * 这个徽章给出两个事实：我是谁（短码），以及此刻是不是我在出声。 */
+.inst-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 7px; border-radius: 999px;
+  font-size: 10px; letter-spacing: .06em; line-height: 1.7;
+  color: var(--text-faint);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+  transition: color .2s, background .2s, border-color .2s;
+  white-space: nowrap;
+}
+.inst-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-faint);
+  transition: background .2s, box-shadow .2s;
+}
+.inst-badge.live {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+}
+.inst-badge.live .inst-dot {
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+}
+body.view-compact .inst-code { display: none; }
+.icon-btn {
+  background:none; border:none; color:var(--text-dim); cursor:pointer;
+  width:26px; height:26px; border-radius:6px;
+  display:flex; align-items:center; justify-content:center;
+  transition: all 0.15s;
+}
+.icon-btn:hover { background:var(--surface-hover); color:var(--text); }
+.icon-btn svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+
+/* ── Now Playing ── */
+.now-playing {
+  display:flex; align-items:center; gap:10px;
+  padding:6px 14px 8px;
+}
+.np-cover {
+  width:36px; height:36px; border-radius:8px;
+  background:linear-gradient(135deg, var(--accent), #c48454);
+  display:flex; align-items:center; justify-content:center;
+  font-size:16px; flex-shrink:0;
+  box-shadow: 0 4px 14px var(--accent-glow);
+  position:relative; overflow:hidden;
+}
+.np-cover::after {
+  content:''; position:absolute; inset:0;
+  background:linear-gradient(135deg, rgba(255,255,255,0.15), transparent 50%);
+}
+.np-cover.spinning { animation: spin 8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes breath { 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.03); } }
+@keyframes pulse-glow { 0%,100%{ filter:brightness(1); } 50%{ filter:brightness(1.15); } }
+.np-info { min-width:0; flex:1; }
+.np-name {
+  font-weight:500; font-size:13px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  color:var(--text);
+}
+.np-mode {
+  font-size:11px; color:var(--text-dim);
+  margin-top:1px;
+}
+
+/* ── Progress ── */
+.progress-section { padding:4px 14px 6px; }
+.time-row {
+  display:flex; justify-content:space-between;
+  font-size:10px; color:var(--text-faint);
+  margin-bottom:4px; font-variant-numeric:tabular-nums;
+  letter-spacing:0.5px;
+}
+.progress-bar {
+  height:5px; background:var(--surface); border-radius:3px;
+  cursor:pointer; position:relative;
+  transition: height 0.15s;
+}
+.progress-bar:hover { height:7px; }
+.progress-fill {
+  height:100%; width:0%; border-radius:3px;
+  background:linear-gradient(90deg, var(--accent), #e0b088);
+  position:relative; transition:width 0.1s linear;
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+.progress-fill::after {
+  content:''; position:absolute; right:-4px; top:50%;
+  transform:translateY(-50%);
+  width:10px; height:10px; border-radius:50%;
+  background:var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
+  opacity:0; transition:opacity 0.2s;
+}
+.progress-bar:hover .progress-fill::after { opacity:1; }
+
+/* ── Visualizer ── */
+.visualizer {
+  display:block; width:100%; height:32px;
+  margin:0 auto -2px; padding:0 14px;
+  border-radius:0 0 8px 8px;
+}
+
+/* ── Controls ── */
+.controls {
+  display:flex; align-items:center; justify-content:flex-end;
+  padding:4px 16px 10px; gap:12px; box-sizing:border-box; overflow:visible;
+  margin-left:20px;
+}
+.ctrl-btn {
+  background:none; border:none; color:var(--text-dim); cursor:pointer;
+  width:26px; height:26px; border-radius:6px;
+  display:flex; align-items:center; justify-content:center;
+  transition: all 0.15s; flex-shrink:0;
+}
+.ctrl-btn:hover { background:var(--surface-hover); color:var(--text); }
+.ctrl-btn svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.ctrl-btn.active { color:var(--accent); }
+
+.ctrl-play {
+  width:34px; height:34px; border-radius:50%;
+  background:linear-gradient(135deg, var(--accent), #c48454);
+  color:#fff; cursor:pointer; border:none;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow: 0 4px 16px var(--accent-glow);
+  transition: all 0.2s; flex-shrink:0;
+}
+.ctrl-play:hover { transform:scale(1.06); box-shadow:0 6px 22px var(--accent-glow); }
+.ctrl-play:active { transform:scale(0.96); }
+.ctrl-play svg { width:18px; height:18px; }
+
+/* Volume — compact inline */
+.volume-group {
+  display:flex; align-items:center; gap:3px;
+  margin-left:auto;
+}
+.vol-slider {
+  width:40px; height:4px; -webkit-appearance:none; appearance:none;
+  background:var(--surface); border-radius:2px; cursor:pointer;
+  transition: height 0.15s;
+}
+.vol-slider:hover { height:6px; }
+.vol-slider::-webkit-slider-thumb {
+  -webkit-appearance:none; width:10px; height:10px;
+  border-radius:50%; background:var(--accent); cursor:pointer;
+  box-shadow: 0 0 4px var(--accent-glow);
+}
+
+/* ── Playlist ── */
+.playlist-section {
+  border-top:1px solid var(--border);
+  flex:1; min-height:0; display:flex; flex-direction:column;
+}
+.pl-toggle {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 14px; cursor:pointer;
+  transition: background 0.15s;
+}
+.pl-toggle:hover { background:var(--surface); }
+.pl-toggle-left { display:flex; align-items:center; gap:6px; }
+.pl-toggle-left svg { width:13px; height:13px; stroke:var(--text-dim); fill:none; stroke-width:2; }
+.pl-toggle-text { font-size:12px; color:var(--text-dim); }
+.pl-count {
+  font-size:10px; color:var(--text-faint);
+  background:var(--surface); border-radius:8px;
+  padding:1px 7px; font-variant-numeric:tabular-nums;
+}
+.pl-toggle-right { display:flex; align-items:center; gap:6px; }
+.pl-filter-btn {
+  background:var(--surface); border:1px solid var(--border); border-radius:6px;
+  color:var(--text-faint); font-size:11px; padding:2px 8px;
+  cursor:pointer; transition:all 0.15s; font-family:inherit;
+  display:flex; align-items:center; gap:3px;
+}
+.pl-filter-btn:hover { border-color:var(--accent); color:var(--accent); }
+.pl-filter-btn.active {
+  background:var(--accent-soft); border-color:var(--accent); color:var(--accent);
+}
+.pl-chevron { width:14px; height:14px; stroke:var(--text-faint); fill:none; stroke-width:2; transition:transform 0.25s; }
+.pl-toggle.open .pl-chevron { transform:rotate(180deg); }
+
+.pl-body {
+  max-height:0; overflow:hidden;
+  transition:max-height 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+.pl-body.open { flex:1; min-height:0; max-height:none; overflow-y:auto; }
+.pl-body::-webkit-scrollbar { width:6px; }
+.pl-body::-webkit-scrollbar-track { background:transparent; }
+.pl-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
+
+.pl-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
+
+/* ── Lyric Panel ── */
+.lyric-section { margin:0; }
+.lyric-header {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:5px 10px; cursor:pointer; user-select:none;
+  color:var(--text-dim); border-top:1px solid var(--border);
+}
+.lyric-header:hover { color:var(--text); }
+.lyric-header .pl-chevron { transition:transform 0.25s; }
+.lyric-header.open .pl-chevron { transform:rotate(180deg); }
+.lyric-body {
+  max-height:0; overflow:hidden;
+  transition:max-height 0.25s ease;
+  padding:0 10px;
+}
+.lyric-body.open { max-height:220px; overflow-y:auto; }
+.lyric-line {
+  font-size:11.5px; color:var(--lyric-color, var(--text-dim)); line-height:1.8; text-align:center;
+  transition:color 0.2s, font-size 0.2s;
+}
+.lyric-line.current { color:var(--lyric-active-color, var(--accent)); font-size:13px; font-weight:600; }
+.lyric-line.chorus { color:var(--lyric-chorus-color, var(--accent-glow)); font-weight:600; }
+.lyric-line:hover { color:var(--text); }
+.lyric-body::-webkit-scrollbar { width:6px; }
+.lyric-body::-webkit-scrollbar-track { background:transparent; }
+.lyric-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
+
+/* ── Playlist Groups ── */
+.pl-group-header {
+  display:flex; align-items:center; gap:4px;
+  padding:5px 10px; cursor:pointer; user-select:none;
+  font-size:10.5px; color:var(--text-dim);
+  border-top:1px solid var(--border);
+  background:transparent;
+}
+.pl-group-header:hover { color:var(--accent); }
+.pl-group-header .pl-chevron { transition:transform 0.2s; }
+.pl-group-header.collapsed .pl-chevron { transform:rotate(-90deg); }
+.pl-group-name { flex:1; }
+.pl-group-count { font-size:9px; opacity:0.6; }
+.pl-group-body { }
+.pl-group-body.collapsed { display:none; }
+
+/* ── Playlist Context Menu ── */
+.pl-ctx-menu {
+  position:absolute; right:2px; top:100%; z-index:20;
+  background:var(--card); border:1px solid var(--border-strong);
+  border-radius:6px; padding:4px 0; min-width:100px;
+  box-shadow:0 4px 12px rgba(0,0,0,0.3); font-size:11px;
+}
+.pl-ctx-title { padding:4px 10px; color:var(--text-faint); font-size:10px; }
+.pl-ctx-opt { padding:5px 10px; color:var(--text-dim); cursor:pointer; }
+.pl-ctx-opt:hover { background:var(--surface-hover); color:var(--text); }
+
+.pl-item {
+  display:flex; align-items:center; gap:8px;
+  padding:6px 14px; cursor:pointer;
+  transition: background 0.12s;
+}
+.pl-item:hover { background:var(--surface); }
+.pl-item.active { background:var(--accent-soft); }
+.pl-item .pl-status {
+  width:16px; text-align:center; font-size:11px;
+  color:var(--text-faint); flex-shrink:0;
+}
+.pl-item.active .pl-status { color:var(--accent); }
+.pl-item .pl-name {
+  flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  font-size:12px; color:var(--text-dim);
+}
+.pl-retry {
+  background:none; border:none; color:var(--accent); cursor:pointer;
+  font-size:10px; padding:2px 6px; border-radius:4px; font-family:inherit;
+  opacity:0.7; transition:opacity 0.15s;
+}
+.pl-retry:hover { opacity:1; }
+.pl-item.active .pl-name { color:var(--accent); font-weight:500; }
+.pl-item .pl-dur {
+  font-size:10px; color:var(--text-faint);
+  font-variant-numeric:tabular-nums;
+}
+.pl-item .pl-star {
+  background:none; border:none; cursor:pointer;
+  font-size:13px; padding:2px; flex-shrink:0;
+  color:var(--text-faint); transition: color 0.15s, transform 0.15s;
+  line-height:1;
+}
+.pl-item .pl-star:hover { transform:scale(1.2); }
+.pl-item .pl-star.starred { color:#f0c060; }
+.pl-item .pl-rm {
+  background:none; border:none; color:var(--text-faint);
+  cursor:pointer; font-size:11px; padding:2px; flex-shrink:0;
+  opacity:0.35; transition:opacity 0.12s, color 0.12s;
+}
+.pl-item:hover .pl-rm { opacity:0.7; }
+.pl-item .pl-rm:hover { opacity:1; color:var(--accent); }
+.pl-item.dragging { opacity:0.4; }
+.pl-item.drag-over { border-top:2px solid var(--accent); }
+.pl-handle {
+  cursor:grab; color:var(--text-faint); font-size:12px;
+  flex-shrink:0; opacity:0; transition:opacity 0.12s;
+}
+.pl-item:hover .pl-handle { opacity:0.5; }
+
+.pl-empty { padding:16px 14px; text-align:center; color:var(--text-faint); font-size:12px; }
+
+/* ── Add + Preset (unified) ── */
+.add-section { border-top:1px solid var(--border); padding:8px 14px 10px; }
+.add-row {
+  display:flex; align-items:center; gap:6px;
+}
+.add-input {
+  flex:1; min-width:0;
+  background:var(--surface); border:1px solid var(--border); border-radius:7px;
+  color:var(--text); font-size:11px; padding:5px 10px;
+  outline:none; font-family:inherit;
+  transition: border-color 0.15s;
+}
+.add-input::placeholder { color:var(--text-faint); }
+.add-input:focus { border-color:var(--accent); background:var(--surface-hover); }
+.add-btn {
+  background:linear-gradient(135deg, var(--accent), #c48454);
+  border:none; border-radius:7px; color:#fff;
+  font-size:11px; padding:5px 12px; cursor:pointer;
+  font-family:inherit; font-weight:500; white-space:nowrap;
+  transition: all 0.15s;
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+.add-btn:hover { box-shadow:0 3px 12px var(--accent-glow); transform:translateY(-1px); }
+.add-btn:active { transform:translateY(0); }
+
+/* ── Bus Panel ── */
+.bus-section {
+  border-top:1px solid var(--border);
+}
+.bus-toggle {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 14px; cursor:pointer;
+  transition: background 0.15s;
+}
+.bus-toggle:hover { background:var(--surface); }
+.bus-toggle-left { display:flex; align-items:center; gap:6px; }
+.bus-status {
+  font-size:9px; padding:1px 6px; border-radius:8px;
+  background:var(--surface); color:var(--text-faint);
+  text-transform:uppercase; letter-spacing:0.5px;
+}
+.bus-status.playing { background:var(--accent-soft); color:var(--accent); }
+.bus-status.error { background:rgba(239,68,68,0.12); color:#ef4444; }
+.bus-body {
+  max-height:0; overflow:hidden;
+  transition:max-height 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+.bus-body.open { max-height:500px; overflow-y:auto; }
+.bus-body::-webkit-scrollbar { width:6px; }
+.bus-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
+.bus-controls {
+  display:flex; gap:6px; padding:8px 14px 4px;
+}
+.bus-btn {
+  background:var(--surface); border:1px solid var(--border); border-radius:6px;
+  color:var(--text-dim); font-size:13px;
+  width:30px; height:28px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  transition: all 0.15s; font-family:inherit;
+}
+.bus-btn:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+.bus-btn:active { transform:scale(0.94); }
+.bus-queue { padding:0 14px 8px; }
+.bus-queue-item {
+  display:flex; align-items:center; gap:6px;
+  padding:4px 0; font-size:11px;
+  border-bottom:1px solid var(--border);
+}
+.bus-queue-item:last-child { border-bottom:none; }
+.bus-q-type {
+  font-size:9px; padding:1px 5px; border-radius:4px;
+  text-transform:uppercase; letter-spacing:0.5px; flex-shrink:0;
+}
+.bus-q-type.say { background:rgba(99,102,241,0.15); color:#818cf8; }
+.bus-q-type.play { background:var(--accent-soft); color:var(--accent); }
+.bus-q-type.segue { background:rgba(34,197,94,0.15); color:#4ade80; }
+.bus-q-type.reason { background:rgba(234,179,8,0.15); color:#facc15; }
+.bus-q-name { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-dim); }
+.bus-q-rm { background:none; border:none; color:var(--text-dim); opacity:0.35; cursor:pointer; font-size:11px; padding:0 4px; transition:opacity .15s; }
+.bus-q-rm:hover { opacity:1; color:#e8a044; }
+.bus-q-current { color:var(--accent); font-weight:500; }
+.bus-q-pending { opacity:0.7; }
+.bus-q-pending .bus-q-name::after { content:' ⏳合成中…'; font-size:10px; color:var(--text-faint); }
+.bus-empty { padding:12px 0; text-align:center; color:var(--text-faint); font-size:11px; }
+
+/* ── Scene presets（场景调度）── */
+.scene-section { padding:10px 14px 6px; border-top:1px solid var(--border); }
+.scene-label { display:flex; align-items:center; gap:6px; margin-bottom:8px; }
+.scene-auto-badge { font-size:10px; color:var(--accent); background:rgba(232,160,68,0.1); padding:1px 6px; border-radius:8px; margin-left:auto; }
+.scene-list { display:flex; gap:6px; }
+.scene-btn { background:var(--surface); border:1px solid var(--border); color:var(--text-dim); padding:5px 12px; border-radius:6px; font-size:11px; cursor:pointer; transition:all .15s; }
+.scene-btn:hover { border-color:var(--accent); color:var(--accent); }
+.scene-btn.active { background:rgba(232,160,68,0.15); border-color:var(--accent); color:var(--accent); font-weight:500; }
+
+/* ── Bus Panel（节目编排）── */
+.bus-section {
+  border-top:1px solid var(--border);
+}
+.bus-toggle {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:6px 10px; cursor:pointer;
+  transition: background 0.15s;
+}
+.bus-toggle:hover { background:var(--surface); }
+.bus-toggle-left { display:flex; align-items:center; gap:4px; }
+.bus-toggle-left svg { width:11px; height:11px; stroke:var(--text-dim); fill:none; stroke-width:2; }
+.bus-toggle-text { font-size:11px; color:var(--text-dim); }
+.bus-badge {
+  font-size:8px; color:var(--accent);
+  background:var(--accent-soft); border-radius:3px;
+  padding:1px 4px; font-variant-numeric:tabular-nums;
+}
+.bus-chevron { width:14px; height:14px; stroke:var(--text-faint); fill:none; stroke-width:2; transition:transform 0.25s; }
+.bus-toggle.open .bus-chevron { transform:rotate(180deg); }
+
+.bus-body {
+  max-height:0; overflow:hidden;
+  transition:max-height 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+.bus-body.open { max-height:500px; overflow-y:auto; }
+.bus-body::-webkit-scrollbar { width:6px; }
+.bus-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
+
+.bus-controls {
+  display:flex; gap:3px; padding:4px 10px 3px;
+}
+.bus-btn {
+  background:var(--surface); border:1px solid var(--border); border-radius:5px;
+  color:var(--text-dim); font-size:10px; padding:3px 8px;
+  cursor:pointer; transition:all 0.15s; font-family:inherit;
+  display:flex; align-items:center; gap:2px;
+}
+.bus-btn:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+.bus-btn.primary {
+  background:linear-gradient(135deg, var(--accent), #c48454);
+  border:none; color:#fff;
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+.bus-btn.primary:hover { box-shadow:0 3px 12px var(--accent-glow); }
+
+.bus-play-row { display:flex; gap:4px; padding:2px 10px 6px; }
+.bus-play-input {
+  flex:1; min-width:0;
+  background:var(--surface); border:1px solid var(--border); border-radius:6px;
+  color:var(--text); font-size:10px; padding:4px 8px;
+  outline:none; font-family:inherit;
+  transition: border-color 0.15s;
+}
+.bus-play-input::placeholder { color:var(--text-faint); }
+.bus-play-input:focus { border-color:var(--accent); }
+.bus-play-add-btn {
+  background:var(--surface); border:1px solid var(--border); border-radius:6px;
+  color:var(--text-dim); font-size:10px; padding:4px 10px;
+  cursor:pointer; font-family:inherit; white-space:nowrap;
+  transition: all 0.15s;
+}
+.bus-play-add-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+.bus-queue { padding:0 10px 6px; }
+.bus-queue-item {
+  display:flex; align-items:center; gap:4px;
+  padding:3px 0; font-size:10px;
+  border-bottom:1px solid var(--border);
+}
+.bus-queue-item:last-child { border-bottom:none; }
+.bus-queue-type {
+  font-size:8px; padding:1px 4px; border-radius:2px;
+  flex-shrink:0; font-weight:500; letter-spacing:0.3px;
+}
+.bus-queue-type.say { background:rgba(100,180,255,0.12); color:#64b4ff; }
+.bus-queue-type.play { background:var(--accent-soft); color:var(--accent); }
+.bus-queue-type.segue { background:rgba(180,180,180,0.1); color:var(--text-faint); }
+.bus-queue-type.reason { background:rgba(200,150,255,0.1); color:#c896ff; }
+.bus-queue-text {
+  flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  color:var(--text-dim);
+}
+.bus-queue-playing { color:var(--accent); font-weight:500; }
+.bus-empty { padding:10px 14px; text-align:center; color:var(--text-faint); font-size:11px; }
+.bus-status {
+  padding:4px 14px 8px; font-size:10px; color:var(--text-faint);
+  display:flex; align-items:center; gap:4px;
+}
+.bus-status-dot {
+  width:6px; height:6px; border-radius:50%;
+  background:var(--text-faint);
+}
+.bus-status-dot.playing { background:#4ade80; box-shadow:0 0 4px rgba(74,222,128,0.5); }
+.bus-status-dot.paused { background:#fbbf24; }
+.bus-status-dot.idle { background:var(--text-faint); }
+
+/* ═══ Toast 通知 ═══ */
+#toastContainer {
+  position:fixed; top:12px; left:50%; transform:translateX(-50%);
+  z-index:9999; display:flex; flex-direction:column; gap:6px; align-items:center;
+  pointer-events:none;
+}
+.toast-item {
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  color:var(--text); font-size:11px; padding:8px 16px;
+  box-shadow:0 4px 16px rgba(0,0,0,0.4); opacity:0;
+  transform:translateY(-8px); transition:opacity .25s, transform .25s;
+  pointer-events:auto;
+}
+.toast-item.show { opacity:1; transform:translateY(0); }
+
+/* ═══ Music Search ═══ */
+.music-section { border-top:1px solid var(--border); }
+.music-toggle { display:flex; align-items:center; justify-content:space-between; padding:8px 14px; cursor:pointer; transition:background .15s; }
+.music-toggle:hover { background:var(--surface); }
+.music-toggle-left { display:flex; align-items:center; gap:6px; color:var(--text-dim); }
+.music-toggle-left svg { width:13px; height:13px; stroke:var(--text-dim); fill:none; stroke-width:2; }
+.music-toggle-text { font-size:12px; }
+.music-chevron { width:14px; height:14px; stroke:var(--text-faint); fill:none; stroke-width:2; transition:transform .25s; }
+.music-toggle.open .music-chevron { transform:rotate(180deg); }
+.music-body { max-height:0; overflow:hidden; transition:max-height .3s cubic-bezier(.4,0,.2,1); }
+.music-body.open { max-height:400px; overflow-y:auto; }
+.music-body::-webkit-scrollbar { width:6px; }
+.music-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
+.music-search-row { display:flex; gap:4px; padding:6px 14px; }
+.music-input { flex:1; min-width:0; background:var(--surface); border:1px solid var(--border); border-radius:7px; color:var(--text); font-size:11px; padding:5px 10px; outline:none; font-family:inherit; transition:border-color .15s; }
+.music-input::placeholder { color:var(--text-faint); }
+.music-input:focus { border-color:var(--accent); }
+.music-server { width:62px; flex-shrink:0; background:var(--surface); border:1px solid var(--border); border-radius:7px; color:var(--text); font-size:11px; padding:4px 6px; outline:none; font-family:inherit; cursor:pointer; }
+.music-server:focus { border-color:var(--accent); }
+.music-go { background:var(--accent-soft); border:1px solid var(--accent); border-radius:7px; color:var(--accent); font-size:11px; padding:5px 12px; cursor:pointer; font-family:inherit; white-space:nowrap; transition:all .15s; }
+.music-go:hover { background:var(--accent); color:#fff; }
+.music-results { padding:0 14px 8px; }
+.music-item { display:flex; align-items:center; gap:6px; padding:5px 0; border-bottom:1px solid var(--border); font-size:11px; }
+.music-item:last-child { border-bottom:none; }
+.music-thumb { width:28px; height:28px; border-radius:4px; object-fit:cover; flex-shrink:0; background:var(--surface); }
+.music-thumb-placeholder { width:28px; height:28px; border-radius:4px; flex-shrink:0; background:var(--surface); display:flex; align-items:center; justify-content:center; font-size:12px; color:var(--text-faint); }
+.music-info { flex:1; min-width:0; overflow:hidden; }
+.music-title { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-dim); }
+.music-author { font-size:10px; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.music-play { background:none; border:1px solid var(--border); border-radius:5px; color:var(--text-dim); font-size:10px; padding:3px 8px; cursor:pointer; flex-shrink:0; transition:all .12s; }
+.music-play:hover { border-color:var(--accent); color:var(--accent); }
+.music-add { background:none; border:none; color:var(--text-faint); font-size:10px; cursor:pointer; padding:3px 6px; flex-shrink:0; opacity:.6; transition:all .12s; }
+.music-add:hover { opacity:1; color:var(--accent); }
+.music-scene { background:none; border:none; color:var(--text-faint); font-size:10px; cursor:pointer; padding:3px 6px; flex-shrink:0; opacity:.5; transition:all .12s; }
+.music-scene:hover { opacity:1; color:var(--accent); }
+.music-cache { background:none; border:none; color:var(--text-faint); font-size:10px; cursor:pointer; padding:3px 6px; flex-shrink:0; opacity:.5; transition:all .12s; }
+.music-cache:hover { opacity:1; color:var(--accent); }
+.music-cache.cached { opacity:1; color:var(--accent); }
+.music-scene-menu { position:absolute; right:14px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:4px 0; box-shadow:0 4px 12px rgba(0,0,0,.3); z-index:10; font-size:11px; min-width:90px; }
+.music-scene-menu div { padding:4px 12px; cursor:pointer; color:var(--text-dim); white-space:nowrap; }
+.music-scene-menu div:hover { background:var(--accent-soft); color:var(--accent); }
+.music-empty { padding:12px 0; text-align:center; color:var(--text-faint); font-size:11px; }
+.music-loading { padding:12px 0; text-align:center; color:var(--text-faint); font-size:11px; }
+
+/* ── 分组选择器 ── */
+.group-selector {
+  display:flex; gap:4px; padding:8px 14px; overflow-x:auto;
+  border-bottom:1px solid var(--border);
+}
+.group-tab {
+  padding:4px 10px; background:var(--surface); border:1px solid var(--border);
+  border-radius:12px; color:var(--text-dim); font-size:10px; cursor:pointer;
+  transition:all 0.2s; white-space:nowrap; font-family:inherit;
+}
+.group-tab:hover { border-color:var(--accent); color:var(--accent); }
+.group-tab.active { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
+
+/* ── 本地音乐导入 ── */
+.local-import-section {
+  border-top:1px solid var(--border); padding:10px 14px;
+}
+.local-import-header {
+  font-size:11px; font-weight:600; color:var(--text-dim); margin-bottom:8px;
+}
+.local-import-row {
+  display:flex; gap:6px; margin-bottom:6px;
+}
+.local-input {
+  flex:1; min-width:0;
+  background:var(--bg); border:1px solid var(--border-strong); border-radius:7px;
+  color:var(--text); font-size:11px; padding:5px 10px;
+  outline:none; font-family:inherit; transition:border-color .15s;
+}
+.local-input::placeholder { color:var(--text-faint); }
+.local-input:focus { border-color:var(--accent); }
+.local-btn {
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:7px;
+  color:var(--accent); font-size:11px; padding:5px 12px; cursor:pointer;
+  font-family:inherit; font-weight:500; white-space:nowrap; transition:all .15s;
+}
+.local-btn:hover { background:var(--accent); color:#fff; }
+.local-import-hint {
+  font-size:10px; color:var(--text-faint);
+}
+
+/* ── 控制区样式 ── */
+.controls-section {
+  border-top:1px solid var(--border); padding:8px 14px;
+  flex-shrink:0;
+}
+
+/* ── 正在播放区 ── */
+.now-playing-section {
+  display:flex; flex-direction:column; align-items:center;
+  padding:16px; background:var(--bg);
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.np-cover {
+  width:160px; height:160px; border-radius:50%;
+  background:var(--surface); display:flex; align-items:center; justify-content:center;
+  font-size:64px; color:var(--accent); margin-bottom:12px;
+  box-shadow:0 4px 16px var(--accent-glow);
+}
+.np-info {
+  display:flex; flex-direction:column; align-items:center; gap:4px; margin-bottom:8px;
+}
+.np-name {
+  font-size:16px; font-weight:600; color:var(--text);
+}
+.np-mode {
+  font-size:11px; color:var(--text-dim);
+}
+.np-actions {
+  display:flex; gap:12px; margin-top:8px;
+}
+.np-actions .icon-btn {
+  width:28px; height:28px; padding:4px;
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:50%; color:var(--text-dim); cursor:pointer;
+  transition:all 0.2s;
+}
+.np-actions .icon-btn:hover {
+  border-color:var(--accent); color:var(--accent);
+}
+.np-actions .icon-btn svg {
+  width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2;
+}
+.lyrics-section {
+  width:100%; max-height:80px; overflow-y:auto;
+  scrollbar-width:none;
+  margin-top:12px; padding:8px; background:var(--surface); border-radius:8px;
+}
+.lyrics-section::-webkit-scrollbar { display:none; }
+.lyrics-section::-webkit-scrollbar-track { background:var(--surface); }
+.lyrics-section::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+.lyric-body {
+  text-align:center; font-size:11px; color:var(--text-dim); line-height:1.6;
+}
+.lyric-line { margin:2px 0; }
+.lyric-line.active { color:var(--accent); font-weight:600; }
+
+/* ── 标签页导航 ── */
+.nav-tabs {
+  display:flex; gap:4px; padding:10px 14px 0;
+  border-bottom:1px solid var(--border);
+  overflow-x:auto; flex-shrink:0;
+}
+.nav-tab {
+  padding:7px 14px; background:var(--surface); border:1px solid var(--border);
+  border-radius:16px; color:var(--text-dim); font-size:11px; font-weight:600;
+  cursor:pointer; transition:all 0.2s; white-space:nowrap; font-family:inherit;
+}
+.nav-tab:hover { background:var(--surface-hover); color:var(--text); }
+.nav-tab.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+
+/* ── 返回按钮 ── */
+.tab-back-bar { padding:6px 14px 0; flex-shrink:0; }
+.tab-back-btn {
+  background:none; border:none; color:var(--text-dim); cursor:pointer;
+  font-size:11px; padding:2px 0; font-family:inherit; transition:color 0.15s;
+}
+.tab-back-btn:hover { color:var(--accent); }
+
+/* ── 标签页内容 ── */
+.tab-content {
+  flex:1; overflow:hidden; min-height:0;
+}
+.tab-pane {
+  display:none; height:100%; overflow-y:auto;
+  scrollbar-width:thin; scrollbar-color:var(--border) transparent;
+}
+.tab-pane.active { display:block; }
+.tab-pane::-webkit-scrollbar { width:6px; }
+.tab-pane::-webkit-scrollbar-track { background:var(--surface); border-radius:3px; }
+.tab-pane::-webkit-scrollbar-thumb { background:var(--accent); border-radius:3px; }
+.tab-pane::-webkit-scrollbar-thumb:hover { background:var(--accent-hover); }
+
+/* ── 搜索面板 ── */
+.search-pane { padding:12px; }
+.search-box { display:flex; gap:6px; margin-bottom:10px; }
+.search-input {
+  flex:1; padding:9px 12px; background:var(--bg); border:1px solid var(--border-strong);
+  border-radius:16px; color:var(--text); font-size:12px; transition:all 0.2s;
+}
+.search-input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-glow); }
+.search-input::placeholder { color:var(--text-dim); }
+.search-btn {
+  padding:9px 16px; background:var(--accent); border:none; border-radius:16px;
+  color:#fff; font-size:12px; font-weight:600; cursor:pointer;
+}
+.search-btn:hover { background:var(--accent-hover); }
+
+/* ── 平台选择 ── */
+.platform-select { display:flex; gap:4px; margin-bottom:10px; flex-wrap:wrap; }
+.platform-btn {
+  padding:3px 8px; background:var(--surface); border:1px solid var(--border);
+  border-radius:10px; color:var(--text-dim); font-size:10px; cursor:pointer;
+  transition:all 0.2s;
+}
+.platform-btn:hover { border-color:var(--accent); color:var(--accent); }
+.platform-btn.active { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
+
+/* ── 歌单导入 ── */
+.playlist-import {
+  display:flex; gap:6px; margin-bottom:12px; padding:10px;
+  background:var(--surface); border-radius:8px;
+}
+.import-input {
+  flex:1; padding:7px 10px; background:var(--bg); border:1px solid var(--border-strong);
+  border-radius:6px; color:var(--text); font-size:11px;
+}
+.import-input::placeholder { color:var(--text-dim); }
+.import-btn {
+  padding:7px 12px; background:var(--surface-hover); border:1px solid var(--border);
+  border-radius:6px; color:var(--text-dim); font-size:11px; cursor:pointer;
+}
+.import-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+/* ── 本地导入 ── */
+.local-import {
+  padding:10px; background:var(--surface); border-radius:8px; margin-bottom:12px;
+}
+.local-import-title {
+  font-size:11px; font-weight:600; color:var(--text-dim); margin-bottom:8px;
+}
+.local-import-row { display:flex; gap:6px; margin-bottom:6px; }
+.local-input {
+  flex:1; padding:7px 10px; background:var(--bg); border:1px solid var(--border);
+  border-radius:6px; color:var(--text); font-size:11px;
+}
+.local-input::placeholder { color:var(--text-dim); }
+.local-btn {
+  padding:7px 12px; background:var(--accent-soft); border:1px solid var(--accent);
+  border-radius:6px; color:var(--accent); font-size:11px; font-weight:600; cursor:pointer;
+}
+.local-btn:hover { background:var(--accent); color:#fff; }
+.local-import-hint { font-size:10px; color:var(--text-dim); }
+
+/* ── 场景面板 ── */
+.scene-pane { padding:12px; }
+.scene-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.scene-card {
+  background:var(--card-bg); border:1px solid var(--border); border-radius:10px;
+  padding:14px; text-align:center; cursor:pointer; transition:all 0.2s;
+}
+.scene-card:hover { background:var(--surface-hover); border-color:var(--accent); transform:translateY(-2px); }
+.scene-card.active { background:var(--accent-soft); border-color:var(--accent); }
+.scene-edit-btn {
+  margin-left:auto; padding:3px 10px; background:var(--surface); border:1px solid var(--border);
+  border-radius:10px; color:var(--text-dim); font-size:10px; cursor:pointer;
+  font-family:inherit; transition:all .15s;
+}
+.scene-edit-btn:hover { border-color:var(--accent); color:var(--accent); }
+.scene-edit-btn.editing { background:var(--accent); color:#fff; border-color:var(--accent); }
+.scene-editor {
+  margin-top:10px; border:1px solid var(--border); border-radius:8px;
+  background:var(--surface); padding:10px; max-height:240px; overflow-y:auto;
+}
+.scene-editor-header { display:flex; align-items:center; gap:6px; margin-bottom:8px; font-size:12px; color:var(--text-dim); }
+.scene-editor-header .scene-editor-back { background:none; border:none; color:var(--accent); cursor:pointer; font-size:11px; font-family:inherit; }
+.scene-editor-header .scene-editor-title { flex:1; font-weight:600; }
+.scene-editor-header .scene-editor-del { background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:11px; font-family:inherit; }
+.scene-editor-header .scene-editor-del:hover { color:#e55; }
+.scene-editor-tracks { display:flex; flex-direction:column; gap:4px; }
+.scene-editor-track {
+  display:flex; align-items:center; gap:8px; padding:4px 8px;
+  border-radius:6px; font-size:11px; color:var(--text-dim);
+}
+.scene-editor-track:hover { background:var(--surface-hover); }
+.scene-editor-track .set-name { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.scene-editor-track .set-del {
+  background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:10px;
+  padding:2px 6px; border-radius:4px; font-family:inherit;
+}
+.scene-editor-track .set-del:hover { color:#e55; background:rgba(255,0,0,0.1); }
+.scene-editor-actions { margin-top:8px; display:flex; gap:6px; }
+.scene-editor-add, .scene-editor-new {
+  padding:4px 10px; background:var(--surface); border:1px dashed var(--border);
+  border-radius:6px; color:var(--text-dim); font-size:10px; cursor:pointer;
+  font-family:inherit; transition:all .15s;
+}
+.scene-editor-add:hover, .scene-editor-new:hover { border-color:var(--accent); color:var(--accent); }
+.scene-icon { font-size:24px; margin-bottom:6px; }
+.scene-name { font-size:11px; font-weight:600; }
+
+/* ── 编排面板 ── */
+.bus-pane { padding:12px; }
+.bus-controls { display:flex; gap:6px; margin-bottom:10px; }
+.bus-ctrl-btn {
+  padding:7px 12px; background:var(--surface); border:1px solid var(--border);
+  border-radius:6px; color:var(--text-dim); font-size:11px; cursor:pointer; transition:all 0.2s;
+}
+.bus-ctrl-btn:hover { border-color:var(--accent); color:var(--accent); }
+.bus-ctrl-btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+.bus-ctrl-btn.primary:hover { background:var(--accent-hover); }
+.bus-status {
+  font-size:11px; color:var(--text-dim); padding:4px 10px;
+  background:var(--surface); border-radius:8px; display:inline-block; margin-bottom:10px;
+}
+.bus-queue-title { font-size:12px; font-weight:600; color:var(--text-dim); margin-bottom:6px; }
+
+
+
+  /* 默认竖版。
+     卡片在聊天流里会占满整列宽（可能 900px+），内容被拉得很宽、不好看。
+     原 UI 本来就是给侧边栏的窄面板设计的，所以这里给它一个竖屏宽度并居中；
+     想看满宽（横版）就点右上角那个 ⇆ 按钮，它会加上 .player-popup。 */
+  /* 默认竖版：填满卡片宽度。
+     卡片外壳由宿主定宽（实测 886px），之前限 520px 居中，两侧各留 183px 空白，
+     看着像“内容缩在中间”。改成填满，把宽度用起来。
+     想看满宽（横版）就点右上角那个 ⇆ 按钮，它会加上 .player-popup。 */
+  .player-container { width: 100%; max-width: none; margin: 0; }
+  body.player-popup .player-container { max-width: none; }
+
+  /* ── 修：容器比 iframe 视口高，内容溢出后被裁（“无法下滑”的真身之一）──
+   *
+   * 实测：宿主给的是 fixed 高度（envelope.height = {mode:"fixed", value:759}），
+   * 但容器实测 844px —— 溢出 85px。
+   * 根因：v1 的 html,body{height:100%} 是百分比链，当 body 内部
+   * （.player-container 里的固定块 + 内容）总高超过视口时，
+   * 百分比高度会被内容撑开（height:100% 不阻上内容撑高）。
+   * 溢出的那 85px 落在 html/body 的 overflow:hidden 外面，直接不可达。
+   *
+   * 改成按视口硬约束：用 100dvh 钉住外层，内部再各自滚。
+   * 这样无论宿主给 fixed 还是 flexible，高度链都成立。
+   */
+  html, body {
+    height: 100vh;
+    max-height: 100vh;
+    overflow: hidden;
+  }
+  body > .player-container,
+  .player-container {
+    height: 100%;
+    max-height: 100%;
+  }
+  /* 让主容器内的可滚区能真正拿到剩余高度 */
+  .tab-content { min-height: 0; }
+  .tab-pane { height: 100%; overflow-y: auto; }
+
+  /* ── 修：卡片里内部滚不动 ──
+   *
+   * 症状：高度修好后，列表/搜索页在卡片里滑不动。
+   *
+   * 根因（实测）：v1 的 CSS 里有一整块**无前缀**的“大封面”规则：
+   *   .now-playing-section { flex-direction:column; align-items:center; padding:16px; flex-shrink:0 }
+   *   .np-cover { width:160px; height:160px; border-radius:50%; ... margin-bottom:12px }
+   *   .np-info { flex-direction:column; align-items:center; ... }
+   *   .np-name { font-size:16px; ... }
+   * 它们本是宽版（左右分栏）的样式，却因为没有前缀而在窄版也生效，
+   * 把封面从 36px 撑到 160px、播放区撑到 325px。
+   * 实测：40+325+114+37 = 516px > 容器 511px ⇒ .tab-content 的 flex:1 分到 0 高
+   * ⇒ 列表根本滚不动（容器 overflow:hidden，溢出部分直接不可达）。
+   *
+   * 原 UI 本来靠 body.bp-narrow / bp-wide 切，但那两个类**全文 0 次使用**——
+   * 响应式只写了一半。所以这里直接把大封面那套锁回宽版。
+   *
+   * 不改 v1 源码（保持“原样搬运、只做最小干预”），在外层覆盖。
+   */
+  /* ── 窄版播放区：封面居中放大 ──
+   *
+   * 用户要求：竖版封面居中放大，右侧三个按钮不再挤在右边。
+   * 版式对齐宽版左栏：圆封面居中 → 曲名/状态居中 → 三个按钮居中 → 歌词。
+   *
+   * ⚠️ 高度约束：封面用 min(104px, 20vh) 跟视口走。
+   * 之前就是因为大封面（160px）把固定区撑到 516px > 容器 511px，
+   * 导致 .tab-content 的 flex:1 分到 0 高、列表滞不动。
+   * 用 vh 封顶后，小窗口下封面自动缩，不会重演。
+   */
+  .now-playing-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 14px 16px 12px;
+  }
+  .np-cover {
+    width: min(104px, 19vh);
+    height: min(104px, 19vh);
+    border-radius: 50%;
+    font-size: 40px;
+    margin-bottom: 0;
+    background: linear-gradient(135deg, var(--accent), #c48454);
+    box-shadow: 0 4px 16px var(--accent-glow);
+  }
+  .np-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    width: 100%;
+    min-width: 0;
+    margin-bottom: 0;
+  }
+  .np-name {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.1px;
+    max-width: 100%;
+  }
+  .np-mode {
+    font-size: 11px;
+    opacity: 0.7;
+  }
+  /* 三个按钮从右侧挪到信息下方、居中 */
+  .np-actions {
+    flex-direction: row;
+    gap: 10px;
+    margin-top: 4px;
+  }
+  .np-actions .icon-btn { width: 28px; height: 28px; padding: 5px; }
+  .np-actions .icon-btn svg { width: 15px; height: 15px; }
+  .lyrics-section {
+    width: 100%;
+    max-height: min(64px, 12vh);
+    margin-top: 4px;
+  }
+
+  /* 宽版（点 ⇆ 后）恢复原样 */
+  body.player-popup .now-playing-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px;
+    gap: 0;
+  }
+  body.player-popup .np-cover {
+    width: 120px; height: 120px; border-radius: 50%;
+    font-size: 48px; margin-bottom: 12px;
+  }
+  body.player-popup .np-info {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 4px; margin-bottom: 8px;
+  }
+  body.player-popup .np-name { font-size: 16px; font-weight: 600; }
+  body.player-popup .np-mode { opacity: 1; }
+  body.player-popup .np-actions { margin-top: 8px; gap: 12px; }
+  body.player-popup .np-actions .icon-btn { width: 28px; height: 28px; padding: 4px; }
+  body.player-popup .np-actions .icon-btn svg { width: 16px; height: 16px; }
+  body.player-popup .lyrics-section { max-height: none; margin-top: 12px; }
+
+  /* ══ 歌词模式 = PV 演出（头部 lyricModeBtn 开关）══════════════
+   *
+   * 不是阅读模式的放大版。滚动列表退到幕后（visibility:hidden，
+   * 藏形不藏身 —— 卡拉 OK 逐帧和高亮逻辑还吊在它身上，display:none
+   * 会让 lyricBody.clientHeight=0、那套循环全停）；台前一次只唱一行：
+   * 上一行淡作残影，当前行居中大字、随低频呼吸，下一行压暗垫底。
+   *
+   * 呼吸吃音频反应回路已算好的 --react-level（低频能量 0~1）。
+   * 反应开关没开或音源没 CORS 时它是 0 —— 字不动，无副作用。
+   *
+   * 全部规则带 :not(.view-compact)：浓缩卡片保持原样。 */
+  body.lyrics-mode:not(.view-compact) .player-right { display: none !important; }
+  body.lyrics-mode:not(.view-compact) .np-cover { display: none; }
+  body.lyrics-mode:not(.view-compact) .np-actions { display: none; }
+  body.lyrics-mode:not(.view-compact) .now-playing-section {
+    flex: 1; min-height: 0; padding-bottom: 4px; position: relative;
+  }
+  body.lyrics-mode:not(.view-compact) .lyrics-section {
+    position: absolute; inset: 0; visibility: hidden; pointer-events: none;
+  }
+  body.lyrics-mode:not(.view-compact) .pv-stage { display: flex; }
+  /* 宽版（≥660px 自动分栏）下左栏占满整宽。
+     注意分栏不走 .player-popup 类（那是旧机制），是 media query 驱动的，
+     所以这里也必须写在 media query 里；wide-off（用户手动关分栏）时不动。 */
+  @media (min-width: 660px) {
+    body.lyrics-mode:not(.view-compact):not(.wide-off) .player-left {
+      width: auto; flex: 1 1 auto; border-right: none;
+    }
+  }
+
+  /* 实例徽章：多开窗口时标识“谁在出声”。用户认定为噪音，摘掉。 */
+  .inst-badge { display: none !important; }
+
+  /* ── 头部防挤 ──
+   * 窄宽度下标题“播放器”会竖着挤成三行，还顶着徽章和七个按钮。
+   * 标题不许换行、让 header-left 可收缩；再窄就直接把标题文字收掉（图标还在）。
+   * 歌词模式下标题也是冗余信息，一并收。 */
+  .header { gap: 8px; }
+  .header-left { min-width: 0; overflow: hidden; flex-shrink: 1; }
+  .header-title { white-space: nowrap; }
+  @media (max-width: 560px) {
+    body:not(.view-compact) .header-title { display: none; }
+  }
+  body.lyrics-mode:not(.view-compact) .header-title { display: none; }
+
+  .pv-stage {
+    display: none;
+    position: relative;
+    flex: 1; min-height: 0; width: 100%;
+    overflow: hidden;
+    /* 音频反应开着时，整个舞台随低频轻微呼吸（拿不到数据就是 0，不动） */
+    transform: scale(calc(1 + var(--react-level, 0) * .03));
+    transition: transform .12s linear;
+    /* AMLL 式上下渐隐：轨道两端淡没 */
+    -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 13%, #000 87%, transparent 100%);
+    mask-image: linear-gradient(180deg, transparent 0, #000 13%, #000 87%, transparent 100%);
+  }
+  /* 封面背景（folia Monet 层）：封面铺满、高糊、慢漂移 + 可读性罩层。
+     罩层用主题 --bg，明暗主题下文字都可读；漂移走 transform，合成器白干。 */
+  .pv-bg {
+    position: absolute; inset: -6%;
+    background-size: cover; background-position: center;
+    filter: blur(52px) saturate(1.15);
+    opacity: .5;
+    animation: pv-bg-drift 46s ease-in-out infinite alternate;
+    will-change: transform;
+  }
+  .pv-bg::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(120deg,
+      color-mix(in srgb, var(--bg) 60%, transparent) 0%,
+      color-mix(in srgb, var(--bg) 78%, transparent) 55%,
+      color-mix(in srgb, var(--bg) 88%, transparent) 100%);
+  }
+  @keyframes pv-bg-drift {
+    0%   { transform: scale(1.08) translate(0, 0); }
+    50%  { transform: scale(1.14) translate(-1.6%, 1.2%); }
+    100% { transform: scale(1.08) translate(1.4%, -1.2%); }
+  }
+  .pv-track {
+    position: absolute; left: 0; right: 0; top: 0;
+    z-index: 1;
+    /* folia/AMLL 排版：歌词轨左对齐，不是居中 */
+    text-align: left;
+    transition: transform .58s cubic-bezier(.22, .9, .3, 1);
+    will-change: transform;
+  }
+  /* 每行的明暗/模糊/缩放由 JS 按 folia 的 resolveMonetTone 公式逐行写入，
+     CSS 只留结构和过渡——数值不在样式表里写死。
+     过去行比未来行更暗（不对称衰减），非当前行带缩放收缩。 */
+  .pv-line {
+    padding: .45em 8%;
+    font-size: 24px; line-height: 1.55;
+    color: var(--text-dim);
+    opacity: .3; filter: blur(1.1px);
+    transform-origin: left center;
+    transition: opacity .45s ease, filter .45s ease, transform .45s cubic-bezier(.22, .9, .3, 1);
+  }
+  .pv-line[data-d="0"] {
+    font-weight: 700;
+    color: var(--lyric-active-color, var(--accent));
+  }
+  /* 行内卡拉 OK：和列表同一套 --lyric-progress 变量 */
+  @supports (-webkit-background-clip: text) {
+    .pv-line[data-d="0"] {
+      background-image: linear-gradient(
+        90deg,
+        var(--lyric-active-color, var(--accent)) 0 calc(var(--lyric-progress, 1) * 100% - 6%),
+        var(--text-dim) calc(var(--lyric-progress, 1) * 100% + 6%)
+      );
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    /* 逐字（TTML）：行级扫光让位，每字按自己的 --wp 扫亮（软边） */
+    .pv-line[data-d="0"].has-words { background-image: none; }
+    .pv-line[data-d="0"] .pv-w {
+      background-image: linear-gradient(
+        90deg,
+        var(--lyric-active-color, var(--accent)) 0 calc(var(--wp, 0) * 100% - 5%),
+        var(--text-dim) calc(var(--wp, 0) * 100% + 5%)
+      );
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+  }
+  /* TTML 译文行：主行下面的小字 */
+  .pv-tran {
+    margin-top: .35em;
+    font-size: .62em;
+    font-weight: 400;
+    color: var(--text-dim);
+    opacity: .85;
+  }
+
+  /* ══ 浓缩视图（?view=compact）════════════════════════════
+   *
+   * 对话流里投的就是这个壳：只讲“当前这一首”。
+   * 收起列表/搜索/场景/编排、歌词、可视化，把“正在播放”压成横向一行，
+   * 进度与控制贴底。整卡高度按 HEIGHTS.compact 报给宿主（见上方尺寸脚本）。
+   */
+  /* header 不隐藏，而是**脱出文档流**贴到卡片右上角，只留“展开”一个按钮。
+     这样它不占高度，又保住了唯一的展开入口（在浓缩视图里 popBtn 就是展开）。 */
+  body.view-compact .header {
+    display: block;
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    width: auto;
+    padding: 0;
+    border: 0;
+    background: none;
+    z-index: 5;
+  }
+  body.view-compact .header-left { display: none; }
+  body.view-compact .header-actions { gap: 0; }
+  body.view-compact .header-actions .icon-btn:not(#popBtn) { display: none; }
+  body.view-compact .player-right { display: none !important; }
+  body.view-compact .lyrics-section { display: none; }
+  body.view-compact #visualizer { display: none; }
+  body.view-compact .volume-group { display: none; }
+  body.view-compact #modeBtn { display: none; }
+  body.view-compact .np-actions { display: none; }
+
+  body.view-compact .now-playing-section {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px 6px;
+  }
+  /* 尺寸用 !important 锁死：v1 的 CSS 里 .np-cover 被定义过三次（161 / 721 / 2575），
+     层次混乱，实测报 52px 出来却是 60px。等把 v1 那几层理顺了再撤。 */
+  body.view-compact .np-cover {
+    width: 48px !important;
+    height: 48px !important;
+    border-radius: 12px;
+    font-size: 20px;
+    flex: none;
+    margin: 0;
+  }
+  body.view-compact .np-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+    margin: 0;
+  }
+  body.view-compact .np-name { font-size: 14px; }
+  body.view-compact .np-mode { font-size: 11px; }
+  /* 展开按钮从文档流里拿出来，贴到信息行右侧 ——
+   * 它原本会把 np-info 撑到 76px（拿到实测值之前我以为 52px 够）。 */
+  body.view-compact .np-actions {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    flex-direction: row;
+    gap: 6px;
+    margin: 0;
+  }
+
+  body.view-compact .controls-section { padding: 0 14px 10px; }
+  body.view-compact .time-row { font-size: 10px; }
+  body.view-compact .controls { gap: 10px; }
+  body.view-compact .ctrl-btn { width: 28px; height: 28px; }
+  body.view-compact .ctrl-play { width: 36px; height: 36px; }
+
+  /* 展开按钮只在浓缩视图里出现（由脚本注入） */
+  body.view-full #expandBtn { display: none; }
+
+  /* ══ 配色主题：背景层与选择面板 ══
+   *
+   * 与既有三层各管一事，不重桑：
+   *   data-theme="dark|light"        明暗方向（现有 themeBtn）
+   *   可视化主题 spectrum/waveform    频谱长什么样
+   *   本层                             配色 + 背景
+   * 配色走 applyThemeToCSS（本来就是为 AI 主题写的 CSS 变量写入器），
+   * 背景用一张 fixed 的底层，靠 z-index 让内容浮在上面。
+   */
+  .theme-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: transparent;
+    transition: background .45s ease, opacity .45s ease;
+  }
+  .player-container { position: relative; z-index: 1; }
+
+  .theme-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, .45);
+  }
+  .theme-panel.open { display: flex; }
+  .theme-panel-inner {
+    width: min(420px, 88%);
+    background: var(--card-bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    padding: 14px 16px;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, .4);
+  }
+  .theme-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+  .theme-panel-close {
+    font: inherit;
+    font-size: 11px;
+    color: var(--text-dim);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 10px;
+    cursor: pointer;
+  }
+  .theme-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+    gap: 8px;
+  }
+  .theme-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font: inherit;
+    font-size: 12px;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 9px 10px;
+    cursor: pointer;
+  }
+  .theme-chip.active { border-color: var(--accent); background: var(--accent-soft); }
+  .theme-chip-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    flex: none;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25);
+  }
+  .theme-panel-foot {
+    margin-top: 12px;
+    font-size: 11px;
+    color: var(--text-faint);
+    line-height: 1.6;
+  }
+  .theme-panel-foot code { font-family: var(--font-mono, monospace); font-size: 10px; }
+
+  /* ══════════════════════════════════════════════════════════
+     A 档 · 视觉刻度统一
+     ══════════════════════════════════════════════════════════
+     这一档不动结构，只收三样东西：
+       1. 间距 / 控件 / 圆角 / 字号各自收成一条刻度，不再每种元素一个数；
+       2. 定层级：封面最重 → 歌名 → 状态文字 → 其余退后；
+       3. 清掉硬编码颜色（原来自带 #c48454 / #e0b088），全走变量 ——
+          否则换主题时总有几处不跟随。
+     v1 的老规则一律不动，这里靠“后写的覆盖”收口。
+  */
+  :root {
+    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-6: 24px;
+    --ctl-sm: 28px; --ctl-md: 32px; --ctl-lg: 40px;
+    --r-sm: 8px; --r-md: 12px; --r-lg: 16px;
+    --fs-xs: 11px; --fs-sm: 12px; --fs-md: 13px; --fs-lg: 17px;
+  }
+
+  /* ── Header ── */
+  .header { padding: var(--sp-3) var(--sp-4) var(--sp-2); }
+  .header-icon { width: 24px; height: 24px; border-radius: 7px; }
+  .header-title { font-size: var(--fs-md); letter-spacing: .2px; }
+  .header-actions { gap: var(--sp-1); }
+  .icon-btn { width: var(--ctl-sm); height: var(--ctl-sm); border-radius: var(--r-sm); }
+  .icon-btn svg { width: 15px; height: 15px; stroke-width: 1.9; }
+  .icon-btn:active { transform: scale(.94); }
+
+  /* ── 正在播放：这一档的主角 ── */
+  .now-playing-section { padding: var(--sp-2) var(--sp-4) var(--sp-3); gap: var(--sp-3); }
+  .np-cover {
+    border-radius: var(--r-md);
+    background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+  }
+  .np-name { font-size: var(--fs-lg); font-weight: 600; letter-spacing: .2px; }
+  .np-mode { font-size: var(--fs-sm); margin-top: var(--sp-1); }
+  .np-actions { gap: var(--sp-2); margin-top: var(--sp-2); }
+
+  /* ── 进度 ── */
+  .progress-section { padding: var(--sp-2) var(--sp-4); }
+  .time-row { font-size: var(--fs-xs); color: var(--text-dim); margin-bottom: var(--sp-1); }
+  .progress-bar { height: 4px; border-radius: 999px; }
+  .progress-bar:hover { height: 6px; }
+  .progress-fill { background: var(--accent); box-shadow: none; }
+
+  /* ── 控制：原来靠右对齐 + 左侧 20px 外边距，视觉偏向一侧 ── */
+  .controls {
+    justify-content: center;
+    margin-left: 0;
+    padding: var(--sp-2) var(--sp-4) var(--sp-3);
+    gap: var(--sp-3);
+  }
+  .ctrl-btn { width: var(--ctl-md); height: var(--ctl-md); border-radius: var(--r-sm); }
+  .ctrl-btn svg { width: 16px; height: 16px; }
+  .ctrl-play { width: var(--ctl-lg); height: var(--ctl-lg); background: var(--accent); }
+  .ctrl-play svg { width: 18px; height: 18px; }
+
+  /* ── 歌词区的占位文案（“暂无歌词”）不该占掉一整块高度 ── */
+  .lyrics-section:has(.lyric-line:only-child) { max-height: 40px; }
+  .lyric-body:has(> .lyric-line:only-child) { max-height: 34px; overflow: hidden; }
+
+  /* ══════════════════════════════════════════════════════════
+     B 档 · 宽卡自动分栏
+     ══════════════════════════════════════════════════════════
+     卡壳实测 886px，内容却还是窄屏那套上下堆 —— 两边全空。
+     宽到一定尺寸就该分栏：左边播放区（带分隔线），右边列表区。
+     几何与 .player-popup 那套一致，区别只是**自动**，不必再点按钮。
+     窄卡不改（还是居中上下），紧凑视图也不管（它在外面已经收成一行了）。
+  */
+  @media (min-width: 660px) {
+    body:not(.view-compact) .player-container { flex-direction: row; }
+    body:not(.view-compact) .player-left {
+      width: 300px;
+      flex: 0 0 300px;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+    }
+    body:not(.view-compact) .player-right {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-width: 0;
+    }
+    body:not(.view-compact) .now-playing-section { flex: 1 1 auto; overflow: hidden; }
+    body:not(.view-compact) .np-cover {
+      width: 132px !important;
+      height: 132px !important;
+      border-radius: 50%;
+      font-size: 46px;
+    }
+    body:not(.view-compact) .np-info { align-items: center; }
+    body:not(.view-compact) .controls-section { border-top: 1px solid var(--border); }
+    body:not(.view-compact) .lyrics-section { flex: 1 1 auto; overflow: hidden; }
+    body:not(.view-compact) .lyric-body { max-height: none !important; overflow-y: auto; }
+    /* 没歌词时不要把左栏剩下的高度白占掉（占位只有一行“暂无歌词”） */
+    body:not(.view-compact) .lyrics-section:has(.lyric-line:only-child) {
+      flex: 0 0 auto;
+      max-height: 44px;
+    }
+  }
+
+  /* ══ 手动关掉分栏（点“切换横竖版”）══════════════════════════
+   * 原来那个按钮 toggle 的是 .player-popup，而 B 档的自动分栏在它之后生效，
+   * 两边管同一件事 —— 结果点了像没反应。现在按钮管的是这个类：
+   * 加上就强制堆叠，去掉就回到自动分栏。
+   * 写在 media query 之后 + 用 :not 抬特异性，确保压得住自动分栏。
+   */
+  body.wide-off:not(.view-compact) .player-container { flex-direction: column; }
+  body.wide-off:not(.view-compact) .player-left {
+    width: auto;
+    flex: 0 0 auto;
+    display: contents;
+    border-right: 0;
+  }
+  body.wide-off:not(.view-compact) .player-right { display: contents; }
+  body.wide-off:not(.view-compact) .now-playing-section { flex: 0 0 auto; }
+  body.wide-off:not(.view-compact) .lyrics-section { flex: 0 0 auto; }
+  body.wide-off:not(.view-compact) .np-cover {
+    width: 104px !important;
+    height: 104px !important;
+    border-radius: 50%;
+    font-size: 40px;
+  }
+  body.wide-off:not(.view-compact) .controls-section { border-top: 0; }
+
+  /* ══════════════════════════════════════════════════════════
+     C 档 · 质感
+     ══════════════════════════════════════════════════════════
+     只加不减：光 / 玻璃 / 过渡。不动布局也不动尺寸 ——
+     这一档即使改坏，退回去也只是“素一点”，不会把结构弄倒。
+  */
+
+  /* 1. 正在播放区上方一层主题色柔光，让封面从背景里浮起来 */
+  .now-playing-section {
+    background: radial-gradient(120% 90% at 50% 0%, var(--accent-soft), transparent 72%);
+  }
+
+  /* 2. 封面：外圈柔光加厚一档（原来只有 0 4px 14px） */
+  .np-cover {
+    box-shadow: 0 10px 30px -8px var(--accent-glow),
+                inset 0 0 0 1px rgba(255, 255, 255, .05);
+  }
+
+  /* 3. 控制条与 header：半透明 + 背后模糊，让背景层透出来一点 */
+  .controls-section,
+  .header {
+    background: color-mix(in srgb, var(--bg) 74%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+  /* 紧凑视图里的 header 只是一个悬浮按钮，不能带这块底 */
+  body.view-compact .header {
+    background: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  /* 4. 主题切换时的过渡（背景层本身已有 transition） */
+  body, .player-container, .now-playing-section, .controls-section, .header,
+  .tab-content, .nav-tabs, .lyric-body {
+    transition: background-color .3s ease, border-color .3s ease, color .3s ease;
+  }
+
+  /* 5. 列表项：圆角 + 按下的反馈 */
+  .pl-item {
+    border-radius: var(--r-sm);
+    transition: background .15s ease, transform .12s ease;
+  }
+  .pl-item:active { transform: scale(.995); }
+
+  /* ══════════════════════════════════════════════════════════
+     歌词视觉
+     ══════════════════════════════════════════════════════════
+     --anim-speed / --anim-glow-intensity / --anim-pulse 三个变量
+     一直躺在 :root 里没人用，主题面板写进去也是白写。这里把它们接上，
+     再加一个行内进度（当前行按播放进度从左往右填色）。
+  */
+  .lyric-line {
+    opacity: .55;
+    transition:
+      color calc(.34s / var(--anim-speed, 1)) ease,
+      opacity calc(.34s / var(--anim-speed, 1)) ease,
+      transform calc(.34s / var(--anim-speed, 1)) ease;
+  }
+  .lyric-line.current {
+    opacity: 1;
+    color: var(--lyric-active-color, var(--accent));
+    transform: scale(calc(1 + .025 * var(--anim-pulse, 0)));
+    
+  }
+
+  /* 行内进度：当前行按播放进度从左往右填色（卡拉 OK）。
+     只在支持 background-clip:text 时才把字变透明 ——
+     不支持时字会直接消失，所以必须用 @supports 护住。 */
+  @supports (-webkit-background-clip: text) {
+    .lyric-line.current {
+      background-image: linear-gradient(
+        90deg,
+        var(--lyric-active-color, var(--accent)) 0 calc(var(--lyric-progress, 1) * 100%),
+        var(--text-dim) calc(var(--lyric-progress, 1) * 100%) 100%
+      );
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+  }
+  /* 辉光用 drop-shadow：字透明了 text-shadow 也无用，drop-shadow 认的是渲染结果 */
+  @supports (filter: drop-shadow(0 0 1px #000)) {
+    .lyric-line.current {
+      filter: drop-shadow(0 0 calc(12px * var(--anim-glow-intensity, 0)) var(--accent-glow));
+    }
+  }
+
+  /* ══ 背景动效 ══
+   * 静态渐变像一张贴纸。让它缓慢流动、再叠两团光斑，
+   * 就有了“这个空间是活的”的感觉 —— 不必到 folia 那种全屏 shader 的程度。
+   * 速度受主题的 --anim-speed 控制（霓虹比纸感快）。
+   *
+   * 全部走 CSS，**不碰音频数据**：跨源音频接 AnalyserNode 会被浏览器
+   * 判定为脏源而直接静音，除非音源带 CORS 头。那条路不能走。
+   */
+  .theme-bg {
+    background-size: 200% 200%;
+    animation: theme-drift calc(34s / var(--anim-speed, 1)) ease-in-out infinite;
+  }
+  .theme-bg::before,
+  .theme-bg::after {
+    content: "";
+    position: absolute;
+    width: 42vmax;
+    height: 42vmax;
+    border-radius: 50%;
+    filter: blur(58px);
+    opacity: .28;
+    pointer-events: none;
+    will-change: transform;
+  }
+  .theme-bg::before {
+    top: -14vmax;
+    left: -10vmax;
+    background: var(--accent);
+    animation: theme-float-a calc(42s / var(--anim-speed, 1)) ease-in-out infinite alternate;
+  }
+  .theme-bg::after {
+    right: -12vmax;
+    bottom: -16vmax;
+    background: var(--accent-hover, var(--accent));
+    animation: theme-float-b calc(52s / var(--anim-speed, 1)) ease-in-out infinite alternate;
+  }
+  @keyframes theme-drift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+  @keyframes theme-float-a {
+    from { transform: translate3d(0, 0, 0) scale(1); }
+    to { transform: translate3d(7vmax, 5vmax, 0) scale(1.14); }
+  }
+  @keyframes theme-float-b {
+    from { transform: translate3d(0, 0, 0) scale(1.08); }
+    to { transform: translate3d(-6vmax, -7vmax, 0) scale(.94); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .theme-bg, .theme-bg::before, .theme-bg::after { animation: none; }
+  }
+
+  /* ── 音频反应 ──
+   * --react-level 由前端每帧写入（低频能量 0–1），这里只负责怎么表现。
+   * 没开启时它是 0，一切与从前一样。
+   *
+   * 实测教训：角落那两团 42vmax + blur 58px + opacity .2 的光斑在浅色底上
+   * **根本看不见**（用户原话：“哪里有光”）。所以反应单独给一层居中的大光晕，
+   * 基线压到极低、幅度拉到很高 —— 平时几乎不存在，音乐一来就很明显。 */
+  /* 默认值必须放在 :root。上一版写在 .theme-bg 上，等于把那一支的继承
+   * 切断了 —— 内联写在根上的实时能量根本传不进背景层，
+   * 结果全页只有 now-playing 那一小块真的在反应。 */
+  :root { --react-level: 0; }
+  .theme-bg::before {
+    content: "";
+    position: absolute;
+    inset: -12%;
+    border-radius: 50%;
+    background: radial-gradient(closest-side, var(--accent) 0%, transparent 72%);
+    filter: blur(44px);
+    opacity: calc(.06 + .72 * var(--react-level, 0));
+    pointer-events: none;
+    will-change: opacity;
+  }
+  .theme-bg::after {
+    opacity: calc(.16 + .4 * var(--react-level, 0));
+  }
+  /* ── 音频反应的覆盖面 ──
+   * 上面那两团只管背景中间，看久了像“局部亮了一下”。
+   * 这一层盖满整页，四边光晕跟着低频能量一起起落 —— 整屏一起呼吸。 */
+  .react-edge {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    opacity: var(--react-level, 0);
+    mix-blend-mode: screen;
+    background:
+      radial-gradient(115% 44% at 50% 0%, color-mix(in srgb, var(--accent) 52%, transparent), transparent 68%),
+      radial-gradient(115% 44% at 50% 100%, color-mix(in srgb, var(--accent) 40%, transparent), transparent 68%),
+      radial-gradient(42% 74% at 5% 50%, color-mix(in srgb, var(--accent) 24%, transparent), transparent 72%),
+      radial-gradient(42% 74% at 95% 50%, color-mix(in srgb, var(--accent) 24%, transparent), transparent 72%);
+    will-change: opacity;
+  }
+  @media (prefers-reduced-motion: reduce) { .react-edge { display: none; } }
+
+  /* 正在播放区自己也随能量亮一点 */
+  .now-playing-section {
+    background: radial-gradient(
+      120% 90% at 50% 0%,
+      color-mix(in srgb, var(--accent) calc(6% + 26% * var(--react-level, 0)), transparent),
+      transparent 72%
+    );
+  }
+
+  /* 面板里的开关行 */
+  .theme-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-light);
+  }
+  .theme-toggle-row input[type="range"] {
+    flex: 1;
+    max-width: 150px;
+    accent-color: var(--accent);
+  }
+
+
+/* ===== 黑胶封面（主 UI 对齐设计稿） ===== */
+body:not(.view-compact) .np-cover {
+  border-radius: 50% !important;
+  position: relative;
+  box-shadow: 0 0 0 5px var(--card-bg, #141210), 0 0 0 6px var(--border), 0 12px 32px rgba(0,0,0,.45) !important;
+}
+body:not(.view-compact) .np-cover::before {
+  content: '';
+  position: absolute; inset: 0; border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, rgba(0,0,0,.14) 0deg 2deg, transparent 2deg 5deg);
+  pointer-events: none;
+}
+body:not(.view-compact) .np-cover::after {
+  content: '';
+  position: absolute; inset: 41%; border-radius: 50%;
+  background: var(--card-bg, #141210);
+  box-shadow: inset 0 0 0 2px var(--border);
+  pointer-events: none;
+}
+body:not(.view-compact) .np-cover.spinning {
+  animation: vinylSpin 14s linear infinite;
+}
+@keyframes vinylSpin { to { transform: rotate(360deg); } }
+/* 封面图在黑胶里保持圆形 */
+body:not(.view-compact) .np-cover img { border-radius: 50%; }
+
+
+/* ===== 主 UI 对齐设计稿 ===== */
+/* 顶栏三模式胶囊 */
+.mode-caps { display:flex; border:1px solid var(--accent); border-radius:20px; overflow:hidden; margin-left:auto; margin-right:8px; }
+.mode-caps .mc { padding:4px 14px; font-size:11px; cursor:pointer; user-select:none; opacity:.55; transition:all .2s; color:var(--text); background:transparent; border:none; font-family:inherit; }
+.mode-caps .mc + .mc { border-left:1px solid var(--accent); }
+.mode-caps .mc.on { opacity:1; font-weight:700; background:var(--accent); color:var(--card-bg); }
+/* 原歌词模式图标按钮由胶囊接管 */
+body:not(.view-compact) #lyricModeBtn { display:none; }
+/* 左栏纵排居中（设计稿唱盘机） */
+body:not(.view-compact) .now-playing-section { display:flex; flex-direction:column; align-items:center; text-align:center; }
+body:not(.view-compact) .np-cover { order:1; width:clamp(110px, 30vh, 180px) !important; height:clamp(110px, 30vh, 180px) !important; margin:10px 0 10px !important; font-size:56px !important; flex-shrink:0; }
+body:not(.view-compact) .np-info { order:2; display:flex; flex-direction:column; align-items:center; }
+body:not(.view-compact) .np-actions { justify-content:center; }
+body:not(.view-compact) .lyrics-section { order:3; width:100%; }
+body:not(.view-compact) .pv-stage { order:4; }
+/* 分组双排：来源一排、自建一排 */
+.group-selector { flex-wrap:wrap; row-gap:6px; align-items:center; }
+.gs-label { font-size:9px; font-family:monospace; color:var(--text-faint); letter-spacing:.1em; margin-right:2px; }
+.gs-break { flex-basis:100%; height:0; }
+/* 行内组胶囊 */
+.jz-gpill { font-size:8.5px; font-family:monospace; padding:1px 6px; border:1px solid var(--border); border-radius:3px; color:var(--text-faint); flex-shrink:0; }
+
+
+/* ===== 主 UI 修正 ===== */
+.mode-caps { flex-shrink:0; }
+.mode-caps .mc { white-space:nowrap; padding:4px 12px; }
+/* PV/歌词模式下撤销唱盘机纵排，让舞台铺满 */
+body.lyrics-mode:not(.view-compact) .now-playing-section { align-items:stretch !important; text-align:left !important; }
+body.lyrics-mode:not(.view-compact) .np-info { display:none !important; }
+body.lyrics-mode:not(.view-compact) .pv-stage { flex:1 !important; width:100% !important; }
+
+
+/* 明暗切换按钮下线（主题由配色面板统一管理） */
+#themeBtn { display:none !important; }
+
+
+/* 右键菜单背景：--card 变量不存在导致透明，改用 --card-bg */
+.pl-ctx-menu { background: var(--card-bg) !important; }
+
+
+/* ===== 布局溢出修复 ===== */
+/* 标准模式纵排：歌词区不再吃掉整个剩余空间 */
+body:not(.view-compact):not(.lyrics-mode) .now-playing-section .lyrics-section { flex:0 1 auto; max-height:22%; overflow-y:auto; }
+/* header 保险：任何情况下完整视图的顶栏都在文档流且可点 */
+body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
+
+
+/* ════════════════════════════════════════════════════════════════════
+   卡片形态适配（data-layout）
+   
+   三档断点：
+   - wide（w≥720）：现状宽布局（左右分栏）
+   - compact（w<720 且 h<560）：矮卡——非当前模式区域折叠，控制条紧凑
+   - long（其余）：舞台与队列上下堆叠，歌词只显当前句 ±1 行
+   
+   控制面密度（data-ctl）：
+   - narrow（w<400）：控件紧凑
+   - normal：默认
+   
+   注意：
+   1. 只动 transform/opacity，display 不能过渡
+   2. PV 舞台在 long/compact 下的表现用普通规则调，不碰 PV 块
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ── compact 形态：矮卡 ── */
+/* 隐藏播放列表，只保留当前播放 + 控制条 */
+.player-container[data-layout="compact"] .player-right { display: none; }
+
+/* 歌词区在 compact 下只显示当前句 */
+.player-container[data-layout="compact"] .lyrics-section { max-height: 40px; overflow: hidden; }
+.player-container[data-layout="compact"] .lyric-body { display: flex; flex-direction: column; justify-content: center; }
+.player-container[data-layout="compact"] .lyric-line:not(.is-current) { opacity: 0; height: 0; margin: 0; padding: 0; overflow: hidden; }
+.player-container[data-layout="compact"] .lyric-line.is-current { opacity: 1; height: auto; }
+
+/* 控制条紧凑：减小 padding 和间距 */
+.player-container[data-layout="compact"] .controls-section { padding: 8px 12px; }
+.player-container[data-layout="compact"] .np-cover { width: 48px; height: 48px; font-size: 20px; }
+.player-container[data-layout="compact"] .np-info { min-width: 0; }
+
+/* PV 舞台在 compact 下压缩 */
+.player-container[data-layout="compact"] .pv-stage { flex: 1; min-height: 0; }
+
+/* ── long 形态：长卡 ── */
+/* 舞台与队列上下堆叠：改为纵向布局 */
+.player-container[data-layout="long"] { flex-direction: column; }
+.player-container[data-layout="long"] .player-left { flex: 1; min-height: 0; }
+.player-container[data-layout="long"] .player-right { flex: 0 0 auto; max-height: 40%; overflow-y: auto; }
+
+/* 歌词区在 long 下显示当前句 ±1 行 */
+.player-container[data-layout="long"] .lyrics-section { max-height: 80px; overflow: hidden; }
+.player-container[data-layout="long"] .lyric-body { display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+.player-container[data-layout="long"] .lyric-line { opacity: 0.3; transition: opacity 0.3s; }
+.player-container[data-layout="long"] .lyric-line.is-current { opacity: 1; font-weight: 600; }
+.player-container[data-layout="long"] .lyric-line.is-near { opacity: 0.6; }
+
+/* PV 舞台在 long 下占满剩余空间 */
+.player-container[data-layout="long"] .pv-stage { flex: 1; min-height: 0; }
+
+/* ── data-ctl=narrow：控制面密度 ── */
+.player-container[data-ctl="narrow"] .controls-section .controls-main { gap: 6px; }
+.player-container[data-ctl="narrow"] .icon-btn { padding: 4px; }
+.player-container[data-ctl="narrow"] .icon-btn svg { width: 14px; height: 14px; }
+.player-container[data-ctl="narrow"] .vol-group { min-width: 60px; }
+.player-container[data-ctl="narrow"] .vol-slider { width: 40px; }
+
+/* ── 过渡动画（只动 transform/opacity）── */
+.player-container[data-layout] .player-left,
+.player-container[data-layout] .player-right,
+.player-container[data-layout] .lyrics-section,
+.player-container[data-layout] .pv-stage {
+  transition: flex 0.3s ease, max-height 0.3s ease, opacity 0.3s ease;
+}

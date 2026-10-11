@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Layout Probe · 卡片形态适配自验</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #1a1a2e; color: #eee; padding: 20px; }
+h1 { font-size: 20px; margin-bottom: 20px; }
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; max-width: 1600px; margin: 0 auto; }
+.cell { background: #16213e; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; }
+.cell-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 12px; }
+.cell-title { font-weight: 600; }
+.cell-expected { color: #4fc3f7; font-family: monospace; }
+.cell-frame { border-radius: 4px; overflow: hidden; background: #0f3460; position: relative; }
+.cell-frame iframe { display: block; border: none; }
+.cell-size { position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.7); color: #fff; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-family: monospace; z-index: 10; }
+.status { margin-top: 16px; padding: 12px; background: #16213e; border-radius: 8px; font-family: monospace; font-size: 12px; }
+.status .pass { color: #66bb6a; }
+.status .fail { color: #ef5350; }
+.status .pending { color: #ffa726; }
+</style>
+</head>
+<body>
+<h1>Layout Probe · 卡片形态适配自验</h1>
+<div class="grid">
+  <div class="cell">
+    <div class="cell-header">
+      <span class="cell-title">长卡（聊天流）</span>
+      <span class="cell-expected">→ long</span>
+    </div>
+    <div class="cell-frame" style="width: 312px; height: 700px;">
+      <span class="cell-size">312×700</span>
+      <iframe src="/ui/index.html" id="frame-long" style="width: 312px; height: 700px;"></iframe>
+    </div>
+  </div>
+  <div class="cell">
+    <div class="cell-header">
+      <span class="cell-title">高长卡</span>
+      <span class="cell-expected">→ long</span>
+    </div>
+    <div class="cell-frame" style="width: 473px; height: 1314px;">
+      <span class="cell-size">473×1314</span>
+      <iframe src="/ui/index.html" id="frame-tall" style="width: 473px; height: 1314px;"></iframe>
+    </div>
+  </div>
+  <div class="cell">
+    <div class="cell-header">
+      <span class="cell-title">紧凑</span>
+      <span class="cell-expected">→ long</span>
+    </div>
+    <div class="cell-frame" style="width: 438px; height: 681px;">
+      <span class="cell-size">438×681</span>
+      <iframe src="/ui/index.html" id="frame-compact" style="width: 438px; height: 681px;"></iframe>
+    </div>
+  </div>
+  <div class="cell">
+    <div class="cell-header">
+      <span class="cell-title">宽窗（detached）</span>
+      <span class="cell-expected">→ wide</span>
+    </div>
+    <div class="cell-frame" style="width: 1040px; height: 780px;">
+      <span class="cell-size">1040×780</span>
+      <iframe src="/ui/index.html" id="frame-wide" style="width: 1040px; height: 780px;"></iframe>
+    </div>
+  </div>
+</div>
+<div class="status" id="status">
+  <div>等待 iframe 加载...</div>
+</div>
+
+<script>
+// 等待 iframe 加载后读取 data-layout
+var statusEl = document.getElementById('status');
+var checks = [
+  { id: 'frame-long', expected: 'long', label: '长卡 312×700' },
+  { id: 'frame-tall', expected: 'long', label: '高长卡 473×1314' },
+  { id: 'frame-compact', expected: 'long', label: '紧凑 438×681' },
+  { id: 'frame-wide', expected: 'wide', label: '宽窗 1040×780' }
+];
+var results = [];
+
+function checkFrame(check) {
+  try {
+    var iframe = document.getElementById(check.id);
+    if (!iframe || !iframe.contentWindow) return false;
+    var player = iframe.contentWindow.document.querySelector('[data-layout]');
+    if (!player) return false;
+    var actual = player.getAttribute('data-layout');
+    var ok = actual === check.expected;
+    results.push({ label: check.label, expected: check.expected, actual: actual, ok: ok });
+    return true;
+  } catch(e) {
+    return false;
+  }
+}
+
+function updateStatus() {
+  var html = '';
+  results.forEach(function(r) {
+    var cls = r.ok ? 'pass' : 'fail';
+    var icon = r.ok ? '✓' : '✗';
+    html += '<div class="' + cls + '">' + icon + ' ' + r.label + ': 期望 ' + r.expected + ', 实测 ' + r.actual + '</div>';
+  });
+  if (results.length < checks.length) {
+    html += '<div class="pending">... 还有 ' + (checks.length - results.length) + ' 个 iframe 未就绪</div>';
+  }
+  statusEl.innerHTML = html;
+}
+
+function poll() {
+  checks.forEach(function(check) {
+    if (results.findIndex(function(r) { return r.label === check.label; }) === -1) {
+      checkFrame(check);
+    }
+  });
+  updateStatus();
+  if (results.length < checks.length) {
+    setTimeout(poll, 500);
+  }
+}
+
+setTimeout(poll, 2000);
+</script>
+</body>
+</html>
