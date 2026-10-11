@@ -3361,7 +3361,6 @@ function load(i) {
   window.__currentCoverUrl = t.pic ? '/widget/api/music/pic?url=' + encodeURIComponent(t.pic) : null;
   // 如果是封面皮肤模式，重新应用背景
   try {
-    if (window.__applyImmersiveBg) window.__applyImmersiveBg();   // 沉浸档背景跟封面走
     var currentPreset = localStorage.getItem('hana_audio_theme_preset');
     if (currentPreset === 'cover' && typeof window.applyThemePreset === 'function') {
       window.applyThemePreset('cover');
@@ -4922,66 +4921,28 @@ function doPlaylistImport(){
       if(on) requestAnimationFrame(function(){ requestAnimationFrame(function(){ pvCenter(_pvIdx>=0?_pvIdx:0); }); });
     }
     btn.addEventListener('click',function(){
-      // 四档循环：标准 → PV(lyrics-mode) → 歌词(jizura-mode) → 沉浸(immersive-mode) → 标准
+      // 三档循环：标准 → PV(lyrics-mode) → 歌词(jizura-mode) → 标准
       var hasLyr=document.body.classList.contains('lyrics-mode');
       var hasJiz=document.body.classList.contains('jizura-mode');
-      var hasImm=document.body.classList.contains('immersive-mode');
-      if(hasImm){
-        // 沉浸 → 标准
-        applyImm(false);
-        renderPv();
-      }else if(!hasLyr){
+      if(!hasLyr){
         // 标准 → PV
         openPanel();
         apply(true);
       }else if(hasLyr && !hasJiz && (window.PV&&PV.available)){
-        // PV → 歌词（lite 包 PV 不可用时此支不可达，点击循环自动跳到沉浸档）
+        // PV → 歌词
         document.body.classList.add('jizura-mode');
         btn.style.color='var(--accent)';
         btn.title='退出歌词模式';
         renderPv();
       }else{
-        // 歌词（或 PV 不可用时的 PV）→ 沉浸
-        applyImm(true);
+        // 歌词 → 标准
+        document.body.classList.remove('jizura-mode');
+        renderPv();
+        apply(false);
       }
       updateBtnIcon();
     });
-    // 沉浸档：纯排版形态（封面直铺+双语歌词墙），不进 PV 引擎；背景复用 /music/pic 代理
-    function applyImm(on){
-      document.body.classList.toggle('immersive-mode', on);
-      if(on){
-        // 互斥：出 PV 档的舞台类，但歌词面板保持打开（沉浸墙复用 lyricBody）
-        document.body.classList.remove('lyrics-mode');
-        document.body.classList.remove('jizura-mode');
-        try{ localStorage.setItem(KEY,'0'); }catch(e){}
-        openPanel();
-        applyImmBg();
-        btn.style.color='var(--accent)';
-        btn.title='沉浸模式 — 点击退出';
-        try{ localStorage.setItem(KEY,'2'); }catch(e){}
-      }else{
-        btn.title='歌词模式';
-        try{ localStorage.setItem(KEY,'0'); }catch(e){}
-      }
-      // 档位落地后重算歌词居中
-      requestAnimationFrame(function(){ requestAnimationFrame(function(){ pvCenter(_pvIdx>=0?_pvIdx:0); }); });
-    }
-    function applyImmBg(){
-      var bg=document.querySelector('.immersive-bg');
-      if(!bg) return;
-      var url=window.__currentCoverUrl||'';
-      bg.style.backgroundImage = url ? 'url("'+url+'")' : '';
-      bg.classList.toggle('no-cover', !url);
-    }
-    window.__applyImmersiveBg = applyImmBg;
     function updateBtnIcon(){
-      // 沉浸态早退：hasImm 判断放在钩子锚点序列之前，
-      // 保住「hasLyr → hasJiz → if(hasJiz){」的降级钩子形态（build.mjs 按此展开 PV 可用性）
-      if(document.body.classList.contains('immersive-mode')){
-        btn.style.color='var(--accent)';
-        btn.title='沉浸模式 — 点击退出';
-        return;
-      }
       var hasLyr=document.body.classList.contains('lyrics-mode');
       var hasJiz=(window.PV&&PV.available&&document.body.classList.contains('jizura-mode'));
       if(hasJiz){
@@ -4997,11 +4958,11 @@ function doPlaylistImport(){
     }
     try{
       var saved=localStorage.getItem(KEY);
-      // '0'标准 / '1'PV / '2'沉浸；jizura-mode 不持久化
-      if(saved==='2'){ openPanel(); applyImm(true); }
-      else if(saved==='1'){ openPanel(); apply(true); }
+      // '0'标准 / '1'PV；jizura-mode 不持久化（曾用过 '2'=沉浸，已废弃，当标准处理）
+      if(saved==='1'){ openPanel(); apply(true); }
       // 清掉可能残留的 jizura-mode
       document.body.classList.remove('jizura-mode');
+      document.body.classList.remove('immersive-mode');
       updateBtnIcon();
     }catch(e){}
   })();
@@ -6495,8 +6456,8 @@ try{
     return;
   }
 }catch(e){}
-/* D2. 顶栏四模式胶囊（标准/PV/歌词/沉浸） */
-function curMode(){ return document.body.classList.contains('immersive-mode')?3:(document.body.classList.contains('jizura-mode')?2:(document.body.classList.contains('lyrics-mode')?1:0)); }
+/* D2. 顶栏三模式胶囊（标准/PV/歌词） */
+function curMode(){ return document.body.classList.contains('jizura-mode')?2:(document.body.classList.contains('lyrics-mode')?1:0); }
 function setMode(m){
   var btn=document.getElementById('lyricModeBtn');
   if(!btn)return;
@@ -6508,7 +6469,7 @@ var actions=document.querySelector('.header-actions');
 if(header&&actions&&!document.getElementById('modeCaps')){
   var caps=document.createElement('div');
   caps.className='mode-caps';caps.id='modeCaps';
-  [['标准',0],['PV',2],['歌词',1],['沉浸',3]].filter(function(it){ return it[1]!==2 || document.documentElement.dataset.pv==='1'; }).forEach(function(it){
+  [['标准',0],['PV',2],['歌词',1]].filter(function(it){ return it[1]!==2 || document.documentElement.dataset.pv==='1'; }).forEach(function(it){
     var b=document.createElement('button');
     b.className='mc';b.textContent=it[0];b.dataset.m=it[1];
     b.onclick=function(){setMode(it[1]);syncCaps();};
