@@ -680,6 +680,9 @@ body.view-compact .inst-code { display: none; }
 .music-add:hover { opacity:1; color:var(--accent); }
 .music-scene { background:none; border:none; color:var(--text-faint); font-size:10px; cursor:pointer; padding:3px 6px; flex-shrink:0; opacity:.5; transition:all .12s; }
 .music-scene:hover { opacity:1; color:var(--accent); }
+.music-cache { background:none; border:none; color:var(--text-faint); font-size:10px; cursor:pointer; padding:3px 6px; flex-shrink:0; opacity:.5; transition:all .12s; }
+.music-cache:hover { opacity:1; color:var(--accent); }
+.music-cache.cached { opacity:1; color:var(--accent); }
 .music-scene-menu { position:absolute; right:14px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:4px 0; box-shadow:0 4px 12px rgba(0,0,0,.3); z-index:10; font-size:11px; min-width:90px; }
 .music-scene-menu div { padding:4px 12px; cursor:pointer; color:var(--text-dim); white-space:nowrap; }
 .music-scene-menu div:hover { background:var(--accent-soft); color:var(--accent); }

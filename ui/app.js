@@ -3356,6 +3356,16 @@ function load(i) {
   document.getElementById('trackName').textContent=t.name;
   document.getElementById('trackMode').textContent=t.mode||'';
   window._currentTrack = { title: t.name, artist: t.mode, cover: t.pic, lrcUrl: t.lrcUrl, source: 'music' };
+  // 更新当前封面 URL，供封面皮肤模式使用
+  // 用代理后的同源地址，避免跨源污染画布
+  window.__currentCoverUrl = t.pic ? '/widget/api/music/pic?url=' + encodeURIComponent(t.pic) : null;
+  // 如果是封面皮肤模式，重新应用背景
+  try {
+    var currentPreset = localStorage.getItem('hana_audio_theme_preset');
+    if (currentPreset === 'cover' && typeof window.applyThemePreset === 'function') {
+      window.applyThemePreset('cover');
+    }
+  } catch(e) {}
   if (window.audioEventBus) {
     window.audioEventBus.setTrack(t.name, t.name);
     window.audioEventBus.emit('audio:loaded', 'music', { duration: t.dur || 0, src: t.url });
@@ -4280,23 +4290,77 @@ document.querySelectorAll('.platform-btn').forEach(function(btn) {
 
 // ── 主题切换 ──
 function applyTheme(theme) {
+  // data-theme 只允许 light/dark，auto 态的实际明暗由宿主主题决定
   document.documentElement.setAttribute('data-theme', theme);
-  try { localStorage.setItem('hanako_audio_theme', theme); } catch(e) {}
+}
+
+function getThemeMode() {
+  try { return localStorage.getItem('hanako_audio_theme_mode') || 'auto'; } catch(e) { return 'auto'; }
+}
+
+// auto 态订阅句柄：切手动时退订，防止宿主主题变化穿透手动模式
+var __hostThemeUnsub = null;
+
+function setThemeMode(mode) {
+  try { localStorage.setItem('hanako_audio_theme_mode', mode); } catch(e) {}
+  // 更新图标
   var icon = document.getElementById('themeIcon');
-  if (theme === 'light') {
+  if (mode === 'light') {
     icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
-  } else {
+  } else if (mode === 'dark') {
     icon.innerHTML = '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
+  } else {
+    // auto：调色盘图标
+    icon.innerHTML = '<circle cx="12" cy="12" r="10"/><circle cx="8" cy="12" r="2" fill="currentColor"/><circle cx="16" cy="12" r="2" fill="currentColor"/>';
+  }
+  // 进入任何模式前先退掉旧订阅：auto↔手动切换、或 auto 重复进入，都不留悬挂回调
+  if (__hostThemeUnsub) { try { __hostThemeUnsub(); } catch(e) {} __hostThemeUnsub = null; }
+  // auto 态：订阅宿主主题
+  if (mode === 'auto') {
+    window.__whenHana(function(hana) {
+      // __whenHana 排队期间用户可能已切到手动：回调到达时再核对一次
+      if (getThemeMode() !== 'auto' || !hana || !hana.theme) return;
+      // 立即应用当前宿主主题
+      if (hana.theme.getSnapshot) {
+        var snap = hana.theme.getSnapshot();
+        if (snap && snap.theme) {
+          applyTheme(snap.theme === 'light' ? 'light' : 'dark');
+        }
+      }
+      // 订阅宿主变化
+      if (hana.theme.subscribe) {
+        __hostThemeUnsub = hana.theme.subscribe(function(snap) {
+          // 双保险：手动模式下宿主变化不穿透
+          if (getThemeMode() !== 'auto') return;
+          if (snap && snap.theme) {
+            applyTheme(snap.theme === 'light' ? 'light' : 'dark');
+          }
+        });
+      }
+    });
+  } else {
+    // 手动态：直接应用
+    applyTheme(mode);
   }
 }
-document.getElementById('themeBtn').addEventListener('click',function(){
-  var cur = document.documentElement.getAttribute('data-theme') || 'dark';
-  applyTheme(cur === 'dark' ? 'light' : 'dark');
+
+document.getElementById('themeBtn').addEventListener('click', function() {
+  var cur = getThemeMode();
+  // 三态循环：auto → light → dark → auto
+  var next;
+  if (cur === 'auto') {
+    next = 'light';
+  } else if (cur === 'light') {
+    next = 'dark';
+  } else {
+    next = 'auto';
+  }
+  setThemeMode(next);
 });
+
 (function initTheme(){
-  var saved = 'dark';
-  try { saved = localStorage.getItem('hanako_audio_theme') || 'dark'; } catch(e) {}
-  applyTheme(saved);
+  var mode = getThemeMode();
+  setThemeMode(mode);
 })();
 
 // ── 字号切换 ──
@@ -4458,12 +4522,13 @@ function doMusicSearch(){
   fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(kw)+'&server='+sv, {signal:AbortSignal.timeout(10000)}).then(function(r){return r.json();}).then(function(res){
     if(!res.ok||!res.results||!res.results.length){ el.innerHTML='<div class="music-empty">没有结果</div>'; return; }
     el.innerHTML=res.results.map(function(t){
-      return '<div class="music-item" data-title="'+esc(t.title)+'" data-url="'+esc(t.url)+'" data-lrc="'+esc(t.lrc||'')+'" data-pic="'+esc(t.pic||'')+'">'
+      return '<div class="music-item" data-title="'+esc(t.title)+'" data-url="'+esc(t.url)+'" data-lrc="'+esc(t.lrc||'')+'" data-pic="'+esc(t.pic||'')+'" data-id="'+esc(t.id||'')+'" data-server="'+esc(t.server||document.getElementById('musicServer').value)+'">'
         +(t.pic ? '<img class="music-thumb" src="'+esc(t.pic)+'" loading="lazy">' : '<div class="music-thumb-placeholder">♫</div>')
         +'<div class="music-info"><div class="music-title">'+esc(t.title)+'</div><div class="music-author">'+esc(t.author)+'</div></div>'
         +'<button class="music-play" title="播放">▶</button>'
         +'<button class="music-add" title="加入队列">+</button>'
         +'<button class="music-scene" title="加入场景">☾</button>'
+        +'<button class="music-cache" title="缓存到本地" data-id="'+esc(t.id||'')+'" data-server="'+esc(t.server||document.getElementById('musicServer').value)+'">💾</button>'
         +'</div>';
     }).join('');
   }).catch(function(e){ el.innerHTML='<div class="music-empty">'+(e.name==='TimeoutError'?'搜索超时，换源试试':'搜索失败，所有 Meting 节点均不可用')+'</div>'; });
@@ -4531,6 +4596,35 @@ document.getElementById('musicResults').addEventListener('click', function(e){
       });
       // 点外部关闭
       setTimeout(function(){ document.addEventListener('click', function cls(){ menu.remove(); document.removeEventListener('click', cls); }); }, 0);
+    });
+  } else if(e.target.closest('.music-cache')){
+    // 缓存按钮：调用后端缓存 API
+    var cacheBtn = e.target.closest('.music-cache');
+    var cacheId = cacheBtn.dataset.id;
+    var cacheServer = cacheBtn.dataset.server;
+    if(!cacheId) { showToast('无法缓存：缺少曲目 ID', 2000); return; }
+    cacheBtn.disabled = true;
+    cacheBtn.textContent = '⏳';
+    fetch(API+'/widget/api/music/cache/'+encodeURIComponent(cacheId)+'?server='+encodeURIComponent(cacheServer), {
+      method: 'POST',
+      signal: AbortSignal.timeout(30000)
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(res){
+      if(res.ok) {
+        cacheBtn.textContent = '✓';
+        cacheBtn.classList.add('cached');
+        showToast('已缓存', 2000);
+      } else {
+        cacheBtn.textContent = '💾';
+        cacheBtn.disabled = false;
+        showToast('缓存失败: '+(res.error||''), 2500);
+      }
+    })
+    .catch(function(err){
+      cacheBtn.textContent = '💾';
+      cacheBtn.disabled = false;
+      showToast('缓存超时', 2500);
     });
   }
 });
@@ -5095,6 +5189,8 @@ function doPlaylistImport(){
     var lines=lyricBody.querySelectorAll('.lyric-line');
     lines.forEach(function(el,i){
       el.classList.toggle('current',i===idx);
+      // 给当前行 ±1 行打 is-near 类（2c 遗留接线）
+      el.classList.toggle('is-near', (i===idx-1 || i===idx+1));
       if (i === idx && el.classList.contains('chorus')) {
         el.style.animation = 'pulse-glow 1.5s ease-in-out infinite';
       } else {
@@ -5808,7 +5904,13 @@ setTimeout(notifySize, 300);
       colors: { primary: "#d49a6a", secondary: "#c48454" },
       background: { kind: "gradient", from: "#101014", to: "#1d1d24", angle: 180,
         light: { kind: "gradient", from: "#f7f7f9", to: "#ececf0", angle: 180 } },
-      animation: { speed: 1, glowIntensity: 0.15, pulse: 0 } }
+      animation: { speed: 1, glowIntensity: 0.15, pulse: 0 } },
+
+    // 封面皮肤：伪预设，从当前曲目封面提取主色，用封面图做背景
+    { id: "cover", name: "封面皮肤", mode: "dynamic",
+      colors: { primary: "#d49a6a", secondary: "#c48454", accent: "#fff" },
+      background: { kind: "cover", blur: 20, overlay: 0.5 },
+      animation: { speed: 1, glowIntensity: 0.3, pulse: 0.15 } }
   ];
 
   function readCustom() {
@@ -5887,6 +5989,27 @@ setTimeout(notifySize, 300);
       el.style.backgroundImage = 'url("' + bg.url + '")';
       el.style.backgroundSize = "cover";
       el.style.backgroundPosition = "center";
+    } else if (bg.kind === "cover") {
+      // 封面皮肤：用当前曲目封面做背景，模糊+压暗/压亮
+      var coverUrl = window.__currentCoverUrl || null;
+      if (!coverUrl) {
+        // 没有封面时，退回到纯色
+        el.style.backgroundImage = "none";
+        el.style.backgroundColor = "#1a1a2e";
+        el.style.opacity = "0";
+        return;
+      }
+      el.style.backgroundColor = "transparent";
+      el.style.backgroundImage = 'url("' + coverUrl + '")';
+      el.style.backgroundSize = "cover";
+      el.style.backgroundPosition = "center";
+      el.style.filter = "blur(" + (bg.blur || 20) + "px)";
+      // 按明暗加蒙层
+      var overlay = bg.overlay != null ? bg.overlay : 0.5;
+      var mode = currentMode();
+      var overlayColor = mode === "light" ? "rgba(255,255,255," + (1 - overlay) + ")" : "rgba(0,0,0," + overlay + ")";
+      el.style.boxShadow = "inset 0 0 0 9999px " + overlayColor;
+      el.style.opacity = "1";
     }
     el.style.opacity = bg.opacity == null ? "1" : String(bg.opacity);
   }
@@ -6041,6 +6164,26 @@ setTimeout(notifySize, 300);
     if (t.mode && typeof window.applyTheme === "function") {
       window.applyTheme(t.mode);
     }
+    // cover 预设：异步取色，更新 CSS 变量
+    if (t.id === 'cover' && window.__currentCoverUrl) {
+      // __currentCoverUrl 存的就是同源代理地址（见曲目切换处），直接取色；
+      // 不能再包一层 /music/pic 代理——双重编码后后端拿到的是编码过的相对路径，必失败
+      var proxiedUrl = window.__currentCoverUrl;
+      if (window.aiThemeGenerator && window.aiThemeGenerator.coverColorExtractor) {
+        window.aiThemeGenerator.coverColorExtractor.extract(proxiedUrl).then(function(colors) {
+          if (colors && typeof window.applyThemeToCSS === 'function') {
+            window.applyThemeToCSS({
+              colors: {
+                primary: colors.primary || t.colors.primary,
+                secondary: colors.secondary || t.colors.secondary,
+                accent: colors.accent || t.colors.accent
+              },
+              animation: t.animation
+            });
+          }
+        });
+      }
+    }
     if (typeof window.applyThemeToCSS === "function") {
       window.applyThemeToCSS({ colors: t.colors || {}, animation: t.animation });
     } else {
@@ -6049,6 +6192,9 @@ setTimeout(notifySize, 300);
     applyBackground(t.background);
     return true;
   }
+
+  // 挂到全局，供曲目切换时调用
+  window.applyThemePreset = applyPreset;
 
   function renderPanel() {
     var grid = document.getElementById("themeGrid");

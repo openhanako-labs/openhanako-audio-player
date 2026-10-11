@@ -1391,8 +1391,7 @@ window.dispatchEvent(new Event("hana-sdk-ready"));
 <script src="./head.js"></script>
 
 
-<style>
-/* ===== PV:BEGIN 文字PV引擎（pv/ 目录构建产物，勿手改） ===== */
+<style>/* ===== PV:BEGIN 文字PV引擎（pv/ 目录构建产物，勿手改） ===== */
 /* PV 引擎 · 舞台与层容器
  * PV 用自己的层 #pvJv，不写 folia 的 #pvTrack：
  * 退出 PV 时 folia 的 DOM 从头到尾没被动过，不需要任何“恢复”补丁。
@@ -2659,7 +2658,7 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
   </div>
 <!-- Hidden elements for legacy JS references -->
 <div style="display:none">
-  <select id="musicServer"><option value="netease">网易云</option><option value="tencent">QQ</option><option value="kugou">酷狗</option><option value="baidu">百度</option><option value="kuwo">酷我</option></select>
+  <select id="musicServer"><option value="netease">网易云</option><option value="tencent">QQ</option><option value="kugou">酷狗</option><option value="baidu">百度</option><option value="kuwo">酷我</option><option value="bilibili">B站</option></select>
   <div id="musicToggle"></div>
   <div id="musicBody"></div>
   <div id="busBody"></div>
@@ -2674,6 +2673,7 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 <!-- 新增功能模块 (内联) -->
 
 <script src="./app.js"></script>
+
 
 
 
@@ -8531,6 +8531,5 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 })();
 </script>
 <!-- ===== PV:END ===== -->
-
 </body>
 </html>
