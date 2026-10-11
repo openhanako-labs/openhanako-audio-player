@@ -356,6 +356,13 @@ body.view-compact .inst-code { display: none; }
 .lyric-line.current { color:var(--lyric-active-color, var(--accent)); font-weight:600; }
 .lyric-line.chorus { color:var(--lyric-chorus-color, var(--accent-glow)); font-weight:600; }
 .lyric-line:hover { color:var(--text); }
+/* 双语：TTML 译文行（数据层已带 tran，见 renderLrc / parseTtml） */
+.lyric-tran {
+  display:block; font-size:.9em; line-height:1.55; margin-top:3px; letter-spacing:.03em;
+  color:var(--lyric-tran-color, var(--text-faint));
+  -webkit-background-clip:border-box; background-clip:border-box;
+}
+.tran-off .lyric-tran { display:none; }
 .lyric-body::-webkit-scrollbar { width:6px; }
 .lyric-body::-webkit-scrollbar-track { background:transparent; }
 .lyric-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
@@ -1828,6 +1835,8 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 .player-container[data-layout="compact"] .lyric-body { display: flex; flex-direction: column; justify-content: center; }
 .player-container[data-layout="compact"] .lyric-line:not(.current) { opacity: 0; height: 0; margin: 0; padding: 0; overflow: hidden; }
 .player-container[data-layout="compact"] .lyric-line.current { opacity: 1; height: auto; }
+/* compact 单行聚焦装不下双行：译文隐藏 */
+.player-container[data-layout="compact"] .lyric-tran { display: none; }
 
 /* 控制条紧凑：减小 padding 和间距 */
 .player-container[data-layout="compact"] .controls-section { padding: 8px 12px; }

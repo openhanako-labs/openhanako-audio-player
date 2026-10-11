@@ -4364,6 +4364,25 @@ document.getElementById('themeBtn').addEventListener('click', function() {
 })();
 
 // ── 字号切换 ──
+
+// ── 歌词译文显隐：TTML 译文已随行渲染，开关只切 body.tran-off，不重建 DOM ──
+(function(){
+  var btn=document.getElementById('tranBtn');
+  if(!btn) return;
+  var KEY='hanako_audio_lyrics_tran';
+  var off=false;
+  try{ off = localStorage.getItem(KEY)==='0'; }catch(e){}
+  function apply(){
+    document.body.classList.toggle('tran-off', off);
+    btn.title = off ? '显示歌词翻译' : '隐藏歌词翻译';
+  }
+  apply();
+  btn.addEventListener('click',function(){
+    off=!off;
+    try{ localStorage.setItem(KEY, off?'0':'1'); }catch(e){}
+    apply();
+  });
+})();
 (function initFontSize() {
   var scaleMap = { 'small': 0.9, 'standard': 1.0, 'large': 1.15 };
   var scaleLabels = { 'small': '小', 'standard': '标准', 'large': '大' };
@@ -5182,7 +5201,9 @@ function doPlaylistImport(){
     lyricBody.innerHTML=lrcData.map(function(l,i){
       var isChorus = chorusSet.has(l.text.trim().toLowerCase());
       var cls = isChorus ? 'lyric-line chorus' : 'lyric-line';
-      return '<div class="'+cls+'" data-lrc-idx="'+i+'">'+esc(l.text)+'</div>';
+      // 双语：TTML 路径的行带 tran（x-translation），LRC 路径无 —— 有则渲染，显隐交给 body.tran-off
+      var tran = l.tran ? '<span class="lyric-tran">'+esc(l.tran)+'</span>' : '';
+      return '<div class="'+cls+'" data-lrc-idx="'+i+'"><span class="l-main">'+esc(l.text)+'</span>'+tran+'</div>';
     }).join('');
   }
 
