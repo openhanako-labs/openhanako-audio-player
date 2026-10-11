@@ -351,9 +351,9 @@ body.view-compact .inst-code { display: none; }
 .lyric-body.open { max-height:220px; overflow-y:auto; }
 .lyric-line {
   font-size:11.5px; color:var(--lyric-color, var(--text-dim)); line-height:1.8; text-align:center;
-  transition:color 0.2s, font-size 0.2s;
+  transition:color 0.2s, opacity 0.3s;
 }
-.lyric-line.current { color:var(--lyric-active-color, var(--accent)); font-size:13px; font-weight:600; }
+.lyric-line.current { color:var(--lyric-active-color, var(--accent)); font-weight:600; }
 .lyric-line.chorus { color:var(--lyric-chorus-color, var(--accent-glow)); font-weight:600; }
 .lyric-line:hover { color:var(--text); }
 .lyric-body::-webkit-scrollbar { width:6px; }
@@ -1826,8 +1826,8 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 /* 歌词区在 compact 下只显示当前句 */
 .player-container[data-layout="compact"] .lyrics-section { max-height: 40px; overflow: hidden; }
 .player-container[data-layout="compact"] .lyric-body { display: flex; flex-direction: column; justify-content: center; }
-.player-container[data-layout="compact"] .lyric-line:not(.is-current) { opacity: 0; height: 0; margin: 0; padding: 0; overflow: hidden; }
-.player-container[data-layout="compact"] .lyric-line.is-current { opacity: 1; height: auto; }
+.player-container[data-layout="compact"] .lyric-line:not(.current) { opacity: 0; height: 0; margin: 0; padding: 0; overflow: hidden; }
+.player-container[data-layout="compact"] .lyric-line.current { opacity: 1; height: auto; }
 
 /* 控制条紧凑：减小 padding 和间距 */
 .player-container[data-layout="compact"] .controls-section { padding: 8px 12px; }
@@ -1847,8 +1847,11 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 .player-container[data-layout="long"] .lyrics-section { max-height: 80px; overflow: hidden; }
 .player-container[data-layout="long"] .lyric-body { display: flex; flex-direction: column; justify-content: center; gap: 4px; }
 .player-container[data-layout="long"] .lyric-line { opacity: 0.3; transition: opacity 0.3s; }
-.player-container[data-layout="long"] .lyric-line.is-current { opacity: 1; font-weight: 600; }
+.player-container[data-layout="long"] .lyric-line.current { opacity: 1; font-weight: 600; }
 .player-container[data-layout="long"] .lyric-line.is-near { opacity: 0.6; }
+/* 浏览态：用户滚动歌词查看时全行显现（盖过 long 的 0.3 基线与 is-near 0.6，
+   放在形态规则后靠特异性与顺序双重取胜）；3s 无交互由 JS 摘类自动回归 */
+.player-container .lyric-body.is-browsing .lyric-line { opacity: 1; }
 
 /* PV 舞台在 long 下占满剩余空间 */
 .player-container[data-layout="long"] .pv-stage { flex: 1; min-height: 0; }

@@ -5175,12 +5175,39 @@ function doPlaylistImport(){
     chorusSetGlobal = chorusSet;
     renderPv();
     _pvIdx = -1;   // 新词表生效，下一拍 highlightLrc 会让 PV 重唱首行
+    // 换词重建：浏览态作废，直接回到跟随
+    _lyricBrowsing = false;
+    if (_lyricBrowseTimer) { clearTimeout(_lyricBrowseTimer); _lyricBrowseTimer = null; }
+    lyricBody.classList.remove('is-browsing');
     lyricBody.innerHTML=lrcData.map(function(l,i){
       var isChorus = chorusSet.has(l.text.trim().toLowerCase());
       var cls = isChorus ? 'lyric-line chorus' : 'lyric-line';
       return '<div class="'+cls+'" data-lrc-idx="'+i+'">'+esc(l.text)+'</div>';
     }).join('');
   }
+
+  // ── 歌词浏览态：用户滚动查看时暂停自动跟随，3s 无交互自动平滑回归 ──
+  // 之前是每句无条件 scrollIntoView 居中 —— 用户往上翻歌词，下一句一到就被拽回去。
+  // 手势判定用 wheel/touchstart/pointerdown：scroll 事件区分不了程序平滑滚动和用户滚动。
+  var _lyricBrowsing = false, _lyricBrowseTimer = null;
+  (function initLyricBrowse(){
+    if (!lyricBody) return;
+    function enterBrowse(){
+      if (_lyricBrowseTimer) { clearTimeout(_lyricBrowseTimer); _lyricBrowseTimer = null; }
+      if (!_lyricBrowsing) { _lyricBrowsing = true; lyricBody.classList.add('is-browsing'); }
+      _lyricBrowseTimer = setTimeout(exitBrowse, 3000);
+    }
+    function exitBrowse(){
+      if (_lyricBrowseTimer) { clearTimeout(_lyricBrowseTimer); _lyricBrowseTimer = null; }
+      _lyricBrowsing = false;
+      lyricBody.classList.remove('is-browsing');
+      var cur = lyricBody.querySelector('.lyric-line.current');
+      if (cur) cur.scrollIntoView({block:'center',behavior:'smooth'});
+    }
+    ['wheel','touchstart','pointerdown'].forEach(function(evt){
+      lyricBody.addEventListener(evt, enterBrowse, {passive:true});
+    });
+  })();
 
   function highlightLrc(timeMs){
     if(!lrcData.length) return;
@@ -5198,7 +5225,8 @@ function doPlaylistImport(){
       }
     });
     pvSync(idx);
-    if(lines[idx]) lines[idx].scrollIntoView({block:'center',behavior:'smooth'});
+    // 浏览态（用户正在翻歌词）不拽屏；3s 无交互后由 exitBrowse 平滑滚回
+    if(!_lyricBrowsing && lines[idx]) lines[idx].scrollIntoView({block:'center',behavior:'smooth'});
   }
 
   // ── 行内进度：单独走逐帧，不再吊在 timeupdate 上 ──
