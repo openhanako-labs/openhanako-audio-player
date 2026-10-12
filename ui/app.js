@@ -6252,10 +6252,29 @@ setTimeout(notifySize, 300);
       animation: { speed: 1.25, glowIntensity: 0.6, pulse: 0.35 } },
 
     { id: "paper", name: "纸感", mode: "light",
-      colors: { primary: "#8a7a5c", secondary: "#6f6148" },
-      background: { kind: "solid", color: "#f7f1e4",
-        light: { kind: "solid", color: "#f7f1e4" } },
-      animation: { speed: 0.9, glowIntensity: 0.1, pulse: 0 } },
+      colors: { primary: "#4a4038", secondary: "#8a7a63", accent: "#c0392b" },
+      background: { kind: "gradient", from: "#faf6ee", to: "#f0e9dc", angle: 165,
+        light: { kind: "gradient", from: "#faf6ee", to: "#f0e9dc", angle: 165 } },
+      animation: { speed: 0.9, glowIntensity: 0.06, pulse: 0 } },
+
+    // ── 亮色系（补齐暗色偏重的缺口）──
+    { id: "snow", name: "雪原", mode: "light",
+      colors: { primary: "#3d5a80", secondary: "#5b7fa6", accent: "#2b4664" },
+      background: { kind: "gradient", from: "#f6f9fc", to: "#e7eef6", angle: 160,
+        light: { kind: "gradient", from: "#f6f9fc", to: "#e7eef6", angle: 160 } },
+      animation: { speed: 1, glowIntensity: 0.08, pulse: 0 } },
+
+    { id: "dawn", name: "晨光", mode: "light",
+      colors: { primary: "#b8662a", secondary: "#d18a4a", accent: "#8f4a1a" },
+      background: { kind: "gradient", from: "#fdf8f0", to: "#f7ecdc", angle: 155,
+        light: { kind: "gradient", from: "#fdf8f0", to: "#f7ecdc", angle: 155 } },
+      animation: { speed: 1, glowIntensity: 0.12, pulse: 0.06 } },
+
+    { id: "mint", name: "薄荷", mode: "light",
+      colors: { primary: "#2f7d62", secondary: "#3d9a7a", accent: "#1f5c46" },
+      background: { kind: "gradient", from: "#f3faf6", to: "#e5f3ec", angle: 160,
+        light: { kind: "gradient", from: "#f3faf6", to: "#e5f3ec", angle: 160 } },
+      animation: { speed: 1, glowIntensity: 0.08, pulse: 0 } },
 
     { id: "core", name: "原色", mode: "dark",
       colors: { primary: "#d49a6a", secondary: "#c48454" },
