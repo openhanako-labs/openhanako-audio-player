@@ -5073,7 +5073,7 @@ function doPlaylistImport(){
   })();
 
   // ── 歌词结构化数据缓存 ──
-  var LRC_CACHE_KEY='hanako_audio_lrc_parsed_cache';
+  var LRC_CACHE_KEY='hanako_audio_lrc_parsed_cache_v2';   // v2：加入内联译文拆分，旧缓存失效
   var LRC_CACHE_MAX=30;
   var LRC_CACHE_TTL=30*24*60*60*1000; // 30天
   function _getLrcCacheObj(){
@@ -5129,6 +5129,23 @@ function doPlaylistImport(){
     return /[:：]/.test(txt.slice(0, 34));
   }
 
+  /* 内联译文拆分：平台歌词常常把译文写在同一行的括号里，
+   * 如「Put your make up on (化好妆)」。拆出 text + tran，
+   * 翻译开关才有东西可切（否则开关对这类歌天生无效）。
+   * 判据：行尾括注、括号内含中日韩字符、主文本仍非空。 */
+  function splitInlineTran(txt) {
+    var m = txt.match(/^(.*?)\s*[（(]\s*([^（()）]{1,80})\s*[)）]\s*$/);
+    if (!m) return null;
+    var main = (m[1] || '').trim();
+    var inner = (m[2] || '').trim();
+    if (!main || !inner) return null;
+    /* 译文一般含 CJK（中文/日文）；纯英文括注多为语气/和声，不拆 */
+    if (!/[\u3040-\u30ff\u3400-\u9fff]/.test(inner)) return null;
+    /* 主文本若已是纯中文（无拉丁字母），说明这行本就是中文（括号是补充），不拆 */
+    if (!/[A-Za-z]/.test(main) && /[\u3400-\u9fff]/.test(main)) return null;
+    return { text: main, tran: inner };
+  }
+
   function parseLrc(raw){
     var lines=raw.split('\n');
     var result=[];
@@ -5139,7 +5156,9 @@ function doPlaylistImport(){
         var txt=m[4].trim();
         if(!txt) return;
         if(looksLikeCredit(txt)) return;          // 署名行不是歌词
-        result.push({time:ms,text:txt});
+        var sp = splitInlineTran(txt);
+        if (sp) result.push({time:ms, text:sp.text, tran:sp.tran});
+        else result.push({time:ms,text:txt});
       }
     });
     result.sort(function(a,b){return a.time-b.time;});

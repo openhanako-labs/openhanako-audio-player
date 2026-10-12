@@ -1183,6 +1183,7 @@ body.view-compact .inst-code { display: none; }
   .pv-bg {
     --pv-clarity: 0.8;
     position: absolute; inset: -4%;
+    background-color: var(--jv-bg, var(--card-bg));  /* 无封面图时的兜底底，不透到播放器 */
     background-size: cover; background-position: center;
     filter: blur(calc((1 - var(--pv-clarity)) * 30px)) saturate(1.18);
     opacity: calc(0.6 + var(--pv-clarity) * 0.4);

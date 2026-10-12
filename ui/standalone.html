@@ -1411,6 +1411,10 @@ window.dispatchEvent(new Event("hana-sdk-ready"));
 }
 body.jizura-mode:not(.view-compact) .pv-jv { display: block; }
 body.jizura-mode:not(.view-compact) .pv-stage { display: flex; }
+/* .pv-jv 默认带实色底（--jv-bg）， z-index:20 压在封面层之上——
+ * 这就是「PV 封面开关开了也不显示」的真身：封面被实色底盖死。
+ * 封面显示时让 .pv-jv 透底，封面透出；隐藏封面时回到实色底（保住风格背景）。 */
+body:not(.pv-cover-off).jizura-mode:not(.view-compact) .pv-jv { background: transparent; }
 /* 封面背景在文字PV档同样显示（用户指定）：pv-bg 自带高糊+可读性罩层，
    纯文字演出也需要封面底 —— 与 lyrics-mode 观感统一。 */
 body.jizura-mode:not(.view-compact) .pv-bg { display: block; }
