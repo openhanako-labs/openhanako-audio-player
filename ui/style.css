@@ -1003,6 +1003,17 @@ body.view-compact .inst-code { display: none; }
 .cache-meter-bar { height:6px; border-radius:4px; background:var(--surface); overflow:hidden; }
 .cache-meter-fill { height:100%; width:0%; border-radius:4px; background:linear-gradient(90deg,var(--accent),var(--accent-glow)); transition:width .4s ease; }
 .cache-meter-text { font-size:10.5px; color:var(--text-faint); font-variant-numeric:tabular-nums; }
+.cache-limit-row { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--text-dim); }
+.cache-limit-input {
+  width:76px; padding:4px 8px; border-radius:6px; font-family:inherit; font-size:11px;
+  border:1px solid var(--border); background:var(--surface); color:var(--text); outline:none;
+}
+.cache-limit-input:focus { border-color:var(--accent); }
+.cache-limit-btn {
+  padding:4px 12px; border-radius:6px; cursor:pointer; font-family:inherit; font-size:11px;
+  background:var(--surface); border:1px solid var(--border); color:var(--text-dim); transition:all .15s;
+}
+.cache-limit-btn:hover { border-color:var(--accent); color:var(--accent); }
 .cache-list { flex:1; min-height:120px; overflow-y:auto; display:flex; flex-direction:column; gap:6px; }
 .cache-list::-webkit-scrollbar { width:5px; }
 .cache-list::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:3px; }

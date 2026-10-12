@@ -2682,6 +2682,12 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
       <div class="cache-meter-bar"><div class="cache-meter-fill" id="cacheMeterFill"></div></div>
       <div class="cache-meter-text" id="cacheMeterText">加载中…</div>
     </div>
+    <div class="cache-limit-row">
+      <span>容量上限</span>
+      <input type="number" class="cache-limit-input" id="cacheLimitInput" min="100" max="102400" step="100" placeholder="MB">
+      <span>MB</span>
+      <button class="cache-limit-btn" id="cacheLimitBtn">应用</button>
+    </div>
     <div class="cache-list" id="cacheList"></div>
     <div class="cache-actions">
       <button class="cache-clear-btn" id="cacheClearBtn">清空全部缓存</button>

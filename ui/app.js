@@ -3228,7 +3228,9 @@ function handleDragStart(e) {
       if (Math.abs(ev.clientY - startY) < 5 && Math.abs(ev.clientX - startX) < 5) return;
       dragState.moved = true;
       window.__plJustDragged = Date.now();
-      try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
+      // 不在这里 releasePointerCapture！一旦释放，真实指针事件就跑到
+      // 光标下的元素上，而监听器在 handle 上 → pointermove/up 不再触发、
+      // 拖拽永远完不成（合成事件测试不走捕获逻辑，所以之前“测过了”是假绿）。
       el.classList.add('pl-dragging');
       plBody.classList.add('pl-dragging');
       document.body.appendChild(indicator);
@@ -3798,8 +3800,20 @@ function renderPL() {
       menu.innerHTML='<div class="pl-ctx-title">移动到…</div>'
         +opts.map(function(g){return '<div class="pl-ctx-opt" data-g="'+esc(g)+'">'+esc(g)+'</div>';}).join('')
         +'<div class="pl-ctx-opt" data-g="__new__">新建分组…</div>';
-      el.style.position='relative';
-      el.appendChild(menu);
+      // 挂到 body + fixed 定位（在鼠标处）：放进 .pl-item 会被
+      // .pl-body 的 overflow 裁掉——那就是“右键没菜单”的真身（其实弹了但看不见）。
+      var mvx=e.clientX, mvy=e.clientY;
+      document.body.appendChild(menu);
+      menu.style.position='fixed';
+      menu.style.right='auto';
+      menu.style.top='0px';
+      menu.style.left='0px';
+      // 先量尺寸再夹到视口内，避免右侧/底部溢出
+      var mw=menu.offsetWidth, mh=menu.offsetHeight;
+      var px=Math.min(mvx, window.innerWidth-mw-6);
+      var py=Math.min(mvy, window.innerHeight-mh-6);
+      menu.style.left=Math.max(6,px)+'px';
+      menu.style.top=Math.max(6,py)+'px';
       menu.addEventListener('click',function(ev){
         var opt=ev.target.closest('[data-g]'); if(!opt) return;
         var g=opt.dataset.g;
@@ -4452,6 +4466,8 @@ document.querySelectorAll('.nav-tab').forEach(function(btn) {
     var pct = data && typeof data.usedPct === 'number' ? Math.round(data.usedPct*100) : Math.round(total/limit*100);
     if (fillEl) fillEl.style.width = Math.min(100, pct) + '%';
     if (textEl) textEl.textContent = fmtSize(total) + ' / ' + fmtSize(limit) + '（' + pct + '%）';
+    var limInput = document.getElementById('cacheLimitInput');
+    if (limInput && !limInput.dataset.touched) limInput.value = String(Math.round(limit/1024/1024));
     if (!entries.length) {
       listEl.innerHTML = '<div class="cache-empty">暂无缓存。<br>在搜索结果的 💾 按钮或播放时可缓存到本地。</div>';
       if (clearBtn) clearBtn.disabled = true;
@@ -4498,6 +4514,21 @@ document.querySelectorAll('.nav-tab').forEach(function(btn) {
   });
 
   if (reloadBtn) reloadBtn.addEventListener('click', load);
+  var limBtn = document.getElementById('cacheLimitBtn');
+  var limInput = document.getElementById('cacheLimitInput');
+  if (limInput) limInput.addEventListener('input', function(){ limInput.dataset.touched = '1'; });
+  if (limBtn) limBtn.addEventListener('click', function(){
+    var mb = parseFloat(limInput && limInput.value);
+    if (!isFinite(mb) || mb < 100) { showToast('上限至少 100MB', 1800); return; }
+    fetch((typeof API!=='undefined'?API:'') + '/widget/api/music/cache-limit', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ maxBytes: Math.round(mb * 1024 * 1024) }),
+      signal: AbortSignal.timeout(8000)
+    }).then(function(r){return r.json();}).then(function(res){
+      if (res && res.ok) { showToast('上限已设为 ' + Math.round(res.maxBytes/1024/1024) + ' MB', 1800); if (limInput) limInput.dataset.touched=''; load(); }
+      else { showToast('设置失败：'+((res&&res.error)||''), 2000); }
+    }).catch(function(){ showToast('设置超时', 2000); });
+  });
   if (clearBtn) clearBtn.addEventListener('click', function(){
     if (!confirm('清空全部音频缓存？不影响播放列表。')) return;
     fetch(API_BASE, { signal: AbortSignal.timeout(8000) })
