@@ -3630,9 +3630,13 @@ function cacheKeyOf(t){
   var bvid=_bvidOf(t);
   if(bvid) return { server:'bilibili', id:'bilibili:'+bvid };
   var u=String(t.url||'');
+  // 形态一：跳板地址 .../music/go/<id>?server=X（id 在 path 段）
+  var gm=/\/music\/go\/([^?\/]+)(?:\?|$)/.exec(u);
+  var gs=/[?&]server=([^&]+)/.exec(u);
+  if(gm && gs) return { server:gs[1], id:decodeURIComponent(gm[1]) };
+  // 形态二：带 id=/server= 查询参数
   var mi=/[?&]id=([^&]+)/.exec(u);
-  var ms=/[?&]server=([^&]+)/.exec(u);
-  if(mi && ms) return { server:ms[1], id:mi[1] };
+  if(mi && gs) return { server:gs[1], id:mi[1] };
   if(t.id && t.server) return { server:t.server, id:t.id };
   return null;
 }
