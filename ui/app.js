@@ -3789,6 +3789,8 @@ function renderPL() {
   document.getElementById('plBody').querySelectorAll('.pl-item').forEach(function(el){
     el.addEventListener('contextmenu',function(e){
       e.preventDefault();
+      // 先清掉可能已存在的菜单：重复右键会堆叠多个，旧菜单也没人负责关
+      document.querySelectorAll('.pl-ctx-menu').forEach(function(m){ m.remove(); });
       var i=parseInt(el.dataset.i);
       if(isNaN(i)||!trks[i]) return;
       var curGroup=trks[i].group||'默认';
