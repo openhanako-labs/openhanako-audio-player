@@ -3617,6 +3617,26 @@ function toggleFav(url) {
   try { localStorage.setItem('hanako_audio_favs', JSON.stringify(favs)); } catch(e) {}
 }
 
+// B 站曲目的 bvid：url 是 go/BVxxx?server=bilibili，或 id 字段带前缀
+function _bvidOf(t){
+  var s=String((t&&t.url)||'')+' '+String((t&&t.id)||'');
+  var m=s.match(/BV[0-9A-Za-z]{8,12}/);
+  return m?m[0]:'';
+}
+
+// 列表条目缓存按钮用的 { server, id }；解析不出（本地/未找到）返 null
+function cacheKeyOf(t){
+  if(!t) return null;
+  var bvid=_bvidOf(t);
+  if(bvid) return { server:'bilibili', id:'bilibili:'+bvid };
+  var u=String(t.url||'');
+  var mi=/[?&]id=([^&]+)/.exec(u);
+  var ms=/[?&]server=([^&]+)/.exec(u);
+  if(mi && ms) return { server:ms[1], id:mi[1] };
+  if(t.id && t.server) return { server:t.server, id:t.id };
+  return null;
+}
+
 function renderPL() {
   document.getElementById('plCount').textContent=trks.length;
   if (!trks.length) { document.getElementById('plBody').innerHTML='<div class="pl-empty">暂无曲目，添加 URL 或点击电台开始</div>'; return; }
@@ -3666,6 +3686,7 @@ function renderPL() {
         +(t.searchKey&&!t.url?'<button class="pl-retry" data-retry="'+i+'" title="重新搜索">⟳</button>':'')
         +'<button class="pl-star'+(star?' starred':'')+'" data-star="'+i+'" title="收藏">'+(star?'★':'☆')+'</button>'
         +'<span class="pl-dur">'+fmt(t.dur||0)+'</span>'
+        +(cacheKeyOf(t)?'<button class="pl-cache" data-cache="'+i+'" title="缓存到本地">💾</button>':'')
         +'<button class="pl-rm" data-rm="'+i+'" title="移除">✕</button></div>';
     });
     html+='</div>';
@@ -3805,7 +3826,7 @@ function renderPL() {
   });
   document.getElementById('plBody').querySelectorAll('.pl-item').forEach(function(el){
     el.addEventListener('click',function(e){
-      if(e.target.closest('.pl-rm')||e.target.closest('.pl-star')||e.target.closest('.pl-handle')||e.target.closest('.pl-retry'))return;
+      if(e.target.closest('.pl-rm')||e.target.closest('.pl-star')||e.target.closest('.pl-handle')||e.target.closest('.pl-retry')||e.target.closest('.pl-cache'))return;
       if(window.__plJustDragged && (Date.now() - window.__plJustDragged) < 300) { window.__plJustDragged = 0; return; }
       const i=parseInt(this.dataset.i);
       if(i===idx){toggle();return;}
@@ -3831,6 +3852,26 @@ function renderPL() {
       const i=parseInt(this.dataset.star);
       toggleFav(trks[i].url);
       renderPL();
+    });
+  });
+  // ── 列表条目缓存按钮（播放/列表处一键缓存到本地）──
+  document.getElementById('plBody').querySelectorAll('.pl-cache').forEach(function(el){
+    el.addEventListener('click',function(e){
+      e.stopPropagation();
+      var i=parseInt(this.dataset.cache);
+      var t=trks[i];
+      var ck=cacheKeyOf(t);
+      if(!ck){ showToast('这条没有可缓存的音源', 1800); return; }
+      var btn=this;
+      btn.disabled=true; btn.textContent='⏳';
+      fetch(API+'/widget/api/music/cache/'+encodeURIComponent(ck.id)+'?server='+encodeURIComponent(ck.server), {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({title:(t&&t.name)||''}),
+        signal:AbortSignal.timeout(60000)
+      }).then(function(r){return r.json();}).then(function(res){
+        if(res && res.ok){ btn.textContent='✓'; btn.classList.add('cached'); showToast('已缓存', 1500); }
+        else { btn.textContent='💾'; btn.disabled=false; showToast('缓存失败：'+((res&&res.error)||''), 2500); }
+      }).catch(function(){ btn.textContent='💾'; btn.disabled=false; showToast('缓存超时', 2000); });
     });
   });
   // ── 重试搜索 ──
@@ -5578,13 +5619,6 @@ function doPlaylistImport(){
     var pf= sv==='netease'?'ncm': sv==='tencent'?'qq': null;
     if(!pf) return null;
     return {platform:pf, id:decodeURIComponent(mi[1])};
-  }
-
-  // B 站曲目的 bvid：url 是 go/BVxxx?server=bilibili，或 id 字段带前缀
-  function _bvidOf(t){
-    var s=String((t&&t.url)||'')+' '+String((t&&t.id)||'');
-    var m=s.match(/BV[0-9A-Za-z]{8,12}/);
-    return m?m[0]:'';
   }
 
   var _lastLrcKey='';

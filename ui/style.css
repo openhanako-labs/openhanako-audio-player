@@ -429,6 +429,14 @@ body.view-compact .inst-code { display: none; }
 }
 .pl-item .pl-star:hover { transform:scale(1.2); }
 .pl-item .pl-star.starred { color:#f0c060; }
+.pl-item .pl-cache {
+  background:none; border:none; color:var(--text-faint);
+  cursor:pointer; font-size:11px; padding:2px; flex-shrink:0;
+  opacity:0.35; transition:opacity 0.12s, color 0.12s;
+}
+.pl-item:hover .pl-cache { opacity:0.7; }
+.pl-item .pl-cache:hover { opacity:1; color:var(--accent); }
+.pl-item .pl-cache.cached { color:var(--accent); opacity:1; }
 .pl-item .pl-rm {
   background:none; border:none; color:var(--text-faint);
   cursor:pointer; font-size:11px; padding:2px; flex-shrink:0;
