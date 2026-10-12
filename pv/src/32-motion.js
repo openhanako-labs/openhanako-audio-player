@@ -18,6 +18,9 @@
   var PV = window.PV;
 
   PV.moveMax = 26;      // 整屏位移/边缘摆幅上限（px）
+  PV.enterGain = 0.62;  // 登场幅度增益：enter 件的 translate/scale/rotate 统一乘它
+                        //（camera/hold 有本文件预算错位，enter 一直裸奍 ——
+                        //  随机抽到 zoomIn(1.85)/砸入(2.1) 这类大落差件就是用户报的抖动偏移源）
   PV.shakeGain = 1;     // 全局抖动系数（0.5 = 所有抖都温柔一半）
 
   /* 哪些件属于"高频抖"：同帧只允许一个发声 */

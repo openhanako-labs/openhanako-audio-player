@@ -17,7 +17,9 @@
 }
 body.jizura-mode:not(.view-compact) .pv-jv { display: block; }
 body.jizura-mode:not(.view-compact) .pv-stage { display: flex; }
-body.jizura-mode:not(.view-compact) .pv-bg { display: none; }
+/* 封面背景在文字PV档同样显示（用户指定）：pv-bg 自带高糊+可读性罩层，
+   纯文字演出也需要封面底 —— 与 lyrics-mode 观感统一。 */
+body.jizura-mode:not(.view-compact) .pv-bg { display: block; }
 /* folia 的行在 PV 下不可见，但保留 DOM —— 退出时立刻能用 */
 body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 
