@@ -2805,7 +2805,17 @@ function applyThemeToCSS(theme) {
 
   const root = document.documentElement;
   const { colors, layout, animation } = theme;
-  const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+  // 明暗方向优先取 theme.mode（预设自带，最可靠），
+  // 没带才退到 data-theme；都没有才默认 dark。
+  // （实测：只靠 data-theme 时，未同步设上就会走错分支——
+  //   浅底配浅字，亮色主题的文字直接看不见。）
+  const currentTheme = theme.mode === 'light' ? 'light'
+    : (theme.mode === 'dark' ? 'dark'
+      : (document.documentElement.getAttribute('data-theme') || 'dark'));
+  // 同步把 data-theme 写正，保证 [data-theme="light"] 的 CSS 也跟上
+  if (currentTheme === 'light' || currentTheme === 'dark') {
+    root.setAttribute('data-theme', currentTheme);
+  }
 
   // 计算主色亮度
   const primaryHex = colors.primary || '#d49a6a';
@@ -4531,6 +4541,9 @@ function applyTheme(theme) {
   // data-theme 只允许 light/dark，auto 态的实际明暗由宿主主题决定
   document.documentElement.setAttribute('data-theme', theme);
 }
+// 显式挂到 window：本文件在 IIFE 内，顶层函数不等于全局；
+// 主题预设（applyPreset）靠 window.applyTheme 设明暗 —— 不挂就永远是暗色。
+window.applyTheme = applyTheme;
 
 function getThemeMode() {
   try { return localStorage.getItem('hanako_audio_theme_mode') || 'auto'; } catch(e) { return 'auto'; }
@@ -6580,7 +6593,7 @@ setTimeout(notifySize, 300);
       }
     }
     if (typeof window.applyThemeToCSS === "function") {
-      window.applyThemeToCSS({ colors: t.colors || {}, animation: t.animation });
+      window.applyThemeToCSS({ mode: t.mode, colors: t.colors || {}, animation: t.animation });
     } else {
       console.warn("[theme] applyThemeToCSS 不可用，只应用背景");
     }
