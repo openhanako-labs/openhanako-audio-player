@@ -1175,20 +1175,23 @@ body.view-compact .inst-code { display: none; }
     -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 13%, #000 87%, transparent 100%);
     mask-image: linear-gradient(180deg, transparent 0, #000 13%, #000 87%, transparent 100%);
   }
-  /* 封面背景（folia Monet 层）：封面铺满、轻度模糊、慢漂移 + 可读性罩层。
-   * 真机反馈三重稀释（blur52 × opacity.5 × 罩层60~88%）下封面辨识度归零
-   * （“不都是有的吗，就是没显示”）—— 全部收敛：blur20 / opacity.85 / 罩层减淡，
-   * 轮廓可辨、歌词仍可读；漂移走 transform，合成器白干。 */
+  /* 封面背景（folia Monet 层）：铺满 + 慢漂移 + 可读性罩层。
+   * 观感由单滑杆「封面清晰度」联动（--pv-clarity 0~1）：
+   *   1 = 接近原图直铺（CanCan 图2 那种，blur 趋 0、罩层最轻）
+   *   0 = 纯氛围糊底
+   * 三参全走 calc 联动，JS 只写一个变量。 */
   .pv-bg {
+    --pv-clarity: 0.8;
     position: absolute; inset: -4%;
     background-size: cover; background-position: center;
-    filter: blur(20px) saturate(1.18);
-    opacity: .85;
+    filter: blur(calc((1 - var(--pv-clarity)) * 30px)) saturate(1.18);
+    opacity: calc(0.6 + var(--pv-clarity) * 0.4);
     animation: pv-bg-drift 46s ease-in-out infinite alternate;
     will-change: transform;
   }
   .pv-bg::after {
     content: ''; position: absolute; inset: 0;
+    opacity: calc(1 - var(--pv-clarity) * 0.55);
     background: linear-gradient(120deg,
       color-mix(in srgb, var(--bg) 38%, transparent) 0%,
       color-mix(in srgb, var(--bg) 55%, transparent) 55%,
@@ -1822,6 +1825,12 @@ body.lyrics-mode:not(.view-compact) .pv-stage { flex:1 !important; width:100% !i
 
 /* 明暗切换按钮下线（主题由配色面板统一管理） */
 #themeBtn { display:none !important; }
+
+/* 内嵌矮卡适配：右上 100×40 是宿主保留区（胶囊/按钮群撞上就无法操作），
+ * 按钮组避让 + header 允许换行；卡片高度用户任意拖 —— min-height 保控件可点。 */
+body.view-compact .header { flex-wrap: wrap; row-gap: 4px; }
+body.view-compact .header-actions { padding-right: 96px; }
+body.view-compact .player-container { min-height: 150px; }
 
 
 /* 右键菜单背景：--card 变量不存在导致透明，改用 --card-bg */

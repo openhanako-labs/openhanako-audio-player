@@ -6152,14 +6152,21 @@ setTimeout(notifySize, 300);
   //   3. AudioContext 不是 running 就关掉放弃（无手势时它必然是 suspended）
   var REACTIVE_KEY = "hana_audio_reactive";
   var REACTIVE_GAIN_KEY = "hana_audio_reactive_gain";
-  var PV_BG_OPACITY_KEY = "hana_audio_pvbg_opacity";
+  var COVER_CLARITY_KEY = "hana_audio_cover_clarity";
   var reactive = { actx: null, analyser: null, data: null, raf: 0, gain: 2.4 };
 
-  function pvBgOpacity() {
+  function coverClarity() {
     try {
-      var v = parseFloat(localStorage.getItem(PV_BG_OPACITY_KEY));
-      return isFinite(v) && v >= 0.2 && v <= 1 ? v : 0.85;
-    } catch (e) { return 0.85; }
+      var v = parseFloat(localStorage.getItem(COVER_CLARITY_KEY));
+      return isFinite(v) && v >= 0 && v <= 1 ? v : 0.8;
+    } catch (e) { return 0.8; }
+  }
+  function applyCoverClarity(c) {
+    c = Math.max(0, Math.min(1, c));
+    var bg = document.getElementById("pvBg");
+    if (bg) bg.style.setProperty("--pv-clarity", String(c));
+    var op = document.getElementById("pvBgOpacity");
+    if (op) op.value = String(c);
   }
 
   function reactiveGain() {
@@ -6375,8 +6382,8 @@ setTimeout(notifySize, 300);
       '<button type="button" class="theme-panel-close" id="reactiveToggle">关</button></div>' +
       '<div class="theme-toggle-row"><span>强度</span>' +
       '<input type="range" id="reactiveGain" min="0.5" max="6" step="0.1" value="2.4"></div>' +
-      '<div class="theme-toggle-row"><span>封面背景浓度</span>' +
-      '<input type="range" id="pvBgOpacity" min="0.2" max="1" step="0.05"></div>' +
+      '<div class="theme-toggle-row"><span>封面清晰度（左=氛围糊底，右=接近原图）</span>' +
+      '<input type="range" id="pvBgOpacity" min="0" max="1" step="0.05"></div>' +
       '</div>';
     document.body.appendChild(p);
     // 滑杆拖的是 input 事件，不是 click —— 得单独接一根
@@ -6390,10 +6397,9 @@ setTimeout(notifySize, 300);
       }
       if (e.target && e.target.id === "pvBgOpacity") {
         var o = parseFloat(e.target.value);
-        if (isFinite(o) && o >= 0.2) {
-          var bg = document.getElementById("pvBg");
-          if (bg) bg.style.opacity = String(o);
-          try { localStorage.setItem(PV_BG_OPACITY_KEY, String(o)); } catch (err) {}
+        if (isFinite(o) && o >= 0) {
+          applyCoverClarity(o);
+          try { localStorage.setItem(COVER_CLARITY_KEY, String(o)); } catch (err) {}
         }
       }
     });
@@ -6410,12 +6416,11 @@ setTimeout(notifySize, 300);
         p.classList.remove("open");
       }
     });
-    // 回填封面浓度：滑杆值与 pvBg inline 同步到已存的用户偏好
-    var savedOp = pvBgOpacity();
+    // 回填封面清晰度：滑杆值与 pvBg 变量同步到已存的用户偏好
+    var savedOp = coverClarity();
     var opInput = p.querySelector("#pvBgOpacity");
     if (opInput) opInput.value = String(savedOp);
-    var bgEl0 = document.getElementById("pvBg");
-    if (bgEl0) bgEl0.style.opacity = String(savedOp);
+    applyCoverClarity(savedOp);
     return p;
   }
 
