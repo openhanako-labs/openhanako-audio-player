@@ -392,10 +392,25 @@
     if (i == null || i < 0) return;
     opts = opts || {};
     if (i === S.idx && !opts.force && !opts.layout) return;
-    var plan = PV.planLine(i, opts);
-    if (!plan) return;
-    var made = PV.render(plan);
-    if (!made) return;
+    /* 配牌/渲染段哨兵：偶发的 Assignment-to-const 类异常会打断 show 流程，
+     * 主行停在 opacity 0 = 用户看到的「有些歌词不显示」。
+     * 捕获后记进 PV.errors（环形 20 条，真机可读堆栈），旧行保留在台上不空屏。 */
+    var plan, made;
+    try {
+      plan = PV.planLine(i, opts);
+      if (!plan) return;
+      made = PV.render(plan);
+      if (!made) return;
+    } catch (e) {
+      (PV.errors = PV.errors || []).push({
+        at: Date.now(), i: i,
+        msg: String((e && e.message) || e),
+        stack: String((e && e.stack) || '').split('\n').slice(0, 4).join(' | ')
+      });
+      if (PV.errors.length > 20) PV.errors.shift();
+      if (typeof console !== 'undefined' && console.error) console.error('[pv] show/render 异常（保留旧行）：', e);
+      return;
+    }
 
     var prev = S.cur, oldPlan = S.plan;
     /* 开新一段前先把台上多余的行扫掉。上一段可能正在等一个延时 drop，
@@ -443,9 +458,24 @@
        * 只靠上面那次 trim 限不住它们（实测 track 里仍有 4 个整行）。*/
       trimTrack(prev, made.el);
     };
-    if (plan.transition && plan.transition.play) plan.transition.play(plan.ctx, prev, made.el, swap, drop);
-    else swap();
-    if (!made.el.parentNode) swap();      // 衔接件没调 swap 时的兜底
+    /* 应用段哨兵：transition/exit/swap 链路抛异常时 swap 可能没跑，
+     * 行没上台 = 空屏（真机「有些歌词不显示」的另一半）。
+     * 兜底强制 swap（内部有防重），宁要无动画上台，不要空屏。 */
+    try {
+      if (plan.transition && plan.transition.play) plan.transition.play(plan.ctx, prev, made.el, swap, drop);
+      else swap();
+      if (!made.el.parentNode) swap();      // 衔接件没调 swap 时的兜底
+    } catch (e) {
+      (PV.errors = PV.errors || []).push({
+        at: Date.now(), i: i, phase: 'transition/swap',
+        msg: String((e && e.message) || e),
+        stack: String((e && e.stack) || '').split('\n').slice(0, 4).join(' | ')
+      });
+      if (PV.errors.length > 20) PV.errors.shift();
+      if (typeof console !== 'undefined' && console.error) console.error('[pv] transition/swap 异常（兜底上屏）：', e);
+      try { swap(); } catch (_) {}
+      try { made.el.classList.add('show'); } catch (_) {}
+    }
 
     PV.applyTag(plan);
     PV.lastPlan = function () { return plan; };   /* 读数被点开时拿回当前配牌用 */
