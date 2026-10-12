@@ -4768,8 +4768,6 @@ function doMusicSearch(){
         +'<div class="music-info"><div class="music-title">'+esc(t.title)+'</div><div class="music-author">'+esc(t.author)+'</div></div>'
         +'<button class="music-play" title="播放">▶</button>'
         +'<button class="music-save" title="保存到列表">＋</button>'
-        +'<button class="music-add" title="加入编排队列">⇥</button>'
-        +'<button class="music-scene" title="加入场景">☾</button>'
         +'<button class="music-cache" title="缓存到本地" data-id="'+esc(t.id||'')+'" data-server="'+esc(t.server||document.getElementById('musicServer').value)+'">💾</button>'
         +'</div>';
     }).join('');
@@ -5582,6 +5580,13 @@ function doPlaylistImport(){
     return {platform:pf, id:decodeURIComponent(mi[1])};
   }
 
+  // B 站曲目的 bvid：url 是 go/BVxxx?server=bilibili，或 id 字段带前缀
+  function _bvidOf(t){
+    var s=String((t&&t.url)||'')+' '+String((t&&t.id)||'');
+    var m=s.match(/BV[0-9A-Za-z]{8,12}/);
+    return m?m[0]:'';
+  }
+
   var _lastLrcKey='';
   function _loadLineLrc(lrcUrl, trackName){
     if(!lrcUrl && !trackName) return;
@@ -5639,6 +5644,24 @@ function doPlaylistImport(){
       if(bg) bg.style.backgroundImage=t.pic?('url("'+String(t.pic).replace(/"/g,'')+'")'):'';
       window._jzCover=t.pic||'';
     }catch(e){}
+    // B 站曲目：优先用视频字幕当歌词（贴链接/BV 播放时歌词来源）
+    var bvid=_bvidOf(t);
+    if(bvid && !lrcUrl){
+      var bkey='bilisub:'+bvid;
+      var bc=_cachedLrcByUrl(bkey);
+      if(bc){ lrcData=bc; renderLrc(); return; }
+      fetch(API+'/widget/api/music/bilisub?bvid='+encodeURIComponent(bvid))
+        .then(function(r){ return r.json(); })
+        .then(function(res){
+          if(res && res.ok && res.lines && res.lines.length){
+            _saveLrcCache(bkey, res.lines);
+            lrcData=res.lines; renderLrc(); return;
+          }
+          _loadLineLrc(lrcUrl, t.name);   // 无字幕就退普通路径
+        })
+        .catch(function(){ _loadLineLrc(lrcUrl, t.name); });
+      return;
+    }
     // 先试逐字（TTML）：拿到手行级/字级都有了，拿不到再退 LRC
     var wp=_wordSourceOf(t);
     if(wp){
