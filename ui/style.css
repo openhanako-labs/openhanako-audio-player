@@ -1175,22 +1175,24 @@ body.view-compact .inst-code { display: none; }
     -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 13%, #000 87%, transparent 100%);
     mask-image: linear-gradient(180deg, transparent 0, #000 13%, #000 87%, transparent 100%);
   }
-  /* 封面背景（folia Monet 层）：封面铺满、高糊、慢漂移 + 可读性罩层。
-     罩层用主题 --bg，明暗主题下文字都可读；漂移走 transform，合成器白干。 */
+  /* 封面背景（folia Monet 层）：封面铺满、轻度模糊、慢漂移 + 可读性罩层。
+   * 真机反馈三重稀释（blur52 × opacity.5 × 罩层60~88%）下封面辨识度归零
+   * （“不都是有的吗，就是没显示”）—— 全部收敛：blur20 / opacity.85 / 罩层减淡，
+   * 轮廓可辨、歌词仍可读；漂移走 transform，合成器白干。 */
   .pv-bg {
-    position: absolute; inset: -6%;
+    position: absolute; inset: -4%;
     background-size: cover; background-position: center;
-    filter: blur(52px) saturate(1.15);
-    opacity: .5;
+    filter: blur(20px) saturate(1.18);
+    opacity: .85;
     animation: pv-bg-drift 46s ease-in-out infinite alternate;
     will-change: transform;
   }
   .pv-bg::after {
     content: ''; position: absolute; inset: 0;
     background: linear-gradient(120deg,
-      color-mix(in srgb, var(--bg) 60%, transparent) 0%,
-      color-mix(in srgb, var(--bg) 78%, transparent) 55%,
-      color-mix(in srgb, var(--bg) 88%, transparent) 100%);
+      color-mix(in srgb, var(--bg) 38%, transparent) 0%,
+      color-mix(in srgb, var(--bg) 55%, transparent) 55%,
+      color-mix(in srgb, var(--bg) 72%, transparent) 100%);
   }
   @keyframes pv-bg-drift {
     0%   { transform: scale(1.08) translate(0, 0); }
