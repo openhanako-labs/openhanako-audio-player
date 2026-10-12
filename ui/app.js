@@ -4055,7 +4055,8 @@ audio.addEventListener('error',function(){
 audio.addEventListener('play',function(){playing=true;npCover.classList.add('spinning');document.getElementById('playIcon').style.display='none';document.getElementById('pauseIcon').style.display='block';});
 audio.addEventListener('pause',function(){playing=false;npCover.classList.remove('spinning');document.getElementById('playIcon').style.display='block';document.getElementById('pauseIcon').style.display='none';});
 
-function addTrack(name,url,mode,group,lrcUrl,pic) {
+function addTrack(name,url,mode,group,lrcUrl,pic,server,opts) {
+  opts = opts || {};
   // 去重：url 非空时按裸 url（去掉 query）匹配，url 为空时按 name 匹配
   var bareUrl = url ? url.split('?')[0] : '';
   for(let i=0;i<trks.length;i++){
@@ -4067,8 +4068,8 @@ function addTrack(name,url,mode,group,lrcUrl,pic) {
         if(name) trks[i].name = name;
         if(lrcUrl) trks[i].lrcUrl = lrcUrl;
         if(pic) trks[i].pic = pic;
-        load(i);
-        if(audio.paused){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});}
+        if(!opts.silent){ load(i); }
+        if(!opts.silent && audio.paused){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});}
         saveTrks();
         renderPL();
         return;
@@ -4076,17 +4077,19 @@ function addTrack(name,url,mode,group,lrcUrl,pic) {
     }
     if(!url && trks[i].name===name && !trks[i].url){return;}
   }
-  // 自动分组：未指定时按 mode 推断
+  // 自动分组：未指定时按 mode/源推断
   if(!group) {
     if(mode==='TTS'||mode==='编排') group='TTS/语音';
     else if(mode==='本地') group='本地音乐';
+    else if(server==='bilibili' || (url && url.indexOf('bilibili')!==-1) || (url && url.indexOf('bilivideo')!==-1)) group='B站';
     else if(url && url.includes('ilovemusic')) group='电台流';
     else group='在线音乐';
   }
   // 存 lrc 映射
   if(lrcUrl && url) lrcMap[url]=lrcUrl;
-  trks.push({name:name||url.split('/').pop().split('\\').pop().split('?')[0]||'音频',url:url,mode:mode||(url.startsWith('http')?'在线':'本地'),dur:0,group:group,lrcUrl:lrcUrl||'',pic:pic||''});
-  if(!_batchLoading){ load(trks.length-1); if(trks[trks.length-1] && trks[trks.length-1].url){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});} renderPL(); saveTrks(); }
+  trks.push({name:name||url.split('/').pop().split('\\').pop().split('?')[0]||'音频',url:url,mode:mode||(url.startsWith('http')?'在线':'本地'),dur:0,group:group,lrcUrl:lrcUrl||'',pic:pic||'',server:server||''});
+  if(!_batchLoading && !opts.silent){ load(trks.length-1); if(trks[trks.length-1] && trks[trks.length-1].url){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});} renderPL(); saveTrks(); }
+  else { renderPL(); saveTrks(); }
 }
 
 function tok(url) {
@@ -4213,7 +4216,7 @@ document.querySelectorAll('.group-tab').forEach(function(btn) {
 // ── 自建分组 tab（主 IIFE 内，直接访问 trks/currentGroup/renderPL/showGroupPicker） ──
 (function(){
     var CKEY='hanako_audio_custom_groups';
-    var FIXED=['本地音乐','在线音乐','TTS/语音','电台流','默认','我的喜欢'];
+    var FIXED=['本地音乐','在线音乐','B站','TTS/语音','电台流','默认','我的喜欢'];
     function loadG(){try{return JSON.parse(localStorage.getItem(CKEY))||[]}catch(e){return[]}}
     function saveG(l){try{localStorage.setItem(CKEY,JSON.stringify(l))}catch(e){}}
     function knownGroups(){
@@ -4343,8 +4346,122 @@ document.querySelectorAll('.nav-tab').forEach(function(btn) {
     var tabId = 'tab-' + this.dataset.tab;
     document.querySelectorAll('.tab-pane').forEach(function(p) { p.classList.remove('active'); });
     document.getElementById(tabId).classList.add('active');
+    // 缓存页激活时懒加载
+    if (this.dataset.tab === 'cache' && window.__cachePanelLoad) window.__cachePanelLoad();
   });
 });
+
+// ── 缓存管理面板 ──
+// 后端已有 GET /widget/api/music/cache（列表+用量）、DELETE /cache/:id、POST /cache/:id。
+// 这里只做前端呈现：总量进度条 + 逐条列表 + 单删 + 清空。
+(function(){
+  var listEl = document.getElementById('cacheList');
+  if (!listEl) return;
+  var fillEl = document.getElementById('cacheMeterFill');
+  var textEl = document.getElementById('cacheMeterText');
+  var clearBtn = document.getElementById('cacheClearBtn');
+  var reloadBtn = document.getElementById('cacheReloadBtn');
+  var API_BASE = (typeof API !== 'undefined' ? API : '') + '/widget/api/music/cache';
+
+  function fmtSize(b){
+    if (!b || b < 0) return '0 B';
+    if (b < 1024) return b + ' B';
+    if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+    if (b < 1024*1024*1024) return (b/1024/1024).toFixed(1) + ' MB';
+    return (b/1024/1024/1024).toFixed(2) + ' GB';
+  }
+  function fmtTime(ms){
+    if (!ms) return '';
+    var d = new Date(ms);
+    function p(n){ return (n<10?'0':'')+n; }
+    return (d.getMonth()+1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  // cacheId 形如 "server:id"，曲名索引里没有 → 拆出 id 作为可读名，再从当前播放列表找标题
+  function niceName(cacheId){
+    var id = String(cacheId).split(':').slice(1).join(':') || cacheId;
+    try {
+      if (typeof trks !== 'undefined') {
+        for (var i = 0; i < trks.length; i++) {
+          var t = trks[i];
+          if (t && (t.id === id || (t.url && t.url.indexOf(id) !== -1))) return t.name || id;
+        }
+      }
+    } catch(e) {}
+    return id;
+  }
+
+  function render(data){
+    var entries = (data && data.entries) || [];
+    var total = data && data.totalBytes || 0;
+    var limit = data && data.limitBytes || (500*1024*1024);
+    var pct = data && typeof data.usedPct === 'number' ? Math.round(data.usedPct*100) : Math.round(total/limit*100);
+    if (fillEl) fillEl.style.width = Math.min(100, pct) + '%';
+    if (textEl) textEl.textContent = fmtSize(total) + ' / ' + fmtSize(limit) + '（' + pct + '%）';
+    if (!entries.length) {
+      listEl.innerHTML = '<div class="cache-empty">暂无缓存。<br>在搜索结果的 💾 按钮或播放时可缓存到本地。</div>';
+      if (clearBtn) clearBtn.disabled = true;
+      return;
+    }
+    if (clearBtn) clearBtn.disabled = false;
+    // 按写入时间倒序
+    entries.sort(function(a,b){ return (b.at||0) - (a.at||0); });
+    listEl.innerHTML = entries.map(function(en){
+      var cid = en.id || en.cacheId || '';
+      var label = en.title || niceName(cid);
+      return '<div class="cache-row" data-cid="'+esc(cid)+'">'
+        + '<div class="cache-row-info">'
+        +   '<div class="cache-row-name">'+esc(label)+'</div>'
+        +   '<div class="cache-row-meta">'+fmtSize(en.sizeBytes||0)+' · '+fmtTime(en.at)+'</div>'
+        + '</div>'
+        + '<button class="cache-row-del" title="删除">✕</button>'
+        + '</div>';
+    }).join('');
+  }
+
+  function load(){
+    listEl.innerHTML = '<div class="cache-empty">加载中…</div>';
+    fetch(API_BASE, { signal: AbortSignal.timeout(8000) })
+      .then(function(r){ return r.json(); })
+      .then(function(res){ render(res); })
+      .catch(function(e){ listEl.innerHTML = '<div class="cache-empty">'+(e.name==='TimeoutError'?'加载超时':'加载失败（后端不可用？）')+'</div>'; });
+  }
+  window.__cachePanelLoad = load;
+
+  listEl.addEventListener('click', function(e){
+    var del = e.target.closest('.cache-row-del');
+    if (!del) return;
+    var row = del.closest('.cache-row');
+    var cid = row && row.dataset.cid;
+    if (!cid) return;
+    var parts = cid.split(':');
+    var server = parts[0] || 'netease';
+    var id = parts.slice(1).join(':');
+    fetch((typeof API!=='undefined'?API:'') + '/widget/api/music/cache/' + encodeURIComponent(id) + '?server=' + encodeURIComponent(server), { method: 'DELETE', signal: AbortSignal.timeout(8000) })
+      .then(function(r){ return r.json(); })
+      .then(function(res){ if (res && res.ok) { if (row) row.remove(); load(); } else { showToast('删除失败', 1500); } })
+      .catch(function(){ showToast('删除失败', 1500); });
+  });
+
+  if (reloadBtn) reloadBtn.addEventListener('click', load);
+  if (clearBtn) clearBtn.addEventListener('click', function(){
+    if (!confirm('清空全部音频缓存？不影响播放列表。')) return;
+    fetch(API_BASE, { signal: AbortSignal.timeout(8000) })
+      .then(function(r){ return r.json(); })
+      .then(function(res){
+        var entries = (res && res.entries) || [];
+        if (!entries.length) { load(); return; }
+        var jobs = entries.map(function(en){
+          var cid = en.cacheId || en.id || '';
+          var parts = String(cid).split(':');
+          var server = parts[0] || 'netease';
+          var id = parts.slice(1).join(':');
+          return fetch((typeof API!=='undefined'?API:'') + '/widget/api/music/cache/' + encodeURIComponent(id) + '?server=' + encodeURIComponent(server), { method: 'DELETE', signal: AbortSignal.timeout(8000) }).catch(function(){});
+        });
+        return Promise.all(jobs).then(function(){ load(); showToast('缓存已清空', 1500); });
+      })
+      .catch(function(){ showToast('清空失败', 1500); });
+  });
+})();
 // ── 返回列表按钮 ──
 document.querySelectorAll('.tab-back-btn').forEach(function(btn) {
   btn.addEventListener('click', function() {
@@ -4650,7 +4767,8 @@ function doMusicSearch(){
         +(t.pic ? '<img class="music-thumb" src="'+esc(t.pic)+'" loading="lazy">' : '<div class="music-thumb-placeholder">♫</div>')
         +'<div class="music-info"><div class="music-title">'+esc(t.title)+'</div><div class="music-author">'+esc(t.author)+'</div></div>'
         +'<button class="music-play" title="播放">▶</button>'
-        +'<button class="music-add" title="加入队列">+</button>'
+        +'<button class="music-save" title="保存到列表">＋</button>'
+        +'<button class="music-add" title="加入编排队列">⇥</button>'
         +'<button class="music-scene" title="加入场景">☾</button>'
         +'<button class="music-cache" title="缓存到本地" data-id="'+esc(t.id||'')+'" data-server="'+esc(t.server||document.getElementById('musicServer').value)+'">💾</button>'
         +'</div>';
@@ -4696,7 +4814,15 @@ document.getElementById('musicResults').addEventListener('click', function(e){
     }).catch(function(e){ showToast(e.name==='TimeoutError'?'搜索超时':'搜索失败', 2500); });
   }
   if(e.target.closest('.music-play')){
-    withUrl(function(u, t){ addTrack(t, u, '在线', null, item.dataset.lrc, item.dataset.pic); });
+    withUrl(function(u, t){ addTrack(t, u, '在线', null, item.dataset.lrc, item.dataset.pic, server); });
+  } else if(e.target.closest('.music-save')){
+    // 保存到列表：按源自动分类（B站→「B站」组），不自动播放
+    withUrl(function(u, t){
+      var g = (server === 'bilibili') ? 'B站' : '在线音乐';
+      var before = trks.length;
+      addTrack(t, u, '在线', g, item.dataset.lrc, item.dataset.pic, server, { silent: true });
+      showToast((trks.length > before ? '已保存到「' : '已在「') + g + '」', 1800);
+    });
   } else if(e.target.closest('.music-add')){
     withUrl(function(u, t){ busControl('play', {url:u, name:t, mode:'在线'}); });
   } else if(e.target.closest('.music-scene')){

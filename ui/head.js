@@ -1,6 +1,6 @@
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1012100156";
+  window.__HANA_BUILD = "1012101150";
 
   // __whenHana(cb)：SDK 就绪后回调；已就绪立即执行。事件见 index.html 的 module 胶水。
   window.__whenHana = function (cb) {

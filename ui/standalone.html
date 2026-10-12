@@ -2540,6 +2540,7 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
   <button class="nav-tab" data-tab="search">搜索</button>
   <button class="nav-tab" data-tab="scene">场景</button>
   <button class="nav-tab" data-tab="bus">编排</button>
+  <button class="nav-tab" data-tab="cache">缓存</button>
 </div>
 
 <!-- 标签页内容 -->
@@ -2684,6 +2685,24 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
       <button class="bus-play-add-btn" id="busPlayAddBtn">Add</button>
     </div>
   </div>
+<!-- 缓存标签页 -->
+<div class="tab-pane" id="tab-cache">
+  <div class="tab-back-bar"><button class="tab-back-btn">← 返回列表</button></div>
+  <div class="cache-pane">
+    <div class="cache-head">
+      <span class="cache-title">本地缓存</span>
+      <button class="cache-reload" id="cacheReloadBtn" title="刷新">↻</button>
+    </div>
+    <div class="cache-meter">
+      <div class="cache-meter-bar"><div class="cache-meter-fill" id="cacheMeterFill"></div></div>
+      <div class="cache-meter-text" id="cacheMeterText">加载中…</div>
+    </div>
+    <div class="cache-list" id="cacheList"></div>
+    <div class="cache-actions">
+      <button class="cache-clear-btn" id="cacheClearBtn">清空全部缓存</button>
+    </div>
+  </div>
+</div>
 <!-- Hidden elements for legacy JS references -->
 <div style="display:none">
   <select id="musicServer"><option value="netease">网易云</option><option value="tencent">QQ</option><option value="kugou">酷狗</option><option value="baidu">百度</option><option value="kuwo">酷我</option><option value="bilibili">B站</option></select>
