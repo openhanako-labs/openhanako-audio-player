@@ -3352,6 +3352,10 @@ var PLAY_LOCK = "hana_audio_play_lock";
 function claimPlayLock() {
   try { localStorage.setItem(PLAY_LOCK, _instId + "|" + Date.now()); } catch (e) {}
 }
+// 播放中定期续约：租约 15s，播放时每 5s 写一次，锁不会在自己手上过期。
+// 抢锁本身由下面 3405 行已有的 play 监听负责，这里只管续约。
+// 暂停时不写（让别人有机会接手），但也不广播 —— 广播是 broadcastPause 的事。
+setInterval(function(){ try { if (audio && !audio.paused && !audio.ended) claimPlayLock(); } catch(e){} }, 5000);
 // “全局暂停”：用户按停时写进去，别的实例也会读到并停下来。
 //
 // 不加这个会出现很难解释的现象：我明明按了暂停，声音还在 ——
@@ -3366,10 +3370,21 @@ function _lockOwner() {
 function _globallyPaused() {
   return _lockOwner() === PAUSE_SENTINEL;
 }
+// 播放权租约：超过这个时长没有续约，就认为持有者已经不在了。
+// 为什么需要：localStorage 里的锁不会随实例消失而清除（关卡/刷新都不清）。
+// 旧判定只看 id 不等时间，于是上一个实例的 id 会永久占着锁 —— 新卡第一次
+// 点歌只挂曲目不出声，弹「已在别处播放」，非要先放一首别的把锁抢过来才正常。
+var PLAY_LOCK_TTL = 15000;
 function _lockedByOther() {
   try {
     var parts = (localStorage.getItem(PLAY_LOCK) || "").split("|");
-    return parts.length > 1 && parts[0] && parts[0] !== _instId;
+    if (parts.length < 2 || !parts[0]) return false;
+    if (parts[0] === PAUSE_SENTINEL) return false;   // 全局暂停不是别人的锁
+    if (parts[0] === _instId) return false;
+    var at = parseInt(parts[1], 10);
+    if (!Number.isFinite(at)) return false;          // 写太旧没时间戳 → 不当锁
+    if (Date.now() - at > PLAY_LOCK_TTL) return false; // 租约过期 → 无主
+    return true;
   } catch (e) { return false; }
 }
 var yielding = false;   // 正在被动让位（不是用户按的暂停）
@@ -3494,30 +3509,46 @@ function load(i) {
     npCover.innerHTML = '♫';
   }
   updateFavBtn();
+  // 是否让位给别的实例。
+  // 关键区分：
+  //   claimLock===true（用户主动点了这首歌）→ 无条件接管播放权。
+  //     多实例互斥的本意是「别几个同时响」，不是「用户点了却装死」。
+  //     旧代码在这里只看锁，用户点了也弹「已在别处播放」，非要先放一首
+  //     别的把锁抢过来才正常 —— 这就是「第一次点 B 站歌放不出」的根因。
+  //     自动场景（投卡、启动认领）才让位，那些场景没有明确的用户意图。
+  //   claimLock!==true → 保留旧行为：别处在放就只挂曲目不出声。
+  var claimLock = (arguments.length > 1) ? !!arguments[1] : false;
+  if (claimLock) claimPlayLock();
   if(t.url) {
     audio.src = tok(t.url);
     audio.load();
-    // 别处正在放就只挂曲目、不出声。这条区分很重要：
-    //   抢播放权  —— 会让两张卡叠着重放，不该抢
-    //   显示曲目  —— 歌名 / 时长 / 歌词都靠它，不显示的话卡就像坏了
-    // 上一版把两件事写在一起，结果新卡停在“准备就绪”、横幅也一并没了。
-    if (_lockedByOther()) {
+    // 换歌就作废上一首的等待态：否则上一首的 canplay / 超时定时器会在
+    // 这一首上误触发，把旧歌提前放出来，或在新歌还在加载时就报超时。
+    if (_playWaitTimer) { clearTimeout(_playWaitTimer); _playWaitTimer = null; }
+    if (!claimLock && _lockedByOther()) {
       showToast("已在别处播放，这里只显示", 2000);
+    } else if (claimLock) {
+      // 用户主动点的 → 这里只负责把 src 挂好，播放交给调用方。
+      //
+      // 为什么不能在这里 play：调用方（列表点击）在 load() 之后紧跟一句
+      // audio.play()，同一 tick 内对同一个 src 连调两次 play()，浏览器会中断
+      // 前一次并以 AbortError reject。而 AbortError 在 catch 里被静默吞掉
+      // —— 于是没有任何播放发生、没有任何报错，界面永远停在 0:00。
+      // B 站歌首播慢（view + playurl 两次往返）最容易撞上，普通歌秒开
+      // 时第一次已成功，第二次只是 no-op，所以这个 bug 只在慢源上显形。
+      //
+      // 自动场景（claimLock=false）没有外部补调用，播放由这里发起，
+      // 但走统一的 _playCurrent —— 慢源同样会显示「正在获取音频」而不是装死。
     } else {
-      audio.play().catch(function (e) {
-        if (e && e.name === "NotAllowedError") {
-          // 宿主没给卡片 autoplay 授权（实测已知），这不是故障，是既定事实。
-          showToast("点一下播放键开始", 2200);
-        } else if (e && e.name !== "AbortError") {
-          console.warn(e);
-        }
-      });
+      _playCurrent("自动播放");
     }
   }
   // 歌词自动搜索：有 URL 但没有 LRC URL 时自动搜索歌词
   if(t.url && !t.lrcUrl && t.name) {
-    var sv = t.searchServer || 'netease';
-    fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(t.name)+'&server='+sv, {signal:AbortSignal.timeout(8000)})
+    // B 站 MV 的标题是 UP 主吐槽，直接搜不中；清洗出真歌名再搜
+    var sv = t.searchServer || (t.url.indexOf('server=bilibili')!==-1 ? 'netease' : 'netease');
+    var _q=_cleanTrackName(t.name);
+    fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(_q)+'&server='+sv, {signal:AbortSignal.timeout(8000)})
       .then(function(r){return r.json();})
       .then(function(res){
         if(res.ok && res.results && res.results.length) {
@@ -3586,9 +3617,76 @@ function load(i) {
   renderPL();
 }
 
+/* ── 播放当前 src，等媒体就绪 ────────────────────
+ *
+ * 为什么需要它：B 站歌的 src 走 /go 跳板，后端要先 view 拿 cid、再 playurl
+ * 拿 dash 音频，两次网络往返，首播常要 1-3 秒。这期间直接调 audio.play()
+ * 只会拿到一个 pending 的 Promise —— 界面不动、不报错，用户以为坏了。
+ *
+ * 更糟的是旧的调用方式：load() 内部播一次、调用方（列表点击）紧跟又播一次。
+ * 同一 tick 对同一个 src 连调两次 play()，浏览器中断前一次并以 AbortError
+ * reject，而 AbortError 在 catch 里被静默吞掉 —— 结果谁都没播，且无声无息。
+ * 这就是「第一次点 B 站歌永远停在 0:00」的根因（2026-10-12）。
+ *
+ * 现在统一入口：load() 只负责挂 src，播放都走这里。
+ * 就绪就播，没就绪挂一次性 canplay；超时给一句实话，不再装死。
+ */
+var _playWaitTimer = null, _playWaitBound = false;
+function _playCurrent(who, urlOverride){
+  // 判据必须是数据（trks[idx].url），不能是 audio.src。
+  // audio.src 读出来是解析后的绝对 URL，audio.load() 之后 networkState 可能回到
+  // NETWORK_EMPTY，此时某些浏览器实现下 audio.src 读出来是空串 —— 用它当判据
+  // 会把所有歌都拒掉，弹「这首没有可播放的音频源」（2026-10-12 实测踩过）。
+  var srcUrl = urlOverride || (trks[idx] && trks[idx].url) || '';
+  if (!srcUrl) { showToast("这首没有可播放的音频源", 2200); return; }
+  // 已经能播了 → 直接播，别绕一圈 canplay
+  if (audio.readyState >= 3) { _doPlay(); return; }
+  // 告诉用户正在加载，别让界面装死
+  showToast("正在获取音频…", 1500);
+  if (_playWaitTimer) { clearTimeout(_playWaitTimer); _playWaitTimer = null; }
+  if (!_playWaitBound) {
+    _playWaitBound = true;
+    // 一次性语义：每次播放前都换新监听，避免上一首的 canplay 把这一首提前放掉
+    audio.addEventListener("canplay", _onPlayReady);
+    audio.addEventListener("error", _onPlayError);
+  }
+  _playWaitTimer = setTimeout(function(){
+    _playWaitTimer = null;
+    showToast("音频获取超时，可重试或换源", 2600);
+  }, 12000);
+}
+function _onPlayReady(){
+  if (_playWaitTimer) { clearTimeout(_playWaitTimer); _playWaitTimer = null; }
+  // 只有当前确实还在等这一首时才播 —— 用户中途换了歌就不该把旧的那首放出来
+  _doPlay();
+}
+function _onPlayError(){
+  if (_playWaitTimer) { clearTimeout(_playWaitTimer); _playWaitTimer = null; }
+  showToast("音频加载失败，换源或重试", 2600);
+}
+function _doPlay(){
+  claimPlayLock();
+  var p = audio.play();
+  // play() 可能返回 undefined（老浏览器）或 Promise。就绪时才置 playing ——
+  // 提前置真会在 play 失败时留下「界面在转但其实没声」的错状态。
+  if (p && typeof p.then === 'function') {
+    p.then(function(){
+      playing = true;
+      npCover.classList.add("spinning");
+    }).catch(function(e){
+      if (e && e.name === "NotAllowedError") showToast("点一下播放键开始", 2200);
+      else if (e && e.name !== "AbortError") console.warn(e);
+    });
+  } else {
+    playing = true;
+    npCover.classList.add("spinning");
+  }
+  if (window.audioEventBus) window.audioEventBus.emit("audio:play", "music", { currentTime: audio.currentTime, duration: audio.duration });
+}
+
 function toggle() {
   if (!trks.length) return;
-  if (audio.paused) { audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)}); playing=true; npCover.classList.add('spinning'); if (window.audioEventBus) window.audioEventBus.emit('audio:play', 'music', { currentTime: audio.currentTime, duration: audio.duration }); }
+  if (audio.paused) { _playCurrent("用户点击播放键"); }
   else { audio.pause(); playing=false; npCover.classList.remove('spinning'); if (window.audioEventBus) window.audioEventBus.emit('audio:pause', 'music', { currentTime: audio.currentTime }); }
   document.getElementById('playIcon').style.display=playing?'none':'block';
   document.getElementById('pauseIcon').style.display=playing?'block':'none';
@@ -3603,7 +3701,7 @@ function next() {
   load(n);
   // 只有 URL 存在时才同步播放；searchKey 类型由 load() 内部异步搜索后自动播放
   if (trks[n] && trks[n].url) {
-    audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});
+    _playCurrent("下一首");
   }
 }
 function prev() {
@@ -3612,7 +3710,7 @@ function prev() {
   const n = (playMode===2) ? Math.floor(Math.random()*trks.length) : (idx-1+trks.length)%trks.length;
   load(n);
   if (trks[n] && trks[n].url) {
-    audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});
+    _playCurrent("上一首");
   }
 }
 
@@ -3637,10 +3735,14 @@ function _bvidOf(t){
 }
 
 // 列表条目缓存按钮用的 { server, id }；解析不出（本地/未找到）返 null
+//
+// 与后端 normalizeCacheKey 对齐：id 一律返回**不带源前缀**的裸 id（BVxxx / 数字 id），
+// server 单独给。以前这里返回 'bilibili:'+bvid，后端又不剥，于是 cacheId 变成
+// bilibili:bilibili:BVxxx —— 缓存写进谁也读不到的键（2026-10-12 实测）。
 function cacheKeyOf(t){
   if(!t) return null;
   var bvid=_bvidOf(t);
-  if(bvid) return { server:'bilibili', id:'bilibili:'+bvid };
+  if(bvid) return { server:'bilibili', id:bvid };
   var u=String(t.url||'');
   // 形态一：跳板地址 .../music/go/<id>?server=X（id 在 path 段）
   var gm=/\/music\/go\/([^?\/]+)(?:\?|$)/.exec(u);
@@ -3653,7 +3755,88 @@ function cacheKeyOf(t){
   return null;
 }
 
+// ── 曲名清洗：UP 主标题 ≠ 歌名 ───────────────────
+//
+// B 站音乐 MV 的 title 常常是 UP 主的整句吐槽 + 装饰，例如
+//   “涩涩的，但是很好听。”||《エンドルフィン》
+// 直接拿去搜 Meting / AMLL 必然不中。这里抽出一个可用于搜索的干净歌名。
+// 规则按常见程度排：
+//   1) 《…》/「…」/『…』 里的内容优先（UP 主最常用来标歌名）
+//   2) “||” 分段：歌名通常在||前，吐槽在后；但也见过反的，取较长的那段
+//   3) 去掉首尾引号与空白
+//   4) 再去掉 (feat. xxx) / 【…】这类常见后缀
+// 每一步都设了兜底：剥空了就退回上一步的结果，绝不返回空串。
+// 必须是顶层函数：load() 在顶层，歌词搜索和 B 站字幕兜底都要用它。
+function _cleanTrackName(raw){
+  var s=String(raw||'').trim();
+  if(!s) return '';
+  var step1=s;
+  var m=/《([^》]{1,80})》/.exec(s)||/[「『]([^」』]{1,80})[」』]/.exec(s);
+  if(m && m[1].trim()) step1=m[1].trim();
+  var segs=step1.split(/\s*\|\|\s*/).filter(function(x){return x.trim();});
+  var step2=step1;
+  if(segs.length>1){
+    segs.sort(function(a,b){return b.length-a.length;});
+    step2=segs[0].trim();
+  }
+  var step3=step2.replace(/^[\s"'“”‘’]+|[\s"'“”‘’]+$/g,'').trim();
+  if(!step3) step3=step2;
+  var step4=step3.replace(/\s*[(（[【][^)）\]]】]{0,40}[)）\]]】]/g,'').replace(/\s*feat\..*$/i,'').trim();
+  return step4||step3||step2||step1||s;
+}
+
+// ── 已缓存集合（"server:id"）────────────────────────────
+// 以前只有点💾的那一刻把按钮置成 ✓，刷新/重搜/重渲染就丢，用户看不出哪首已经在本地。
+// 现在启动与每次渲染前都拉一次 GET /widget/api/music/cache，命中集合的按钮直接出 ✓。
+// 点缓存成功/删除时同步更新集合，避免下次拉取前状态不一致。
+var __cachedIds=null;      // Set<string> 或 null（未加载）
+var __cachedLoading=false;
+
+function _loadCachedIds(force){
+  if(__cachedLoading) return;
+  if(__cachedIds && !force) return;
+  __cachedLoading=true;
+  fetch((typeof API!=='undefined'?API:'')+'/widget/api/music/cache',{signal:AbortSignal.timeout(8000)})
+    .then(function(r){return r.json();})
+    .then(function(j){
+      var s=new Set();
+      ((j&&j.entries)||[]).forEach(function(en){
+        var cid=en.id||en.cacheId||'';
+        if(cid) s.add(String(cid));
+      });
+      __cachedIds=s;
+    })
+    .catch(function(){ /* 后端不可用：保持上次的集合，不阻断渲染 */ })
+    .then(function(){ __cachedLoading=false; });
+}
+
+// 某条曲目是否已缓存。未加载过集合时返回 false（宁可少显示，别错显示）。
+function _isCached(t){
+  if(!__cachedIds) return false;
+  var ck=cacheKeyOf(t);
+  if(!ck) return false;
+  return __cachedIds.has(ck.server+':'+ck.id);
+}
+
+// 给 {server,id} 用的轻量版（搜索结果渲染时手上只有 ck，没有整条 track）。
+function _cachedInSet(set,ck){
+  if(!set||!ck) return false;
+  return set.has(ck.server+':'+ck.id);
+}
+
+function _markCached(t,on){
+  var ck=cacheKeyOf(t);
+  if(!ck||!__cachedIds) return;
+  var k=ck.server+':'+ck.id;
+  if(on) __cachedIds.add(k); else __cachedIds.delete(k);
+}
+
+function _cacheBtn(extraAttrs){
+  return extraAttrs||'';
+}
+
 function renderPL() {
+  _loadCachedIds();
   document.getElementById('plCount').textContent=trks.length;
   if (!trks.length) { document.getElementById('plBody').innerHTML='<div class="pl-empty">暂无曲目，添加 URL 或点击电台开始</div>'; return; }
   var favOnly = document.getElementById('favFilterBtn').classList.contains('active');
@@ -3702,7 +3885,7 @@ function renderPL() {
         +(t.searchKey&&!t.url?'<button class="pl-retry" data-retry="'+i+'" title="重新搜索">⟳</button>':'')
         +'<button class="pl-star'+(star?' starred':'')+'" data-star="'+i+'" title="收藏">'+(star?'★':'☆')+'</button>'
         +'<span class="pl-dur">'+fmt(t.dur||0)+'</span>'
-        +(cacheKeyOf(t)?'<button class="pl-cache" data-cache="'+i+'" title="缓存到本地">💾</button>':'')
+        +(cacheKeyOf(t)?'<button class="pl-cache'+(_isCached(t)?' cached':'')+'" data-cache="'+i+'" title="'+(_isCached(t)?'已缓存到本地':'缓存到本地')+'">'+(_isCached(t)?'✓':'💾')+'</button>':'')
         +'<button class="pl-rm" data-rm="'+i+'" title="移除">✕</button></div>';
     });
     html+='</div>';
@@ -3860,8 +4043,10 @@ function renderPL() {
       if(window.__plJustDragged && (Date.now() - window.__plJustDragged) < 300) { window.__plJustDragged = 0; return; }
       const i=parseInt(this.dataset.i);
       if(i===idx){toggle();return;}
-      load(i);
-      if(trks[i] && trks[i].url){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});}
+      // 第二个参数 true = 用户主动点的，接管播放权（见 load() 里的说明）。
+      // 少了它，冷启动第一次点歌会被陈旧锁挡住，非要先放一首别的才正常。
+      load(i, true);
+      if(trks[i] && trks[i].url) _playCurrent("用户点击");
     });
   });
   document.getElementById('plBody').querySelectorAll('.pl-rm').forEach(function(el){
@@ -3899,7 +4084,7 @@ function renderPL() {
         body:JSON.stringify({title:(t&&t.name)||''}),
         signal:AbortSignal.timeout(60000)
       }).then(function(r){return r.json();}).then(function(res){
-        if(res && res.ok){ btn.textContent='✓'; btn.classList.add('cached'); showToast('已缓存', 1500); }
+        if(res && res.ok){ btn.textContent='✓'; btn.classList.add('cached'); showToast('已缓存', 1500); _markCached(t,true); }
         else { btn.textContent='💾'; btn.disabled=false; showToast('缓存失败：'+((res&&res.error)||''), 2500); }
       }).catch(function(){ btn.textContent='💾'; btn.disabled=false; showToast('缓存超时', 2000); });
     });
@@ -3909,7 +4094,7 @@ function renderPL() {
     el.addEventListener('click',function(e){
       e.stopPropagation();
       const i=parseInt(this.dataset.retry);
-      if(trks[i]) load(i);
+      if(trks[i]) load(i, true);   // 用户主动点的 → 接管播放权
     });
   });
   // ── 拖拽排序（pointer 事件，见 handleDragStart 定义在文件前部）──
@@ -4140,7 +4325,7 @@ function addTrack(name,url,mode,group,lrcUrl,pic,server,opts) {
         if(lrcUrl) trks[i].lrcUrl = lrcUrl;
         if(pic) trks[i].pic = pic;
         if(!opts.silent){ load(i); }
-        if(!opts.silent && audio.paused){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});}
+        if(!opts.silent && audio.paused){ _playCurrent("添加并播放"); }
         saveTrks();
         renderPL();
         return;
@@ -4159,7 +4344,7 @@ function addTrack(name,url,mode,group,lrcUrl,pic,server,opts) {
   // 存 lrc 映射
   if(lrcUrl && url) lrcMap[url]=lrcUrl;
   trks.push({name:name||url.split('/').pop().split('\\').pop().split('?')[0]||'音频',url:url,mode:mode||(url.startsWith('http')?'在线':'本地'),dur:0,group:group,lrcUrl:lrcUrl||'',pic:pic||'',server:server||''});
-  if(!_batchLoading && !opts.silent){ load(trks.length-1); if(trks[trks.length-1] && trks[trks.length-1].url){audio.play().catch(function(e){if(e.name!=="AbortError")console.warn(e)});} renderPL(); saveTrks(); }
+  if(!_batchLoading && !opts.silent){ load(trks.length-1); if(trks[trks.length-1] && trks[trks.length-1].url){ _playCurrent("添加并播放"); } renderPL(); saveTrks(); }
   else { renderPL(); saveTrks(); }
 }
 
@@ -4549,6 +4734,38 @@ document.querySelectorAll('.nav-tab').forEach(function(btn) {
       })
       .catch(function(){ showToast('清空失败', 1500); });
   });
+
+  // 清理失效条目：2026-10-12 之前，B 站歌的缓存键会因 server 参数错位写成
+  // "netease:bilibili:BVxxx"，文件是拿错源下载的，内容不可信。这里把它们挪到
+  // cache/quarantine/ 并退出索引，回收额度。正常缓存不受影响。
+  var quarBtn = document.getElementById('cacheQuarBtn');
+  if (quarBtn) quarBtn.addEventListener('click', function(){
+    quarBtn.disabled = true;
+    var oldText = quarBtn.textContent;
+    quarBtn.textContent = '检查中…';
+    fetch((typeof API!=='undefined'?API:'') + '/widget/api/music/cache-quarantine', {
+      method: 'POST', signal: AbortSignal.timeout(15000)
+    })
+      .then(function(r){ return r.json(); })
+      .then(function(res){
+        if (res && res.ok) {
+          var n = (res.moved || []).length;
+          var f = (res.failed || []).length;
+          if (n === 0 && f === 0) {
+            showToast('没有失效条目，缓存是干净的', 2200);
+          } else {
+            var msg = '已清理 ' + n + ' 条失效缓存，释放 ' + fmtSize(res.freed || 0);
+            if (f) msg += '（' + f + ' 条移动失败已直接删除）';
+            showToast(msg, 3000);
+          }
+          load();
+        } else {
+          showToast('清理失败：' + ((res && res.error) || ''), 2500);
+        }
+      })
+      .catch(function(){ showToast('清理失败（后端不可用？）', 2500); })
+      .then(function(){ quarBtn.disabled = false; quarBtn.textContent = oldText; });
+  });
 })();
 // ── 返回列表按钮 ──
 document.querySelectorAll('.tab-back-btn').forEach(function(btn) {
@@ -4854,14 +5071,20 @@ function doMusicSearch(){
   fetch(API+'/widget/api/music/search?keyword='+encodeURIComponent(kw)+'&server='+sv, {signal:AbortSignal.timeout(10000)}).then(function(r){return r.json();}).then(function(res){
     if(!res.ok||!res.results||!res.results.length){ el.innerHTML='<div class="music-empty">没有结果</div>'; return; }
     el.innerHTML=res.results.map(function(t){
+      // 缓存按钮的 server/id 必须从 url 里抠（cacheKeyOf），不能用 t.server fallback 到
+      // 下拉框 —— searchBili 的 results 没有 server 字段，B 站歌会拿到 netease，
+      // 后端就用错 server 去打 Meting，缓存下来的是另一首歌（2026-10-12 实测）。
+      var _ck=cacheKeyOf(t);
       return '<div class="music-item" data-title="'+esc(t.title)+'" data-url="'+esc(t.url)+'" data-lrc="'+esc(t.lrc||'')+'" data-pic="'+esc(t.pic||'')+'" data-id="'+esc(t.id||'')+'" data-server="'+esc(t.server||document.getElementById('musicServer').value)+'">'
         +(t.pic ? '<img class="music-thumb" src="'+esc(t.pic)+'" loading="lazy">' : '<div class="music-thumb-placeholder">♫</div>')
         +'<div class="music-info"><div class="music-title">'+esc(t.title)+'</div><div class="music-author">'+esc(t.author)+'</div></div>'
         +'<button class="music-play" title="播放">▶</button>'
         +'<button class="music-save" title="保存到列表">＋</button>'
-        +'<button class="music-cache" title="缓存到本地" data-id="'+esc(t.id||'')+'" data-server="'+esc(t.server||document.getElementById('musicServer').value)+'">💾</button>'
+        +(_ck?'<button class="music-cache'+(_cachedInSet(__cachedIds,_ck)?' cached':'')+'" title="'+(__cachedIds&&_cachedInSet(__cachedIds,_ck)?'已缓存到本地':'缓存到本地')+'" data-id="'+esc(_ck.id)+'" data-server="'+esc(_ck.server)+'">'+(__cachedIds&&_cachedInSet(__cachedIds,_ck)?'✓':'💾')+'</button>':'')
         +'</div>';
     }).join('');
+    // 集合还没拉过 → 拉一次再重渲染，让 ✓ 立刻显出来
+    if(!__cachedIds) _loadCachedIds(true);
   }).catch(function(e){ el.innerHTML='<div class="music-empty">'+(e.name==='TimeoutError'?'搜索超时，换源试试':'搜索失败，所有 Meting 节点均不可用')+'</div>'; });
 }
 
@@ -4954,6 +5177,7 @@ document.getElementById('musicResults').addEventListener('click', function(e){
         cacheBtn.textContent = '✓';
         cacheBtn.classList.add('cached');
         showToast('已缓存', 2000);
+        _markCached({ server: cacheServer, id: cacheId }, true);
       } else {
         cacheBtn.textContent = '💾';
         cacheBtn.disabled = false;
@@ -5497,6 +5721,51 @@ function doPlaylistImport(){
       blur:  waiting ? (d===1?.7:1.8+(d-2)*.8) : 1.1+(d-1)*.7
     };
   }
+  /* ── 光晕滤镜预算表 ─────────────────────────────
+   *
+   * 原来的写法每帧拼一次 color-mix() 再塞进 filter，两层 drop-shadow。
+   * filter 一改元素就掉出 GPU 合成层，重新栅格化 + 滤镜，这是 PV 卡顿的主因
+   * （2026-10-12 群友反馈）。
+   *
+   * 半径只有 4 种组合（是否副歌 × 内圈/外圈），亮度取整到 GLOW_STEPS 档 ——
+   * 整串滤镜的取值空间有限，全部可以预算成字符串，每帧只做一次查表 + 赋值。
+   *
+   * 视觉无损的依据：rr 原本就是 Math.round 出来的整数；ga 从 0~100 连续值变成
+   * 21 档，步长 1/20 ≈ 5%，肉眼不可辨。
+   *
+   * 失效条件：--accent-glow 是 CSS 变量，主题切换时会变。预算表按当前实际
+   * 计算出的颜色建，所以用 _glowCacheKey（读一次计算值）判断要不要重建。 */
+  var GLOW_STEPS = 20;
+  var _glowTable = {};      // "rr1|rr2|ga" -> filter 字符串
+  var _glowCacheKey = '';
+
+  function _glowAccent(){
+    // 从任意元素上读一次计算值。PV 舞台一定在 DOM 里，取它最稳。
+    try {
+      var el = pvStage || document.body;
+      var v = getComputedStyle(el).getPropertyValue('--accent-glow');
+      return (v || '').trim();
+    } catch (e) { return ''; }
+  }
+
+  function _glowShadow(rr1, rr2, ga){
+    var key = _glowCacheKey + '|' + rr1 + '|' + rr2 + '|' + ga;
+    var hit = _glowTable[key];
+    if (hit) return hit;
+    var g = Math.round(ga / GLOW_STEPS * 100);   // 还原成百分比，和原式一致
+    var s = 'drop-shadow(0 0 ' + rr1 + 'px color-mix(in srgb, var(--accent-glow) ' + g + '%, transparent))'
+          + ' drop-shadow(0 0 ' + rr2 + 'px color-mix(in srgb, var(--accent-glow) ' + g + '%, transparent))';
+    _glowTable[key] = s;
+    return s;
+  }
+
+  // 主题可能随时换，每次进 PV / 换主题时重校一次缓存键。
+  // 放在 rAF 里做：不额外开定时器，也不阻塞首帧。
+  function _glowRefreshKey(){
+    var k = _glowAccent();
+    if (k !== _glowCacheKey) { _glowCacheKey = k; _glowTable = {}; }
+  }
+
   // 光晕包络：移植 folia resolveMonetGlow——smoothstep 升起 → 峰值驻留 → 行尾后消退
   function _pvGlow(t,start,end,lineEnd){
     if(t<=start) return 0;
@@ -5596,9 +5865,13 @@ function doPlaylistImport(){
   // 这里只做一件最轻的事：给当前行写一个 0–1 的进度，不碰 DOM 结构、不滚屏。
   // 换行仍然由 highlightLrc 负责，两边不重叠。
   var _kLines = null, _kIdx = -1, _kLen = -1;
+  // 光晕预算表的缓存键：主题换了这个会变，重建表。每帧读一次 getComputedStyle
+  // 也有成本，所以按帧计数节流到约每 30 帧一次（0.5s），换主题时最多迟半拍生效。
+  var _kFrame = 0;
   function updateKaraoke(timeMs) {
     try {
       if (!lrcData.length || !lyricOpen || !lyricBody || lyricBody.clientHeight <= 0) return;
+      if ((++_kFrame & 31) === 0) _glowRefreshKey();
       var idx = 0;
       for (var i = 0; i < lrcData.length; i++) { if (lrcData[i].time <= timeMs) idx = i; else break; }
       if (!_kLines || _kIdx !== idx || _kLen !== lrcData.length) {
@@ -5630,6 +5903,17 @@ function doPlaylistImport(){
         }
         // 光晕包络（folia resolveMonetGlow）：唱到峰值最亮，行尾驻留后消退。
         // drop-shadow 认渲染结果，字透明了也能发光（text-shadow 对透明字无用）。
+        //
+        // 性能（2026-10-12）：原来每帧都拼
+        //   'drop-shadow(0 0 Xpx color-mix(in srgb, var(--accent-glow) G%, transparent)) ...'
+        // 两层滤镜 + 每帧一次 color-mix 求值与字符串解析，filter 一改就掉出 GPU
+        // 合成层、触发重栅格化，PV 卡顿的主因。
+        //
+        // 改法（视觉无损）：半径 rr1/rr2 是离散的（只有 4 种组合），亮度 ga 取整到
+        // GLOW_STEPS 档 —— 于是整串滤镜的取值空间是 4 × 21 = 84 个，全部可预算。
+        // 预算表在主题变化时失效（--accent-glow 会变），由 _glowCacheKey 保证重建。
+        // 渲染结果与原来逐像素一致：rr 本来就是 Math.round 出来的整数，ga 取整的
+        // 幅度是 1/20，肉眼不可辨。
         var gStart=cur.time, gEnd=cur.end||(nxt?nxt.time:cur.time+3000);
         var gLineEnd=nxt?nxt.time:gEnd+3000;
         var gi=_pvGlow(timeMs,gStart,gEnd,gLineEnd);
@@ -5637,9 +5921,10 @@ function doPlaylistImport(){
           var fp=15*1.3;   // 基准字号×当前行缩放，近似足够
           var isCh=pel.classList.contains('chorus');
           var rr1=Math.round(fp*(isCh?0.45:0.28)), rr2=Math.round(fp*(isCh?0.9:0.65));
-          var ga=Math.round(Math.min(1,gi*(isCh?1:0.88))*100);
-          pel.style.filter='drop-shadow(0 0 '+rr1+'px color-mix(in srgb, var(--accent-glow) '+ga+'%, transparent)) drop-shadow(0 0 '+rr2+'px color-mix(in srgb, var(--accent-glow) '+ga+'%, transparent))';
-        } else {
+          var ga=Math.round(Math.min(1,gi*(isCh?1:0.88))*GLOW_STEPS);
+          if(ga<1) ga=1;   // gi>0.01 已保证至少一档，这里只是防御
+          pel.style.filter=_glowShadow(rr1,rr2,ga);
+        } else if(pel.style.filter && pel.style.filter!=='none'){
           pel.style.filter='none';
         }
       }
@@ -5672,6 +5957,20 @@ function doPlaylistImport(){
   }
 
   var _lastLrcKey='';
+  // 歌词没找到时给一句可见的原因，别让歌词区静静停在「暂无歌词」——
+  // 「这视频没有字幕」「UP 主关闭了字幕提交」「联网也没匹配到」是三件事，
+  // 用户分不清就会以为功能没接（2026-10-12）。
+  // 节流：同一首歌只提示一次，切歌才重置。
+  var _lyricHintKey='';
+  function _hintNoLyric(reason){
+    if(_lyricHintKey===_lastLrcKey) return;
+    _lyricHintKey=_lastLrcKey;
+    try{
+      var el=document.getElementById('lrcEmpty')||document.querySelector('.lrc-empty');
+      if(el){ el.textContent=reason; el.style.display=''; }
+    }catch(e){}
+    if(typeof showToast==='function') showToast(reason, 2600);
+  }
   function _loadLineLrc(lrcUrl, trackName){
     if(!lrcUrl && !trackName) return;
     var cached=_cachedLrcByUrl(lrcUrl);
@@ -5694,26 +5993,26 @@ function doPlaylistImport(){
         // 读盘失败 → 走网络
         var proxyUrl=API+'/widget/api/music/lrc-proxy?url='+encodeURIComponent(lrcUrl);
         fetch(proxyUrl).then(function(r){return r.text();}).then(function(raw){
-          if(!raw||raw.length<10) return;
+          if(!raw||raw.length<10){ _hintNoLyric('歌词源返回空内容'); return; }
           var parsed=parseLrc(raw);
           _saveLrcCache(lrcUrl, parsed);
           lrcData=parsed;
           renderLrc();
           // 网络拉到后落盘
           fetch(API+'/widget/api/lrc/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:trackName,lrc:raw})}).catch(function(){});
-        }).catch(function(){});
+        }).catch(function(){ _hintNoLyric('联网也没匹配到歌词，可手动粘贴 LRC'); });
       });
       return;
     }
     // 无 trackName（兼容旧调用）→ 直接走网络
     var proxyUrl=API+'/widget/api/music/lrc-proxy?url='+encodeURIComponent(lrcUrl);
     fetch(proxyUrl).then(function(r){return r.text();}).then(function(raw){
-      if(!raw||raw.length<10) return;
+      if(!raw||raw.length<10){ _hintNoLyric('歌词源返回空内容'); return; }
       var parsed=parseLrc(raw);
       _saveLrcCache(lrcUrl, parsed);
       lrcData=parsed;
       renderLrc();
-    }).catch(function(){});
+    }).catch(function(){ _hintNoLyric('联网也没匹配到歌词，可手动粘贴 LRC'); });
   }
   setInterval(function(){
     var t=trks[idx];
@@ -5740,6 +6039,28 @@ function doPlaylistImport(){
           if(res && res.ok && res.lines && res.lines.length){
             _saveLrcCache(bkey, res.lines);
             lrcData=res.lines; renderLrc(); return;
+          }
+          // 后端在 200 里用 ok:false + error 说明原因，别把它和网络失败混为一谈
+          if(res && res.ok === false && res.error){
+            _hintNoLyric(/没有字幕/.test(res.error)
+              ? '该视频没有字幕，正在按歌名找歌词…'
+              : '字幕获取失败：'+res.error);
+            // 兜底：同一首歌在网易云/QQ 常有 LRC，按歌名搜一条来用
+            var _nm=_cleanTrackName(t.name||t.title||'');
+            if(_nm){
+              fetch(API+'/widget/api/music/lrc-by-name?name='+encodeURIComponent(_nm)+'&server=netease')
+                .then(function(r){ return r.ok?r.text():Promise.reject(new Error('none')); })
+                .then(function(raw){
+                  if(!raw||raw.length<10) return;
+                  var parsed=parseLrc(raw);
+                  _saveLrcCache('byname:'+_nm, parsed);
+                  lrcData=parsed; renderLrc();
+                  // 顺手落盘，下次离线也能出词
+                  fetch(API+'/widget/api/lrc/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:t.name||_nm,lrc:raw})}).catch(function(){});
+                })
+                .catch(function(){ _hintNoLyric('该视频没有字幕，按歌名也没找到，可手动粘贴 LRC'); });
+            }
+            return;
           }
           _loadLineLrc(lrcUrl, t.name);   // 无字幕就退普通路径
         })
@@ -5881,10 +6202,10 @@ function busControl(action,extra){
         if(!exists){
           trks.push({name:res.item.name||'Bus', url:url, mode:res.item.mode||'编排', dur:0, group:'编排'});
           load(trks.length-1);
-          if(audio.paused){ audio.play().catch(function(e){if(e.name!=='AbortError')console.warn(e)}); }
+          if(audio.paused){ _playCurrent("Bus 编排播放"); }
           saveTrks();
         }else{
-          for(var i=0;i<trks.length;i++){ if((trks[i].url||'').split('?')[0]===bareUrl){ load(i); if(audio.paused) audio.play().catch(function(){}); break; } }
+          for(var i=0;i<trks.length;i++){ if((trks[i].url||'').split('?')[0]===bareUrl){ load(i); if(audio.paused) _playCurrent("Bus 编排播放"); break; } }
         }
         showToast('编排播放: '+res.item.name, 1500);
       }
