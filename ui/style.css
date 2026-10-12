@@ -351,11 +351,18 @@ body.view-compact .inst-code { display: none; }
 .lyric-body.open { max-height:220px; overflow-y:auto; }
 .lyric-line {
   font-size:11.5px; color:var(--lyric-color, var(--text-dim)); line-height:1.8; text-align:center;
-  transition:color 0.2s, font-size 0.2s;
+  transition:color 0.2s, opacity 0.3s;
 }
-.lyric-line.current { color:var(--lyric-active-color, var(--accent)); font-size:13px; font-weight:600; }
+.lyric-line.current { color:var(--lyric-active-color, var(--accent)); font-weight:600; }
 .lyric-line.chorus { color:var(--lyric-chorus-color, var(--accent-glow)); font-weight:600; }
 .lyric-line:hover { color:var(--text); }
+/* 双语：TTML 译文行（数据层已带 tran，见 renderLrc / parseTtml） */
+.lyric-tran {
+  display:block; font-size:.9em; line-height:1.55; margin-top:3px; letter-spacing:.03em;
+  color:var(--lyric-tran-color, var(--text-faint));
+  -webkit-background-clip:border-box; background-clip:border-box;
+}
+.tran-off .lyric-tran { display:none; }
 .lyric-body::-webkit-scrollbar { width:6px; }
 .lyric-body::-webkit-scrollbar-track { background:transparent; }
 .lyric-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
@@ -429,13 +436,37 @@ body.view-compact .inst-code { display: none; }
 }
 .pl-item:hover .pl-rm { opacity:0.7; }
 .pl-item .pl-rm:hover { opacity:1; color:var(--accent); }
+/* 旧版 HTML5 drag 遗留类（已无监听器触发，保留不冲突） */
 .pl-item.dragging { opacity:0.4; }
 .pl-item.drag-over { border-top:2px solid var(--accent); }
 .pl-handle {
   cursor:grab; color:var(--text-faint); font-size:12px;
   flex-shrink:0; opacity:0; transition:opacity 0.12s;
+  touch-action:none; /* pointer 拖拽在触摸端不抢滚动手势 */
 }
 .pl-item:hover .pl-handle { opacity:0.5; }
+.pl-handle:active { cursor:grabbing; }
+
+/* 新版 pointer 拖拽（queueDragGeometry 视觉）*/
+.pl-dragging {
+  opacity:0.5;
+  box-shadow:0 6px 20px rgba(0,0,0,0.45);
+  z-index:5;
+  background:var(--surface-hover);
+}
+.pl-drag-indicator {
+  position:fixed;
+  height:2px;
+  background:var(--accent);
+  pointer-events:none;
+  z-index:9999;
+  box-shadow:0 0 6px var(--accent);
+  display:none;
+}
+.pl-body.pl-dragging .pl-star,
+.pl-body.pl-dragging .pl-rm,
+.pl-body.pl-dragging .pl-retry,
+.pl-body.pl-dragging .pl-handle:not(:active) { pointer-events:none; }
 
 .pl-empty { padding:16px 14px; text-align:center; color:var(--text-faint); font-size:12px; }
 
@@ -986,6 +1017,17 @@ body.view-compact .inst-code { display: none; }
   .tab-content { min-height: 0; }
   .tab-pane { height: 100%; overflow-y: auto; }
 
+  /* ── 窄窗（<660 不分栏）列表可达性 ──
+   * 窄窗是竖向流：header → 唱盘 → 控制条 → 标签 → 列表。
+   * 容器 overflow:hidden 且唱盘 flex-shrink:0，列表被顶到视口外又滚不到。
+   * 容器改可滚 + 列表保底高度，保证能滑到并在里面滚。
+   * （view-compact 不受影响，它有自己的紧凑壳。） */
+  @media (max-width: 659px) {
+    body:not(.view-compact) .player-container { overflow-y: auto; }
+    body:not(.view-compact) .tab-content { min-height: 320px; }
+    body:not(.view-compact) .nav-tabs { flex-shrink: 0; }
+  }
+
   /* ── 修：卡片里内部滚不动 ──
    *
    * 症状：高度修好后，列表/搜索页在卡片里滑不动。
@@ -1144,22 +1186,28 @@ body.view-compact .inst-code { display: none; }
     -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 13%, #000 87%, transparent 100%);
     mask-image: linear-gradient(180deg, transparent 0, #000 13%, #000 87%, transparent 100%);
   }
-  /* 封面背景（folia Monet 层）：封面铺满、高糊、慢漂移 + 可读性罩层。
-     罩层用主题 --bg，明暗主题下文字都可读；漂移走 transform，合成器白干。 */
+  /* 封面背景（folia Monet 层）：铺满 + 慢漂移 + 可读性罩层。
+   * 观感由单滑杆「封面清晰度」联动（--pv-clarity 0~1）：
+   *   1 = 接近原图直铺（CanCan 图2 那种，blur 趋 0、罩层最轻）
+   *   0 = 纯氛围糊底
+   * 三参全走 calc 联动，JS 只写一个变量。 */
   .pv-bg {
-    position: absolute; inset: -6%;
+    --pv-clarity: 0.8;
+    position: absolute; inset: -4%;
+    background-color: var(--jv-bg, var(--card-bg));  /* 无封面图时的兜底底，不透到播放器 */
     background-size: cover; background-position: center;
-    filter: blur(52px) saturate(1.15);
-    opacity: .5;
+    filter: blur(calc((1 - var(--pv-clarity)) * 30px)) saturate(1.18);
+    opacity: calc(0.6 + var(--pv-clarity) * 0.4);
     animation: pv-bg-drift 46s ease-in-out infinite alternate;
     will-change: transform;
   }
   .pv-bg::after {
     content: ''; position: absolute; inset: 0;
+    opacity: calc(1 - var(--pv-clarity) * 0.55);
     background: linear-gradient(120deg,
-      color-mix(in srgb, var(--bg) 60%, transparent) 0%,
-      color-mix(in srgb, var(--bg) 78%, transparent) 55%,
-      color-mix(in srgb, var(--bg) 88%, transparent) 100%);
+      color-mix(in srgb, var(--bg) 38%, transparent) 0%,
+      color-mix(in srgb, var(--bg) 55%, transparent) 55%,
+      color-mix(in srgb, var(--bg) 72%, transparent) 100%);
   }
   @keyframes pv-bg-drift {
     0%   { transform: scale(1.08) translate(0, 0); }
@@ -1244,8 +1292,17 @@ body.view-compact .inst-code { display: none; }
   }
   body.view-compact .header-left { display: none; }
   body.view-compact .header-actions { gap: 0; }
-  body.view-compact .header-actions .icon-btn:not(#popBtn) { display: none; }
+  body.view-compact .header-actions .icon-btn:not(#popBtn):not(#listOpenBtn) { display: none; }
   body.view-compact .player-right { display: none !important; }
+  /* ☰ 展开态：列表就地展开，报高切 520 档（head.js currentHeight）*/
+  body.view-compact.list-open .player-right {
+    display: block !important;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  body.view-compact.list-open .now-playing-section { flex: 0 0 auto; }
+  body.view-compact.list-open .controls-section { flex: 0 0 auto; }
   body.view-compact .lyrics-section { display: none; }
   body.view-compact #visualizer { display: none; }
   body.view-compact .volume-group { display: none; }
@@ -1787,8 +1844,18 @@ body.lyrics-mode:not(.view-compact) .np-info { display:none !important; }
 body.lyrics-mode:not(.view-compact) .pv-stage { flex:1 !important; width:100% !important; }
 
 
+/* ☰ 展开列表：只在紧凑卡有意义（完整卡列表常驻） */
+#listOpenBtn { display: none; }
+body.view-compact #listOpenBtn { display: flex; }
+
 /* 明暗切换按钮下线（主题由配色面板统一管理） */
 #themeBtn { display:none !important; }
+
+/* 内嵌矮卡适配：右上 100×40 是宿主保留区（胶囊/按钮群撞上就无法操作），
+ * 按钮组避让 + header 允许换行；卡片高度用户任意拖 —— min-height 保控件可点。 */
+body.view-compact .header { flex-wrap: wrap; row-gap: 4px; }
+body.view-compact .header-actions { padding-right: 96px; }
+body.view-compact .player-container { min-height: 150px; }
 
 
 /* 右键菜单背景：--card 变量不存在导致透明，改用 --card-bg */
@@ -1826,8 +1893,10 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 /* 歌词区在 compact 下只显示当前句 */
 .player-container[data-layout="compact"] .lyrics-section { max-height: 40px; overflow: hidden; }
 .player-container[data-layout="compact"] .lyric-body { display: flex; flex-direction: column; justify-content: center; }
-.player-container[data-layout="compact"] .lyric-line:not(.is-current) { opacity: 0; height: 0; margin: 0; padding: 0; overflow: hidden; }
-.player-container[data-layout="compact"] .lyric-line.is-current { opacity: 1; height: auto; }
+.player-container[data-layout="compact"] .lyric-line:not(.current) { opacity: 0; height: 0; margin: 0; padding: 0; overflow: hidden; }
+.player-container[data-layout="compact"] .lyric-line.current { opacity: 1; height: auto; }
+/* compact 单行聚焦装不下双行：译文隐藏 */
+.player-container[data-layout="compact"] .lyric-tran { display: none; }
 
 /* 控制条紧凑：减小 padding 和间距 */
 .player-container[data-layout="compact"] .controls-section { padding: 8px 12px; }
@@ -1847,8 +1916,11 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 .player-container[data-layout="long"] .lyrics-section { max-height: 80px; overflow: hidden; }
 .player-container[data-layout="long"] .lyric-body { display: flex; flex-direction: column; justify-content: center; gap: 4px; }
 .player-container[data-layout="long"] .lyric-line { opacity: 0.3; transition: opacity 0.3s; }
-.player-container[data-layout="long"] .lyric-line.is-current { opacity: 1; font-weight: 600; }
+.player-container[data-layout="long"] .lyric-line.current { opacity: 1; font-weight: 600; }
 .player-container[data-layout="long"] .lyric-line.is-near { opacity: 0.6; }
+/* 浏览态：用户滚动歌词查看时全行显现（盖过 long 的 0.3 基线与 is-near 0.6，
+   放在形态规则后靠特异性与顺序双重取胜）；3s 无交互由 JS 摘类自动回归 */
+.player-container .lyric-body.is-browsing .lyric-line { opacity: 1; }
 
 /* PV 舞台在 long 下占满剩余空间 */
 .player-container[data-layout="long"] .pv-stage { flex: 1; min-height: 0; }

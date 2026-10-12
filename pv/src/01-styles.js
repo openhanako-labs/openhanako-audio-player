@@ -53,12 +53,14 @@
       st.style.removeProperty('--jv-bg');
       st.style.removeProperty('--jv-fg');
       st.style.removeProperty('--jv-acc');
+      st.style.removeProperty('--jv-sub');
       ambient(window._jzCover);
       return;
     }
     st.style.setProperty('--jv-bg', s.bg);
     st.style.setProperty('--jv-fg', s.fg);
     st.style.setProperty('--jv-acc', s.acc);
+    if (s.sub) st.style.setProperty('--jv-sub', s.sub);
   };
 
   /* 骰子用：从当前可选风格里重掷（auto 也在池里，和旧行为一致） */

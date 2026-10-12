@@ -169,6 +169,29 @@
   };
   PV.onFrame(PV.cutTick);
 
+  /* ---------- 残影哨兵：同文本整行最多 show+1 ----------
+   * 残影/切片类件在 applyIn 之后的延时回调里 clone 整行，同步 trim 追不到
+   * （实测 omakase 后 4 层同文字叠印、6 对重叠 —— 用户报的「歌词重叠」）。
+   * 挂帧循环：与当前 show 行同文本的非 show 行 >1 时，最旧的先清。
+   * 转场期内 show+1 残影是设计内；第 3 层起就是泄漏。 */
+  PV.ghostSweep = function () {
+    var S = PV.S;
+    if (!S || !S.track || S.idx == null || S.idx < 0) return;
+    var show = S.track.querySelector('.jv-line.show');
+    if (!show) return;
+    var txt = show.textContent;
+    if (!txt) return;
+    var clones = [];
+    Array.prototype.forEach.call(S.track.children, function (c) {
+      if (c !== show && c.classList && c.classList.contains('jv-line') && c.textContent === txt) clones.push(c);
+    });
+    while (clones.length > 1) {
+      var el = clones.shift();
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }
+  };
+  PV.onFrame(PV.ghostSweep);
+
   PV.cutsInfo = function () {
     var S = PV.S;
     return { line: S.idx, cut: S.cutI, n: S.cuts ? S.cuts.length : 1, at: PV.audio.time,

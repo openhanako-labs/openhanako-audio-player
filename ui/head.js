@@ -1,6 +1,6 @@
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1011191544";
+  window.__HANA_BUILD = "1012100156";
 
   // __whenHana(cb)：SDK 就绪后回调；已就绪立即执行。事件见 index.html 的 module 胶水。
   window.__whenHana = function (cb) {
@@ -20,7 +20,7 @@
   // 所以高度是参数，不是测量结果 —— 两种视图各一个档位：
   //   full    完整播放器（卡片中心 / 拆窗 / 展开后的对话流卡）
   //   compact 浓缩单曲卡（对话流默认，route 带 ?view=compact）
-  var HEIGHTS = { full: 560, compact: 168 };
+  var HEIGHTS = { full: 560, compact: 168, compactList: 520 };
 
   // 视图判定，两条来源，显式优先：
   //   ① route 上的 ?view=full|compact —— 投递方显式指定，最可靠
@@ -35,7 +35,11 @@
     return null;
   }
   var view = viewFromQuery() || "full";
-  function currentHeight() { return HEIGHTS[view] || HEIGHTS.full; }
+  function currentHeight() {
+    if (window.__hanaCardHeightOverride != null) return window.__hanaCardHeightOverride;
+    if (view === "compact" && document.body.classList.contains("list-open")) return HEIGHTS.compactList;
+    return HEIGHTS[view] || HEIGHTS.full;
+  }
   var H = currentHeight();
 
   // ── 先掐掉 v1 老 UI 自己的报高器 ──
@@ -113,6 +117,10 @@
     }
     tellParent();
   }
+  /* 内嵌卡列表展开：app.js 切换 body.list-open 时改 override 再调 __hanaReport()，
+   * 宿主随报高落框 —— 卡片高度不再是固定档位，展开列表时给足空间。 */
+  window.__hanaCardHeightOverride = null;
+  window.__hanaReport = function () { report(); };
   window.__whenHana(report);  // 首批上报：SDK 就绪后立即执行，不等重试
   setTimeout(report, 300);
   setTimeout(report, 800);

@@ -1411,9 +1411,31 @@ window.dispatchEvent(new Event("hana-sdk-ready"));
 }
 body.jizura-mode:not(.view-compact) .pv-jv { display: block; }
 body.jizura-mode:not(.view-compact) .pv-stage { display: flex; }
-body.jizura-mode:not(.view-compact) .pv-bg { display: none; }
+/* .pv-jv 默认带实色底（--jv-bg）， z-index:20 压在封面层之上——
+ * 这就是「PV 封面开关开了也不显示」的真身：封面被实色底盖死。
+ * 封面显示时让 .pv-jv 透底，封面透出；隐藏封面时回到实色底（保住风格背景）。 */
+body:not(.pv-cover-off).jizura-mode:not(.view-compact) .pv-jv { background: transparent; }
+/* 封面背景在文字PV档同样显示（用户指定）：pv-bg 自带高糊+可读性罩层，
+   纯文字演出也需要封面底 —— 与 lyrics-mode 观感统一。 */
+body.jizura-mode:not(.view-compact) .pv-bg { display: block; }
+/* 主题面板「文字PV封面背景」开关：body.pv-cover-off 时整档无封面底 */
+body.pv-cover-off.jizura-mode:not(.view-compact) .pv-bg { display: none !important; }
 /* folia 的行在 PV 下不可见，但保留 DOM —— 退出时立刻能用 */
 body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
+
+/* 译文层（jizura）：固定底位、类字幕；随行更新，响应 .tran-off */
+.jv-tran {
+  position: absolute; left: 0; right: 0; bottom: 7.5%;
+  text-align: center; font-size: 12px; line-height: 1.5;
+  color: var(--jv-sub, rgba(255,255,255,.72));
+  letter-spacing: .04em;
+  pointer-events: none; z-index: 3;
+  text-shadow: 0 1px 8px rgba(0,0,0,.45);
+  padding: 0 8%;
+  transition: opacity .3s ease;
+}
+.tran-off .jv-tran { display: none; }
+.tran-off .pv-tran { display: none; }
 
 .jv-track { position: absolute; inset: 0; z-index: 2; will-change: transform; }
 
@@ -2419,6 +2441,12 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     <span class="header-title">HANA PLAYER</span>
   </div>
   <div class="header-actions">
+    <button class="icon-btn" id="listOpenBtn" title="展开播放列表">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="14" y2="18"/></svg>
+    </button>
+    <button class="icon-btn" id="tranBtn" title="歌词翻译">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>
+    </button>
     <button class="icon-btn" id="fontSizeBtn" title="字号设置">
       <svg viewBox="0 0 24 24"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
     </button>
@@ -2838,6 +2866,17 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     /* 任何人直接换表（预览台、PV.demo、PV.audit）都得把同步缓存作废：
      * 否则 syncTable 会认为「还是那张表」，测试句就赖在画面上不走。*/
     PV._tblRef = null; PV._tblSig = null;
+    /* 确定性 seed：同词表 → 同演出（同 folia visualizerSeedHash 思路）。
+     * 词表内容即曲目指纹：行数 + 时间 + 逐字哈希进 LCG；
+     * omakase 主动重掷语义不变 —— 重掷后随机流延续，下次换表重新归位。 */
+    var h = 5381 >>> 0, i, s, j, txt;
+    for (i = 0; i < S.lyrics.length; i++) {
+      s = S.lyrics[i];
+      h = ((h * 33) ^ (s.time || 0) ^ (i * 2654435761)) >>> 0;
+      txt = s.text || '';
+      for (j = 0; j < txt.length; j++) h = ((h * 33) ^ txt.charCodeAt(j)) >>> 0;
+    }
+    PV.seed(h || 1);
   };
 
   /* ---------- ctx：所有层读同一个上下文 ---------- */
@@ -3064,10 +3103,25 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     if (i == null || i < 0) return;
     opts = opts || {};
     if (i === S.idx && !opts.force && !opts.layout) return;
-    var plan = PV.planLine(i, opts);
-    if (!plan) return;
-    var made = PV.render(plan);
-    if (!made) return;
+    /* 配牌/渲染段哨兵：偶发的 Assignment-to-const 类异常会打断 show 流程，
+     * 主行停在 opacity 0 = 用户看到的「有些歌词不显示」。
+     * 捕获后记进 PV.errors（环形 20 条，真机可读堆栈），旧行保留在台上不空屏。 */
+    var plan, made;
+    try {
+      plan = PV.planLine(i, opts);
+      if (!plan) return;
+      made = PV.render(plan);
+      if (!made) return;
+    } catch (e) {
+      (PV.errors = PV.errors || []).push({
+        at: Date.now(), i: i,
+        msg: String((e && e.message) || e),
+        stack: String((e && e.stack) || '').split('\n').slice(0, 4).join(' | ')
+      });
+      if (PV.errors.length > 20) PV.errors.shift();
+      if (typeof console !== 'undefined' && console.error) console.error('[pv] show/render 异常（保留旧行）：', e);
+      return;
+    }
 
     var prev = S.cur, oldPlan = S.plan;
     /* 开新一段前先把台上多余的行扫掉。上一段可能正在等一个延时 drop，
@@ -3115,14 +3169,31 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
        * 只靠上面那次 trim 限不住它们（实测 track 里仍有 4 个整行）。*/
       trimTrack(prev, made.el);
     };
-    if (plan.transition && plan.transition.play) plan.transition.play(plan.ctx, prev, made.el, swap, drop);
-    else swap();
-    if (!made.el.parentNode) swap();      // 衔接件没调 swap 时的兜底
+    /* 应用段哨兵：transition/exit/swap 链路抛异常时 swap 可能没跑，
+     * 行没上台 = 空屏（真机「有些歌词不显示」的另一半）。
+     * 兜底强制 swap（内部有防重），宁要无动画上台，不要空屏。 */
+    try {
+      if (plan.transition && plan.transition.play) plan.transition.play(plan.ctx, prev, made.el, swap, drop);
+      else swap();
+      if (!made.el.parentNode) swap();      // 衔接件没调 swap 时的兜底
+    } catch (e) {
+      (PV.errors = PV.errors || []).push({
+        at: Date.now(), i: i, phase: 'transition/swap',
+        msg: String((e && e.message) || e),
+        stack: String((e && e.stack) || '').split('\n').slice(0, 4).join(' | ')
+      });
+      if (PV.errors.length > 20) PV.errors.shift();
+      if (typeof console !== 'undefined' && console.error) console.error('[pv] transition/swap 异常（兜底上屏）：', e);
+      try { swap(); } catch (_) {}
+      try { made.el.classList.add('show'); } catch (_) {}
+    }
 
     PV.applyTag(plan);
     PV.lastPlan = function () { return plan; };   /* 读数被点开时拿回当前配牌用 */
     if (S.ghosts.up) S.ghosts.up.textContent = i > 0 && S.lyrics[i - 1] ? PV.plain(S.lyrics[i - 1].text) : '';
     if (S.ghosts.dn) S.ghosts.dn.textContent = i < S.lyrics.length - 1 && S.lyrics[i + 1] ? PV.plain(S.lyrics[i + 1].text) : '';
+    /* 译文层：TTML 行的 tran 字段（LRC 路径为空不显示） */
+    if (S.tran) S.tran.textContent = (S.lyrics[i] && S.lyrics[i].tran) ? PV.plain(S.lyrics[i].tran) : '';
     PV.dispatch('pv:cut', plan);
     return plan;
   };
@@ -3461,12 +3532,14 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
       st.style.removeProperty('--jv-bg');
       st.style.removeProperty('--jv-fg');
       st.style.removeProperty('--jv-acc');
+      st.style.removeProperty('--jv-sub');
       ambient(window._jzCover);
       return;
     }
     st.style.setProperty('--jv-bg', s.bg);
     st.style.setProperty('--jv-fg', s.fg);
     st.style.setProperty('--jv-acc', s.acc);
+    if (s.sub) st.style.setProperty('--jv-sub', s.sub);
   };
 
   /* 骰子用：从当前可选风格里重掷（auto 也在池里，和旧行为一致） */
@@ -3710,7 +3783,32 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     PV.addStop(function () { try { a.cancel(); } catch (e) { } });
   }
 
+  /* 登场幅度增益：关键帧 transform 串里的 translateY/translateX/scale/rotate
+   * 逐值乘 PV.enterGain（scale 是偏离 1 的部分乘）。
+   * camera/hold 的预算在 32-motion，enter 一直裸奍 —— 随机抽签命中
+   * zoomIn(1.85)/砸入(2.1) 时行位置猛动，就是用户报的抖动偏移源。
+   * 只解析这四种简单函数；写不出的串原样返回，不炸件。 */
+  function gainKf(kf, g) {
+    if (g == null || g === 1) return kf;
+    var num = '(-?\\d*\\.?\\d+)';
+    var rules = [
+      { re: new RegExp('translate([XY])\\(' + num + '(em|rem|px|%)\\)', 'g'),
+        fn: function (m, ax, v, u) { return 'translate' + ax + '(' + (parseFloat(v) * g).toFixed(3) + u + ')'; } },
+      { re: new RegExp('scale\\(' + num + '\\)', 'g'),
+        fn: function (m, v) { var s = 1 + (parseFloat(v) - 1) * g; return 'scale(' + s.toFixed(4) + ')'; } },
+      { re: new RegExp('rotate\\(' + num + '(deg)\\)', 'g'),
+        fn: function (m, v, u) { return 'rotate(' + (parseFloat(v) * g).toFixed(2) + u + ')'; } }
+    ];
+    return kf.map(function (frame) {
+      if (!frame || !frame.transform) return frame;
+      var out = frame.transform;
+      rules.forEach(function (r) { out = out.replace(r.re, r.fn); });
+      return Object.assign({}, frame, { transform: out });
+    });
+  }
+
   function each(c, els, kf, opt, stagger, base) {
+    kf = gainKf(kf, PV.enterGain);   // 登场幅度预算：与 32-motion 的 camera/hold 钳位同一条体系
     var st = c.stagger == null ? 45 : c.stagger;
     if (stagger != null) st = stagger;
     els.forEach(function (el, i) {
@@ -4440,6 +4538,7 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     if (layer.querySelector('.jv-dice')) {
       S.tag = layer.querySelector('.jv-tag');
       S.ghosts = { up: layer.querySelector('.jv-ghost.up'), dn: layer.querySelector('.jv-ghost.dn') };
+      S.tran = layer.querySelector('.jv-tran');
       return layer;
     }
 
@@ -4463,6 +4562,13 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     var gu = document.createElement('div'); gu.className = 'jv-ghost up';
     var gd = document.createElement('div'); gd.className = 'jv-ghost dn';
     layer.appendChild(gu); layer.appendChild(gd);
+
+    /* 译文层：独立固定位（不参与版式抽签），类字幕。随行更新，
+     * 响应 body.tran-off（与标准/PV 舞台的译文献隐同一个开关）。 */
+    var tr = document.createElement('div'); tr.className = 'jv-tran';
+    tr.textContent = '';
+    layer.appendChild(tr);
+    S.tran = tr;
 
     /* 风格条：读注册表，不再有第二份风格表 */
     var bar = document.createElement('div');
@@ -5264,6 +5370,29 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     if (now >= S.cuts[nextI].t0) PV.show(S.idx, { force: true, keepCuts: true, cutI: nextI });
   };
   PV.onFrame(PV.cutTick);
+
+  /* ---------- 残影哨兵：同文本整行最多 show+1 ----------
+   * 残影/切片类件在 applyIn 之后的延时回调里 clone 整行，同步 trim 追不到
+   * （实测 omakase 后 4 层同文字叠印、6 对重叠 —— 用户报的「歌词重叠」）。
+   * 挂帧循环：与当前 show 行同文本的非 show 行 >1 时，最旧的先清。
+   * 转场期内 show+1 残影是设计内；第 3 层起就是泄漏。 */
+  PV.ghostSweep = function () {
+    var S = PV.S;
+    if (!S || !S.track || S.idx == null || S.idx < 0) return;
+    var show = S.track.querySelector('.jv-line.show');
+    if (!show) return;
+    var txt = show.textContent;
+    if (!txt) return;
+    var clones = [];
+    Array.prototype.forEach.call(S.track.children, function (c) {
+      if (c !== show && c.classList && c.classList.contains('jv-line') && c.textContent === txt) clones.push(c);
+    });
+    while (clones.length > 1) {
+      var el = clones.shift();
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }
+  };
+  PV.onFrame(PV.ghostSweep);
 
   PV.cutsInfo = function () {
     var S = PV.S;
@@ -8465,6 +8594,9 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
   var PV = window.PV;
 
   PV.moveMax = 26;      // 整屏位移/边缘摆幅上限（px）
+  PV.enterGain = 0.62;  // 登场幅度增益：enter 件的 translate/scale/rotate 统一乘它
+                        //（camera/hold 有本文件预算错位，enter 一直裸奍 ——
+                        //  随机抽到 zoomIn(1.85)/砸入(2.1) 这类大落差件就是用户报的抖动偏移源）
   PV.shakeGain = 1;     // 全局抖动系数（0.5 = 所有抖都温柔一半）
 
   /* 哪些件属于"高频抖"：同帧只允许一个发声 */

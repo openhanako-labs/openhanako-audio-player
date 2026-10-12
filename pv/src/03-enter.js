@@ -22,7 +22,32 @@
     PV.addStop(function () { try { a.cancel(); } catch (e) { } });
   }
 
+  /* 登场幅度增益：关键帧 transform 串里的 translateY/translateX/scale/rotate
+   * 逐值乘 PV.enterGain（scale 是偏离 1 的部分乘）。
+   * camera/hold 的预算在 32-motion，enter 一直裸奍 —— 随机抽签命中
+   * zoomIn(1.85)/砸入(2.1) 时行位置猛动，就是用户报的抖动偏移源。
+   * 只解析这四种简单函数；写不出的串原样返回，不炸件。 */
+  function gainKf(kf, g) {
+    if (g == null || g === 1) return kf;
+    var num = '(-?\\d*\\.?\\d+)';
+    var rules = [
+      { re: new RegExp('translate([XY])\\(' + num + '(em|rem|px|%)\\)', 'g'),
+        fn: function (m, ax, v, u) { return 'translate' + ax + '(' + (parseFloat(v) * g).toFixed(3) + u + ')'; } },
+      { re: new RegExp('scale\\(' + num + '\\)', 'g'),
+        fn: function (m, v) { var s = 1 + (parseFloat(v) - 1) * g; return 'scale(' + s.toFixed(4) + ')'; } },
+      { re: new RegExp('rotate\\(' + num + '(deg)\\)', 'g'),
+        fn: function (m, v, u) { return 'rotate(' + (parseFloat(v) * g).toFixed(2) + u + ')'; } }
+    ];
+    return kf.map(function (frame) {
+      if (!frame || !frame.transform) return frame;
+      var out = frame.transform;
+      rules.forEach(function (r) { out = out.replace(r.re, r.fn); });
+      return Object.assign({}, frame, { transform: out });
+    });
+  }
+
   function each(c, els, kf, opt, stagger, base) {
+    kf = gainKf(kf, PV.enterGain);   // 登场幅度预算：与 32-motion 的 camera/hold 钳位同一条体系
     var st = c.stagger == null ? 45 : c.stagger;
     if (stagger != null) st = stagger;
     els.forEach(function (el, i) {

@@ -17,9 +17,31 @@
 }
 body.jizura-mode:not(.view-compact) .pv-jv { display: block; }
 body.jizura-mode:not(.view-compact) .pv-stage { display: flex; }
-body.jizura-mode:not(.view-compact) .pv-bg { display: none; }
+/* .pv-jv 默认带实色底（--jv-bg）， z-index:20 压在封面层之上——
+ * 这就是「PV 封面开关开了也不显示」的真身：封面被实色底盖死。
+ * 封面显示时让 .pv-jv 透底，封面透出；隐藏封面时回到实色底（保住风格背景）。 */
+body:not(.pv-cover-off).jizura-mode:not(.view-compact) .pv-jv { background: transparent; }
+/* 封面背景在文字PV档同样显示（用户指定）：pv-bg 自带高糊+可读性罩层，
+   纯文字演出也需要封面底 —— 与 lyrics-mode 观感统一。 */
+body.jizura-mode:not(.view-compact) .pv-bg { display: block; }
+/* 主题面板「文字PV封面背景」开关：body.pv-cover-off 时整档无封面底 */
+body.pv-cover-off.jizura-mode:not(.view-compact) .pv-bg { display: none !important; }
 /* folia 的行在 PV 下不可见，但保留 DOM —— 退出时立刻能用 */
 body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
+
+/* 译文层（jizura）：固定底位、类字幕；随行更新，响应 .tran-off */
+.jv-tran {
+  position: absolute; left: 0; right: 0; bottom: 7.5%;
+  text-align: center; font-size: 12px; line-height: 1.5;
+  color: var(--jv-sub, rgba(255,255,255,.72));
+  letter-spacing: .04em;
+  pointer-events: none; z-index: 3;
+  text-shadow: 0 1px 8px rgba(0,0,0,.45);
+  padding: 0 8%;
+  transition: opacity .3s ease;
+}
+.tran-off .jv-tran { display: none; }
+.tran-off .pv-tran { display: none; }
 
 .jv-track { position: absolute; inset: 0; z-index: 2; will-change: transform; }
 

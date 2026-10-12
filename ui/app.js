@@ -3147,6 +3147,110 @@ if(trks.length) {
   });
   if(trks.length!==_origLen) { saveTrks(); renderPL(); showToast('已清理 '+_origLen+' → '+trks.length+' 条重复',2000); }
 }
+
+// ── 拖拽排序（pointer 事件 + 纯几何函数）──────────────────────────
+// 几何与 DOM 分离：insertIndex 只吃 rects + pointerY，便于测试。
+function queueDragInsertIndex(pointerY, items) {
+  if (!items || !items.length) return 0;
+  var insertIndex = items[0].i;
+  var inside = false;
+  for (var k = 0; k < items.length; k++) {
+    var it = items[k];
+    if (pointerY >= it.rect.top && pointerY < it.rect.bottom) {
+      insertIndex = (pointerY - it.rect.top) < ((it.rect.bottom - it.rect.top) / 2) ? it.i : it.i + 1;
+      inside = true;
+      break;
+    }
+  }
+  if (!inside && pointerY >= items[items.length - 1].rect.bottom) {
+    insertIndex = items[items.length - 1].i + 1;
+  }
+  return insertIndex;
+}
+function isDragAllowed() {
+  try {
+    var favOnly = !!document.getElementById('favFilterBtn').classList.contains('active');
+    return !favOnly && (typeof currentGroup === 'undefined' || currentGroup === 'all');
+  } catch (e) { return false; }
+}
+function handleDragStart(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!isDragAllowed()) return;
+  var handle = e.currentTarget;
+  var el = handle.closest('.pl-item');
+  if (!el) return;
+  var dragIdx = parseInt(el.dataset.i);
+  if (isNaN(dragIdx)) return;
+  try { if (handle.setPointerCapture) handle.setPointerCapture(e.pointerId); } catch (_) {}
+  var plBody = document.getElementById('plBody');
+  var items = [];
+  plBody.querySelectorAll('.pl-item').forEach(function(item) {
+    items.push({ i: parseInt(item.dataset.i), rect: item.getBoundingClientRect(), el: item });
+  });
+  var startX = e.clientX, startY = e.clientY;
+  var dragState = { moved: false, y: e.clientY };
+  var indicator = document.createElement('div');
+  indicator.className = 'pl-drag-indicator';
+  function positionIndicator(y) {
+    var insertIndex = queueDragInsertIndex(y, items);
+    var nextItem = null;
+    for (var k = 0; k < items.length; k++) {
+      if (items[k].i === insertIndex) { nextItem = items[k].el; break; }
+    }
+    if (nextItem) {
+      var r = nextItem.getBoundingClientRect();
+      indicator.style.top = r.top + 'px';
+      indicator.style.left = r.left + 'px';
+      indicator.style.width = r.width + 'px';
+    } else {
+      var last = items[items.length - 1];
+      var lr = last.rect;
+      indicator.style.top = (lr.bottom - 1) + 'px';
+      indicator.style.left = lr.left + 'px';
+      indicator.style.width = lr.width + 'px';
+    }
+    indicator.style.display = 'block';
+  }
+  var onMove = function(ev) {
+    dragState.y = ev.clientY;
+    if (!dragState.moved) {
+      if (Math.abs(ev.clientY - startY) < 5 && Math.abs(ev.clientX - startX) < 5) return;
+      dragState.moved = true;
+      window.__plJustDragged = Date.now();
+      try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
+      el.classList.add('pl-dragging');
+      plBody.classList.add('pl-dragging');
+      document.body.appendChild(indicator);
+    }
+    positionIndicator(ev.clientY);
+  };
+  var onUp = function() {
+    try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
+    handle.removeEventListener('pointermove', onMove);
+    handle.removeEventListener('pointerup', onUp);
+    handle.removeEventListener('pointercancel', onUp);
+    el.classList.remove('pl-dragging');
+    plBody.classList.remove('pl-dragging');
+    indicator.remove();
+    if (!dragState.moved) return;
+    var insertIndex = queueDragInsertIndex(dragState.y, items);
+    var lo = Math.max(0, dragIdx);
+    var hi = Math.min(insertIndex, trks.length);
+    if (lo === hi) return;
+    var moved = trks.splice(lo, 1)[0];
+    var adjusted = hi > lo ? hi - 1 : hi;
+    trks.splice(adjusted, 0, moved);
+    if (idx === lo) idx = adjusted;
+    else if (lo < idx && adjusted >= idx) idx--;
+    else if (lo > idx && adjusted <= idx) idx++;
+    renderPL();
+    saveTrks();
+  };
+  handle.addEventListener('pointermove', onMove);
+  handle.addEventListener('pointerup', onUp);
+  handle.addEventListener('pointercancel', onUp);
+}
 // 为旧数据补 group 字段
 if(trks.length) {
   var needsGroup=false;
@@ -3555,7 +3659,7 @@ function renderPL() {
       var t=item.t, i=item.i;
       var a=i===idx;
       var star=isFav(t.url);
-      html+='<div class="pl-item'+(a?' active':'')+'" data-i="'+i+'" draggable="true">'
+      html+='<div class="pl-item'+(a?' active':'')+'" data-i="'+i+'" data-drag-enabled="'+isDragAllowed()+'">'
         +'<span class="pl-handle" title="拖动排序">⋮⋮</span>'
         +'<span class="pl-status">'+(a?'♫':(n+1))+'</span>'
         +'<span class="pl-name">'+esc(t.name)+(t.url?'':' <span style="color:var(--text-faint);font-size:9px">(未找到)</span>')+'</span>'
@@ -3702,6 +3806,7 @@ function renderPL() {
   document.getElementById('plBody').querySelectorAll('.pl-item').forEach(function(el){
     el.addEventListener('click',function(e){
       if(e.target.closest('.pl-rm')||e.target.closest('.pl-star')||e.target.closest('.pl-handle')||e.target.closest('.pl-retry'))return;
+      if(window.__plJustDragged && (Date.now() - window.__plJustDragged) < 300) { window.__plJustDragged = 0; return; }
       const i=parseInt(this.dataset.i);
       if(i===idx){toggle();return;}
       load(i);
@@ -3736,38 +3841,9 @@ function renderPL() {
       if(trks[i]) load(i);
     });
   });
-  // ── 拖拽排序 ──
-  var dragIdx=null;
-  document.getElementById('plBody').querySelectorAll('.pl-item').forEach(function(el){
-    el.addEventListener('dragstart',function(){
-      dragIdx=parseInt(this.dataset.i);
-      this.classList.add('dragging');
-    });
-    el.addEventListener('dragend',function(){
-      this.classList.remove('dragging');
-      document.getElementById('plBody').querySelectorAll('.pl-item').forEach(function(e){e.classList.remove('drag-over');});
-    });
-    el.addEventListener('dragover',function(e){
-      e.preventDefault();
-      this.classList.add('drag-over');
-    });
-    el.addEventListener('dragleave',function(){
-      this.classList.remove('drag-over');
-    });
-    el.addEventListener('drop',function(e){
-      e.preventDefault();
-      this.classList.remove('drag-over');
-      var dropIdx=parseInt(this.dataset.i);
-      if(dragIdx===null||dragIdx===dropIdx)return;
-      var moved=trks.splice(dragIdx,1)[0];
-      trks.splice(dropIdx,0,moved);
-      // 修正 idx
-      if(dragIdx===idx)idx=dropIdx;
-      else if(dragIdx<idx&&dropIdx>=idx)idx--;
-      else if(dragIdx>idx&&dropIdx<=idx)idx++;
-      renderPL();
-      saveTrks();
-    });
+  // ── 拖拽排序（pointer 事件，见 handleDragStart 定义在文件前部）──
+  document.getElementById('plBody').querySelectorAll('.pl-handle').forEach(function(h){
+    h.addEventListener('pointerdown', handleDragStart);
   });
 }
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -4364,6 +4440,54 @@ document.getElementById('themeBtn').addEventListener('click', function() {
 })();
 
 // ── 字号切换 ──
+
+// ── 歌词译文显隐：TTML 译文已随行渲染，开关只切 body.tran-off，不重建 DOM ──
+(function(){
+  var btn=document.getElementById('tranBtn');
+  if(!btn) return;
+  var KEY='hanako_audio_lyrics_tran';
+  var off=false;
+  try{ off = localStorage.getItem(KEY)==='0'; }catch(e){}
+  function apply(){
+    document.body.classList.toggle('tran-off', off);
+    btn.title = off ? '显示歌词翻译' : '隐藏歌词翻译';
+  }
+  apply();
+  btn.addEventListener('click',function(){
+    off=!off;
+    try{ localStorage.setItem(KEY, off?'0':'1'); }catch(e){}
+    apply();
+  });
+})();
+
+// ── 内嵌卡列表展开：view-compact 默认只报 168px 单曲卡，
+// ☰ 按钮切 body.list-open 并把报高切到 520 档，完整列表就地展开 ──
+(function(){
+  var btn=document.getElementById('listOpenBtn');
+  if(!btn) return;
+  var KEY='hana_audio_compact_list';
+  var open=false;
+  try{ open = localStorage.getItem(KEY)==='1'; }catch(e){}
+  function syncBtn(){ btn.title = open ? '收起播放列表' : '展开播放列表'; }
+  function apply(){
+    var on = open && document.body.classList.contains('view-compact');
+    document.body.classList.toggle('list-open', on);
+    if (on && document.body.classList.contains('view-compact')) {
+      window.__hanaCardHeightOverride = 520;
+    } else {
+      window.__hanaCardHeightOverride = null;
+    }
+    if (window.__hanaReport) window.__hanaReport();
+    syncBtn();
+  }
+  apply();
+  btn.addEventListener('click',function(){
+    open=!open;
+    try{ localStorage.setItem(KEY, open?'1':'0'); }catch(e){}
+    apply();
+  });
+  // 显隐交给 CSS（#listOpenBtn 仅 view-compact 可见）
+})();
 (function initFontSize() {
   var scaleMap = { 'small': 0.9, 'standard': 1.0, 'large': 1.15 };
   var scaleLabels = { 'small': '小', 'standard': '标准', 'large': '大' };
@@ -4939,16 +5063,17 @@ function doPlaylistImport(){
     }
     try{
       var saved=localStorage.getItem(KEY);
-      // 只恢复标准/PV，不自动进 JIZURA（jizura-mode 不持久化）
+      // '0'标准 / '1'PV；jizura-mode 不持久化（曾用过 '2'=沉浸，已废弃，当标准处理）
       if(saved==='1'){ openPanel(); apply(true); }
       // 清掉可能残留的 jizura-mode
       document.body.classList.remove('jizura-mode');
+      document.body.classList.remove('immersive-mode');
       updateBtnIcon();
     }catch(e){}
   })();
 
   // ── 歌词结构化数据缓存 ──
-  var LRC_CACHE_KEY='hanako_audio_lrc_parsed_cache';
+  var LRC_CACHE_KEY='hanako_audio_lrc_parsed_cache_v2';   // v2：加入内联译文拆分，旧缓存失效
   var LRC_CACHE_MAX=30;
   var LRC_CACHE_TTL=30*24*60*60*1000; // 30天
   function _getLrcCacheObj(){
@@ -5004,6 +5129,23 @@ function doPlaylistImport(){
     return /[:：]/.test(txt.slice(0, 34));
   }
 
+  /* 内联译文拆分：平台歌词常常把译文写在同一行的括号里，
+   * 如「Put your make up on (化好妆)」。拆出 text + tran，
+   * 翻译开关才有东西可切（否则开关对这类歌天生无效）。
+   * 判据：行尾括注、括号内含中日韩字符、主文本仍非空。 */
+  function splitInlineTran(txt) {
+    var m = txt.match(/^(.*?)\s*[（(]\s*([^（()）]{1,80})\s*[)）]\s*$/);
+    if (!m) return null;
+    var main = (m[1] || '').trim();
+    var inner = (m[2] || '').trim();
+    if (!main || !inner) return null;
+    /* 译文一般含 CJK（中文/日文）；纯英文括注多为语气/和声，不拆 */
+    if (!/[\u3040-\u30ff\u3400-\u9fff]/.test(inner)) return null;
+    /* 主文本若已是纯中文（无拉丁字母），说明这行本就是中文（括号是补充），不拆 */
+    if (!/[A-Za-z]/.test(main) && /[\u3400-\u9fff]/.test(main)) return null;
+    return { text: main, tran: inner };
+  }
+
   function parseLrc(raw){
     var lines=raw.split('\n');
     var result=[];
@@ -5014,7 +5156,9 @@ function doPlaylistImport(){
         var txt=m[4].trim();
         if(!txt) return;
         if(looksLikeCredit(txt)) return;          // 署名行不是歌词
-        result.push({time:ms,text:txt});
+        var sp = splitInlineTran(txt);
+        if (sp) result.push({time:ms, text:sp.text, tran:sp.tran});
+        else result.push({time:ms,text:txt});
       }
     });
     result.sort(function(a,b){return a.time-b.time;});
@@ -5175,12 +5319,41 @@ function doPlaylistImport(){
     chorusSetGlobal = chorusSet;
     renderPv();
     _pvIdx = -1;   // 新词表生效，下一拍 highlightLrc 会让 PV 重唱首行
+    // 换词重建：浏览态作废，直接回到跟随
+    _lyricBrowsing = false;
+    if (_lyricBrowseTimer) { clearTimeout(_lyricBrowseTimer); _lyricBrowseTimer = null; }
+    lyricBody.classList.remove('is-browsing');
     lyricBody.innerHTML=lrcData.map(function(l,i){
       var isChorus = chorusSet.has(l.text.trim().toLowerCase());
       var cls = isChorus ? 'lyric-line chorus' : 'lyric-line';
-      return '<div class="'+cls+'" data-lrc-idx="'+i+'">'+esc(l.text)+'</div>';
+      // 双语：TTML 路径的行带 tran（x-translation），LRC 路径无 —— 有则渲染，显隐交给 body.tran-off
+      var tran = l.tran ? '<span class="lyric-tran">'+esc(l.tran)+'</span>' : '';
+      return '<div class="'+cls+'" data-lrc-idx="'+i+'"><span class="l-main">'+esc(l.text)+'</span>'+tran+'</div>';
     }).join('');
   }
+
+  // ── 歌词浏览态：用户滚动查看时暂停自动跟随，3s 无交互自动平滑回归 ──
+  // 之前是每句无条件 scrollIntoView 居中 —— 用户往上翻歌词，下一句一到就被拽回去。
+  // 手势判定用 wheel/touchstart/pointerdown：scroll 事件区分不了程序平滑滚动和用户滚动。
+  var _lyricBrowsing = false, _lyricBrowseTimer = null;
+  (function initLyricBrowse(){
+    if (!lyricBody) return;
+    function enterBrowse(){
+      if (_lyricBrowseTimer) { clearTimeout(_lyricBrowseTimer); _lyricBrowseTimer = null; }
+      if (!_lyricBrowsing) { _lyricBrowsing = true; lyricBody.classList.add('is-browsing'); }
+      _lyricBrowseTimer = setTimeout(exitBrowse, 3000);
+    }
+    function exitBrowse(){
+      if (_lyricBrowseTimer) { clearTimeout(_lyricBrowseTimer); _lyricBrowseTimer = null; }
+      _lyricBrowsing = false;
+      lyricBody.classList.remove('is-browsing');
+      var cur = lyricBody.querySelector('.lyric-line.current');
+      if (cur) cur.scrollIntoView({block:'center',behavior:'smooth'});
+    }
+    ['wheel','touchstart','pointerdown'].forEach(function(evt){
+      lyricBody.addEventListener(evt, enterBrowse, {passive:true});
+    });
+  })();
 
   function highlightLrc(timeMs){
     if(!lrcData.length) return;
@@ -5198,7 +5371,8 @@ function doPlaylistImport(){
       }
     });
     pvSync(idx);
-    if(lines[idx]) lines[idx].scrollIntoView({block:'center',behavior:'smooth'});
+    // 浏览态（用户正在翻歌词）不拽屏；3s 无交互后由 exitBrowse 平滑滚回
+    if(!_lyricBrowsing && lines[idx]) lines[idx].scrollIntoView({block:'center',behavior:'smooth'});
   }
 
   // ── 行内进度：单独走逐帧，不再吊在 timeupdate 上 ──
@@ -6026,7 +6200,22 @@ setTimeout(notifySize, 300);
   //   3. AudioContext 不是 running 就关掉放弃（无手势时它必然是 suspended）
   var REACTIVE_KEY = "hana_audio_reactive";
   var REACTIVE_GAIN_KEY = "hana_audio_reactive_gain";
+  var COVER_CLARITY_KEY = "hana_audio_cover_clarity";
   var reactive = { actx: null, analyser: null, data: null, raf: 0, gain: 2.4 };
+
+  function coverClarity() {
+    try {
+      var v = parseFloat(localStorage.getItem(COVER_CLARITY_KEY));
+      return isFinite(v) && v >= 0 && v <= 1 ? v : 0.8;
+    } catch (e) { return 0.8; }
+  }
+  function applyCoverClarity(c) {
+    c = Math.max(0, Math.min(1, c));
+    var bg = document.getElementById("pvBg");
+    if (bg) bg.style.setProperty("--pv-clarity", String(c));
+    var op = document.getElementById("pvBgOpacity");
+    if (op) op.value = String(c);
+  }
 
   function reactiveGain() {
     try {
@@ -6237,10 +6426,14 @@ setTimeout(notifySize, 300);
       '<div class="theme-grid" id="themeGrid"></div>' +
       '<div class="theme-panel-foot">配色与背景跟着主题走；明暗方向由右上角主题按钮管——auto 跟随 Hana 宿主皮肤，也可手动锁定明暗。' +
       '<br>自定义：往 <code>hana_audio_theme_custom</code> 写一个数组（元素形状同预设）即会出现在这里。</div>' +
+      '<div class="theme-toggle-row"><span>文字PV封面背景</span>' +
+      '<button type="button" class="theme-panel-close" id="pvCoverToggle">开</button></div>' +
       '<div class="theme-toggle-row"><span>音频反应（背景随低频能量亮起）</span>' +
       '<button type="button" class="theme-panel-close" id="reactiveToggle">关</button></div>' +
       '<div class="theme-toggle-row"><span>强度</span>' +
       '<input type="range" id="reactiveGain" min="0.5" max="6" step="0.1" value="2.4"></div>' +
+      '<div class="theme-toggle-row"><span>封面清晰度（左=氛围糊底，右=接近原图）</span>' +
+      '<input type="range" id="pvBgOpacity" min="0" max="1" step="0.05"></div>' +
       '</div>';
     document.body.appendChild(p);
     // 滑杆拖的是 input 事件，不是 click —— 得单独接一根
@@ -6252,8 +6445,21 @@ setTimeout(notifySize, 300);
           try { localStorage.setItem(REACTIVE_GAIN_KEY, String(v)); } catch (err) {}
         }
       }
+      if (e.target && e.target.id === "pvBgOpacity") {
+        var o = parseFloat(e.target.value);
+        if (isFinite(o) && o >= 0) {
+          applyCoverClarity(o);
+          try { localStorage.setItem(COVER_CLARITY_KEY, String(o)); } catch (err) {}
+        }
+      }
     });
     p.addEventListener("click", function (e) {
+      if (e.target && e.target.id === "pvCoverToggle") {
+        var off = document.body.classList.toggle("pv-cover-off");
+        e.target.textContent = off ? "关" : "开";
+        try { localStorage.setItem("hana_audio_pv_cover", off ? "0" : "1"); } catch (err) {}
+        return;
+      }
       if (e.target && e.target.id === "reactiveToggle") {
         var next = !reactiveWanted();
         setReactiveWanted(next);
@@ -6266,6 +6472,11 @@ setTimeout(notifySize, 300);
         p.classList.remove("open");
       }
     });
+    // 回填封面清晰度：滑杆值与 pvBg 变量同步到已存的用户偏好
+    var savedOp = coverClarity();
+    var opInput = p.querySelector("#pvBgOpacity");
+    if (opInput) opInput.value = String(savedOp);
+    applyCoverClarity(savedOp);
     return p;
   }
 
@@ -6406,13 +6617,13 @@ try{
     return;
   }
 }catch(e){}
-/* D2. 顶栏三模式胶囊 */
+/* D2. 顶栏三模式胶囊（标准/PV/歌词） */
 function curMode(){ return document.body.classList.contains('jizura-mode')?2:(document.body.classList.contains('lyrics-mode')?1:0); }
 function setMode(m){
   var btn=document.getElementById('lyricModeBtn');
   if(!btn)return;
   var guard=0;
-  while(curMode()!==m&&guard++<5){ btn.click(); }
+  while(curMode()!==m&&guard++<6){ btn.click(); }
 }
 var header=document.querySelector('.header');
 var actions=document.querySelector('.header-actions');
