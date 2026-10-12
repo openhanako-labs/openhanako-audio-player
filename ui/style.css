@@ -1017,6 +1017,17 @@ body.view-compact .inst-code { display: none; }
   .tab-content { min-height: 0; }
   .tab-pane { height: 100%; overflow-y: auto; }
 
+  /* ── 窄窗（<660 不分栏）列表可达性 ──
+   * 窄窗是竖向流：header → 唱盘 → 控制条 → 标签 → 列表。
+   * 容器 overflow:hidden 且唱盘 flex-shrink:0，列表被顶到视口外又滚不到。
+   * 容器改可滚 + 列表保底高度，保证能滑到并在里面滚。
+   * （view-compact 不受影响，它有自己的紧凑壳。） */
+  @media (max-width: 659px) {
+    body:not(.view-compact) .player-container { overflow-y: auto; }
+    body:not(.view-compact) .tab-content { min-height: 320px; }
+    body:not(.view-compact) .nav-tabs { flex-shrink: 0; }
+  }
+
   /* ── 修：卡片里内部滚不动 ──
    *
    * 症状：高度修好后，列表/搜索页在卡片里滑不动。
