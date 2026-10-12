@@ -13,6 +13,7 @@
     if (layer.querySelector('.jv-dice')) {
       S.tag = layer.querySelector('.jv-tag');
       S.ghosts = { up: layer.querySelector('.jv-ghost.up'), dn: layer.querySelector('.jv-ghost.dn') };
+      S.tran = layer.querySelector('.jv-tran');
       return layer;
     }
 
@@ -36,6 +37,13 @@
     var gu = document.createElement('div'); gu.className = 'jv-ghost up';
     var gd = document.createElement('div'); gd.className = 'jv-ghost dn';
     layer.appendChild(gu); layer.appendChild(gd);
+
+    /* 译文层：独立固定位（不参与版式抽签），类字幕。随行更新，
+     * 响应 body.tran-off（与标准/PV 舞台的译文献隐同一个开关）。 */
+    var tr = document.createElement('div'); tr.className = 'jv-tran';
+    tr.textContent = '';
+    layer.appendChild(tr);
+    S.tran = tr;
 
     /* 风格条：读注册表，不再有第二份风格表 */
     var bar = document.createElement('div');

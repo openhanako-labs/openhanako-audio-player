@@ -1414,8 +1414,24 @@ body.jizura-mode:not(.view-compact) .pv-stage { display: flex; }
 /* 封面背景在文字PV档同样显示（用户指定）：pv-bg 自带高糊+可读性罩层，
    纯文字演出也需要封面底 —— 与 lyrics-mode 观感统一。 */
 body.jizura-mode:not(.view-compact) .pv-bg { display: block; }
+/* 主题面板「文字PV封面背景」开关：body.pv-cover-off 时整档无封面底 */
+body.pv-cover-off.jizura-mode:not(.view-compact) .pv-bg { display: none !important; }
 /* folia 的行在 PV 下不可见，但保留 DOM —— 退出时立刻能用 */
 body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
+
+/* 译文层（jizura）：固定底位、类字幕；随行更新，响应 .tran-off */
+.jv-tran {
+  position: absolute; left: 0; right: 0; bottom: 7.5%;
+  text-align: center; font-size: 12px; line-height: 1.5;
+  color: var(--jv-sub, rgba(255,255,255,.72));
+  letter-spacing: .04em;
+  pointer-events: none; z-index: 3;
+  text-shadow: 0 1px 8px rgba(0,0,0,.45);
+  padding: 0 8%;
+  transition: opacity .3s ease;
+}
+.tran-off .jv-tran { display: none; }
+.tran-off .pv-tran { display: none; }
 
 .jv-track { position: absolute; inset: 0; z-index: 2; will-change: transform; }
 
@@ -2421,6 +2437,9 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     <span class="header-title">HANA PLAYER</span>
   </div>
   <div class="header-actions">
+    <button class="icon-btn" id="listOpenBtn" title="展开播放列表">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="14" y2="18"/></svg>
+    </button>
     <button class="icon-btn" id="tranBtn" title="歌词翻译">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>
     </button>
@@ -3169,6 +3188,8 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     PV.lastPlan = function () { return plan; };   /* 读数被点开时拿回当前配牌用 */
     if (S.ghosts.up) S.ghosts.up.textContent = i > 0 && S.lyrics[i - 1] ? PV.plain(S.lyrics[i - 1].text) : '';
     if (S.ghosts.dn) S.ghosts.dn.textContent = i < S.lyrics.length - 1 && S.lyrics[i + 1] ? PV.plain(S.lyrics[i + 1].text) : '';
+    /* 译文层：TTML 行的 tran 字段（LRC 路径为空不显示） */
+    if (S.tran) S.tran.textContent = (S.lyrics[i] && S.lyrics[i].tran) ? PV.plain(S.lyrics[i].tran) : '';
     PV.dispatch('pv:cut', plan);
     return plan;
   };
@@ -3507,12 +3528,14 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
       st.style.removeProperty('--jv-bg');
       st.style.removeProperty('--jv-fg');
       st.style.removeProperty('--jv-acc');
+      st.style.removeProperty('--jv-sub');
       ambient(window._jzCover);
       return;
     }
     st.style.setProperty('--jv-bg', s.bg);
     st.style.setProperty('--jv-fg', s.fg);
     st.style.setProperty('--jv-acc', s.acc);
+    if (s.sub) st.style.setProperty('--jv-sub', s.sub);
   };
 
   /* 骰子用：从当前可选风格里重掷（auto 也在池里，和旧行为一致） */
@@ -4511,6 +4534,7 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     if (layer.querySelector('.jv-dice')) {
       S.tag = layer.querySelector('.jv-tag');
       S.ghosts = { up: layer.querySelector('.jv-ghost.up'), dn: layer.querySelector('.jv-ghost.dn') };
+      S.tran = layer.querySelector('.jv-tran');
       return layer;
     }
 
@@ -4534,6 +4558,13 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     var gu = document.createElement('div'); gu.className = 'jv-ghost up';
     var gd = document.createElement('div'); gd.className = 'jv-ghost dn';
     layer.appendChild(gu); layer.appendChild(gd);
+
+    /* 译文层：独立固定位（不参与版式抽签），类字幕。随行更新，
+     * 响应 body.tran-off（与标准/PV 舞台的译文献隐同一个开关）。 */
+    var tr = document.createElement('div'); tr.className = 'jv-tran';
+    tr.textContent = '';
+    layer.appendChild(tr);
+    S.tran = tr;
 
     /* 风格条：读注册表，不再有第二份风格表 */
     var bar = document.createElement('div');

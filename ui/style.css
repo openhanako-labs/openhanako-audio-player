@@ -1280,8 +1280,17 @@ body.view-compact .inst-code { display: none; }
   }
   body.view-compact .header-left { display: none; }
   body.view-compact .header-actions { gap: 0; }
-  body.view-compact .header-actions .icon-btn:not(#popBtn) { display: none; }
+  body.view-compact .header-actions .icon-btn:not(#popBtn):not(#listOpenBtn) { display: none; }
   body.view-compact .player-right { display: none !important; }
+  /* ☰ 展开态：列表就地展开，报高切 520 档（head.js currentHeight）*/
+  body.view-compact.list-open .player-right {
+    display: block !important;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  body.view-compact.list-open .now-playing-section { flex: 0 0 auto; }
+  body.view-compact.list-open .controls-section { flex: 0 0 auto; }
   body.view-compact .lyrics-section { display: none; }
   body.view-compact #visualizer { display: none; }
   body.view-compact .volume-group { display: none; }
@@ -1822,6 +1831,10 @@ body.lyrics-mode:not(.view-compact) .now-playing-section { align-items:stretch !
 body.lyrics-mode:not(.view-compact) .np-info { display:none !important; }
 body.lyrics-mode:not(.view-compact) .pv-stage { flex:1 !important; width:100% !important; }
 
+
+/* ☰ 展开列表：只在紧凑卡有意义（完整卡列表常驻） */
+#listOpenBtn { display: none; }
+body.view-compact #listOpenBtn { display: flex; }
 
 /* 明暗切换按钮下线（主题由配色面板统一管理） */
 #themeBtn { display:none !important; }

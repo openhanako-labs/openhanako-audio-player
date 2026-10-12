@@ -481,6 +481,8 @@
     PV.lastPlan = function () { return plan; };   /* 读数被点开时拿回当前配牌用 */
     if (S.ghosts.up) S.ghosts.up.textContent = i > 0 && S.lyrics[i - 1] ? PV.plain(S.lyrics[i - 1].text) : '';
     if (S.ghosts.dn) S.ghosts.dn.textContent = i < S.lyrics.length - 1 && S.lyrics[i + 1] ? PV.plain(S.lyrics[i + 1].text) : '';
+    /* 译文层：TTML 行的 tran 字段（LRC 路径为空不显示） */
+    if (S.tran) S.tran.textContent = (S.lyrics[i] && S.lyrics[i].tran) ? PV.plain(S.lyrics[i].tran) : '';
     PV.dispatch('pv:cut', plan);
     return plan;
   };

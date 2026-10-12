@@ -4459,6 +4459,35 @@ document.getElementById('themeBtn').addEventListener('click', function() {
     apply();
   });
 })();
+
+// ── 内嵌卡列表展开：view-compact 默认只报 168px 单曲卡，
+// ☰ 按钮切 body.list-open 并把报高切到 520 档，完整列表就地展开 ──
+(function(){
+  var btn=document.getElementById('listOpenBtn');
+  if(!btn) return;
+  var KEY='hana_audio_compact_list';
+  var open=false;
+  try{ open = localStorage.getItem(KEY)==='1'; }catch(e){}
+  function syncBtn(){ btn.title = open ? '收起播放列表' : '展开播放列表'; }
+  function apply(){
+    var on = open && document.body.classList.contains('view-compact');
+    document.body.classList.toggle('list-open', on);
+    if (on && document.body.classList.contains('view-compact')) {
+      window.__hanaCardHeightOverride = 520;
+    } else {
+      window.__hanaCardHeightOverride = null;
+    }
+    if (window.__hanaReport) window.__hanaReport();
+    syncBtn();
+  }
+  apply();
+  btn.addEventListener('click',function(){
+    open=!open;
+    try{ localStorage.setItem(KEY, open?'1':'0'); }catch(e){}
+    apply();
+  });
+  // 显隐交给 CSS（#listOpenBtn 仅 view-compact 可见）
+})();
 (function initFontSize() {
   var scaleMap = { 'small': 0.9, 'standard': 1.0, 'large': 1.15 };
   var scaleLabels = { 'small': '小', 'standard': '标准', 'large': '大' };
@@ -6378,6 +6407,8 @@ setTimeout(notifySize, 300);
       '<div class="theme-grid" id="themeGrid"></div>' +
       '<div class="theme-panel-foot">配色与背景跟着主题走；明暗方向由右上角主题按钮管——auto 跟随 Hana 宿主皮肤，也可手动锁定明暗。' +
       '<br>自定义：往 <code>hana_audio_theme_custom</code> 写一个数组（元素形状同预设）即会出现在这里。</div>' +
+      '<div class="theme-toggle-row"><span>文字PV封面背景</span>' +
+      '<button type="button" class="theme-panel-close" id="pvCoverToggle">开</button></div>' +
       '<div class="theme-toggle-row"><span>音频反应（背景随低频能量亮起）</span>' +
       '<button type="button" class="theme-panel-close" id="reactiveToggle">关</button></div>' +
       '<div class="theme-toggle-row"><span>强度</span>' +
@@ -6404,6 +6435,12 @@ setTimeout(notifySize, 300);
       }
     });
     p.addEventListener("click", function (e) {
+      if (e.target && e.target.id === "pvCoverToggle") {
+        var off = document.body.classList.toggle("pv-cover-off");
+        e.target.textContent = off ? "关" : "开";
+        try { localStorage.setItem("hana_audio_pv_cover", off ? "0" : "1"); } catch (err) {}
+        return;
+      }
       if (e.target && e.target.id === "reactiveToggle") {
         var next = !reactiveWanted();
         setReactiveWanted(next);
