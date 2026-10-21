@@ -2571,11 +2571,6 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
         </div>
       </div>
     </div>
-    <div class="strip-modes" id="stripModes" role="group" aria-label="视图模式">
-      <button class="strip-mode active" data-mode="standard" title="标准（黑胶）">标准</button>
-      <button class="strip-mode" data-mode="pv" title="PV（文字舞台）">PV</button>
-      <button class="strip-mode" data-mode="lyric" title="歌词（AMLL 滚动）">歌词</button>
-    </div>
     <div class="strip-time"><span id="stripCur">0:00</span><span class="t-total" id="stripTotal">0:00</span></div>
   </div>
 </div>
@@ -2784,7 +2779,6 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
   var volWrap = document.getElementById('stripVolume');
   var volBtn = document.getElementById('stripVolBtn');
   var volSlider = document.getElementById('stripVolSlider');
-  var modeBtns = strip.querySelectorAll('.strip-mode');
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   // ── 信封驱动断点（替代被 head.js 弱化的 ResizeObserver）──
   // 宿主按挂载位（聊天流 flexible / 黑板·拆窗 fixed / 槽位 fixed…）推真实宽高约束，
@@ -2812,6 +2806,35 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
       refresh();
     }
   }
+  // ── 标题栏交互区域上报：横条按钮被宿主标题栏挡住时保留可点击区 ──
+  // 契约：hana.surface.setInteractiveRegions(rects)（Hana 0.950+）。
+  // strip 形态下把横条内按钮的 iframe 坐标上报；非 strip 或不可用时上报空集。
+  function reportInteractiveRegions() {
+    try {
+      var surf = window.__hana && window.__hana.surface;
+      if (!surf || typeof surf.setInteractiveRegions !== 'function') return;
+      var isStrip = player && player.getAttribute('data-layout') === 'strip';
+      var rects = [];
+      if (isStrip) {
+        var btns = strip.querySelectorAll('.strip-btn, .strip-vol-slider');
+        btns.forEach(function (b) {
+          var r = b.getBoundingClientRect();
+          if (r.width > 0 && r.height > 0) {
+            rects.push({ x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) });
+          }
+        });
+      }
+      surf.setInteractiveRegions(rects);
+    } catch (e) {}
+  }
+  // 布局切换后上报；resize 后重新测量
+  var _origApply = applyEnvelopeLayout;
+  applyEnvelopeLayout = function (env) {
+    _origApply(env);
+    reportInteractiveRegions();
+  };
+  window.addEventListener('resize', function () { reportInteractiveRegions(); });
+
   // 宿主信封（v2 SDK；旧宿主/无宿主时走 window resize 兜底）
   try {
     if (window.__hana && window.__hana.envelope && window.__hana.envelope.subscribe) {
@@ -2868,30 +2891,6 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     if (strip.querySelector('.strip-controls').contains(e.target) || volWrap.contains(e.target)) return;
     seekFromEvent(e);
   });
-
-  // ── 三态胶囊：与竖卡 body 类对齐（标准/PV=lyrics-mode/歌词=jizura-mode）──
-  function syncModes() {
-    var hasLyr = document.body.classList.contains('lyrics-mode');
-    var hasJiz = document.body.classList.contains('jizura-mode');
-    // jizura-mode 是 PV（PV.active() 查的就是它）；lyrics-mode 单独才是歌词态
-    var cur = !hasLyr ? 'standard' : (hasJiz ? 'pv' : 'lyric');
-    modeBtns.forEach(function (b) { b.classList.toggle('active', b.dataset.mode === cur); });
-  }
-  // 横条胶囊点击 → 转调竖卡胶囊 #modeCaps .mc[data-m=N]（它走 setMode 精确切到位）。
-  // 不能自己设 body class 再点 lyricModeBtn：那个按钮是循环切换，会前进两次。
-  var MODE_M = { standard: 0, pv: 2, lyric: 1 };
-  modeBtns.forEach(function (b) {
-    b.addEventListener('click', function (e) {
-      e.stopPropagation();
-      var m = MODE_M[b.dataset.mode];
-      var mc = document.querySelector('#modeCaps .mc[data-m="' + m + '"]');
-      if (mc) { mc.click(); }
-      syncModes();
-    });
-  });
-  // 竖卡模式切换后，反向同步胶囊
-  var mo = new MutationObserver(syncModes);
-  mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
   // ── 镜像竖卡状态：歌名/歌手/封面/播放态/音量/收藏 ──
   function setText(el, t) { if (el && el.textContent !== t) el.textContent = t; }
@@ -2996,7 +2995,7 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 
   // ── 统一刷新 ──
   function refresh() {
-    syncTrack(); syncPlay(); syncVol(); syncProgress(); syncWidth(); syncModes(); syncLyric(); }
+    syncTrack(); syncPlay(); syncVol(); syncProgress(); syncWidth(); syncLyric(); }
 
   // 订阅播放事件
   var audio = document.getElementById('audio');
