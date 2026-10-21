@@ -2679,3 +2679,143 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   pointer-events: none;
 }
 #playerStrip .strip-cover:has(img)::after { content: none; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   横条视觉层 v6 —— 往「冷、净、克制」收
+   近黑底（去掉泥棕） + 一丝铜色极光 + 细 1px 内线 + 纯白主字
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* 条：近黑玻璃，铜色只在左上角一缕，不铺满 */
+#playerStrip .strip-bar {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.05) 0%, rgba(255,255,255,0) 44%, rgba(0,0,0,.22) 100%),
+    radial-gradient(120% 180% at 0% 0%,
+      color-mix(in srgb, var(--strip-c1, var(--accent)) 13%, transparent) 0%, transparent 58%),
+    linear-gradient(180deg, #1a1614 0%, #141110 100%) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.08),
+    inset 0 1px 0 rgba(255,255,255,.06),
+    0 1px 4px rgba(0,0,0,.45) !important;
+}
+/* 压掉所有色场叠层，只保留上面那一缕铜 */
+#playerStrip .strip-field-quiet::before,
+#playerStrip .strip-field-quiet::after,
+#playerStrip .strip-field-played::before,
+#playerStrip .strip-field-played::after { opacity: 0 !important; }
+#playerStrip .strip-front-band { opacity: .28 !important; }
+#playerStrip .strip-front-glow { opacity: .10 !important; }
+#playerStrip .strip-spark { opacity: .16 !important; }
+
+/* 主字纯白、歌手降到 42%、都不加字距 */
+#playerStrip .strip-identity strong {
+  color: #fff !important; font-size: 13px !important;
+  font-weight: 500 !important; letter-spacing: 0 !important;
+}
+#playerStrip .strip-identity span {
+  color: rgba(255,255,255,.40) !important;
+  font-size: 10.5px !important;
+}
+
+/* 歌词：留足呼吸，与身份区间隔 20px，颜色只比主字弱一档 */
+#playerStrip .strip-context { left: 172px !important; gap: 16px !important; }
+#playerStrip .strip-lyric {
+  color: rgba(255,255,255,.54) !important;
+  font-size: 12.5px !important;
+  letter-spacing: .01em;
+}
+#playerStrip .strip-lyric.empty { color: rgba(255,255,255,.20) !important; }
+
+/* 控件：图标 58% 白，hover 纯白；播放键铜色但收敛 */
+#playerStrip .strip-btn { color: rgba(255,255,255,.58) !important; }
+#playerStrip .strip-btn:hover { color: #fff !important; background: rgba(255,255,255,.06) !important; }
+#playerStrip .strip-play {
+  background: linear-gradient(145deg,
+    color-mix(in srgb, var(--accent) 86%, #fff 14%),
+    color-mix(in srgb, var(--accent) 72%, #2a1b11)) !important;
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--accent) 22%, transparent) !important;
+}
+
+/* 封面：深炭底 + 内线，封面未到时不显脏 */
+#playerStrip .strip-cover {
+  background: #201c19 !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.09),
+    0 1px 4px rgba(0,0,0,.4) !important;
+}
+#playerStrip .strip-cover::after { color: rgba(255,255,255,.18); }
+
+/* 时间：近乎不可见，只在需要时确认位置 */
+#playerStrip .strip-now { color: rgba(255,255,255,.22) !important; font-size: 9px !important; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   横条视觉层 v7 —— 瑞士式网格 + 细线框 + 暗铜层次
+   · 竖 1px 细线分隔「身份 / 歌词」，把散掉的版面锚住
+   · 封面做铜底占位，不再是空黑洞
+   · 条面加铜色纵深（左上暖→右下冷），有实体感
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* 条：暗铜纵深感（左上暖铜 → 右下近黑冷），加双线框 */
+#playerStrip .strip-bar {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.055) 0%, rgba(255,255,255,0) 42%, rgba(0,0,0,.26) 100%),
+    linear-gradient(128deg,
+      color-mix(in srgb, var(--strip-c1, var(--accent)) 17%, #221a14) 0%,
+      #1a1512 38%,
+      #14100e 72%,
+      color-mix(in srgb, var(--strip-c1, var(--accent)) 6%, #100d0c) 100%) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.085),
+    inset 0 1px 0 rgba(255,255,255,.07),
+    inset 0 -1px 0 rgba(0,0,0,.5),
+    0 1px 5px rgba(0,0,0,.5) !important;
+}
+
+/* 封面：铜底 + 细铜环，即使没图也是一块有意的材质 */
+#playerStrip .strip-cover {
+  background:
+    linear-gradient(150deg,
+      color-mix(in srgb, var(--accent) 22%, #241c16) 0%,
+      #1b1512 62%,
+      #15100d 100%) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.10),
+    inset 0 0 12px rgba(0,0,0,.35),
+    0 1px 5px rgba(0,0,0,.45) !important;
+}
+#playerStrip .strip-cover::after { color: rgba(255,255,255,.28); font-size: 19px; }
+
+/* 身份区与歌词区之间：1px 竖线（贯穿条高 62%，上下留白） */
+#playerStrip .strip-context::before {
+  content: '';
+  position: absolute;
+  left: -14px; top: 18%; bottom: 18%;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(255,255,255,.13) 22%, rgba(255,255,255,.13) 78%, transparent);
+  pointer-events: none;
+}
+
+/* 版面：身份 124 → 竖线 → 歌词留出固定起手，字不再飘 */
+#playerStrip .strip-identity { left: 16px !important; width: 128px !important; }
+#playerStrip .strip-context { left: 176px !important; right: 14px !important; gap: 14px !important; }
+
+/* 歌词：冷白 52%，字距收一点，与主字拉开层次 */
+#playerStrip .strip-lyric {
+  color: rgba(255,255,255,.52) !important;
+  font-size: 12.5px !important;
+  letter-spacing: 0 !important;
+}
+#playerStrip .strip-lyric.empty { color: rgba(255,255,255,.18) !important; }
+
+/* 时间：可见但不抢戏 */
+#playerStrip .strip-now {
+  color: rgba(255,255,255,.34) !important;
+  font-size: 9.5px !important;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .01em;
+}
+
+/* 控件图标：58% 白；播放键铜色收亮 */
+#playerStrip .strip-btn { color: rgba(255,255,255,.58) !important; }
+#playerStrip .strip-btn:hover { color: #fff !important; background: rgba(255,255,255,.07) !important; }
