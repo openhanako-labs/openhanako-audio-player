@@ -2422,3 +2422,16 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
       color-mix(in srgb, var(--accent) 25%, var(--card-bg)) 50%,
       color-mix(in srgb, var(--accent) 45%, var(--card-bg)) 100%) !important;
 }
+
+/* ── 横条全高铺满：无论宿主给多高，横条区都占满可用空间（标题栏消失后不留白）── */
+.player-container[data-layout="strip"] {
+  height: 100% !important;
+  max-height: 100% !important;
+  display: flex !important;
+  align-items: center;
+}
+.player-container[data-layout="strip"] > #playerStrip { flex: 1 1 auto; }
+
+/* ── 横条贴顶（顶栏语义），不要垂直居中 ── */
+.player-container[data-layout="strip"] { align-items: stretch !important; }
+.player-container[data-layout="strip"] > #playerStrip { align-self: flex-start; height: 96px; max-height: 96px; }
