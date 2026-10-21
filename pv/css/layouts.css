@@ -133,3 +133,25 @@
 .jv-interlude svg circle:nth-child(4) { animation-delay: 2.1s; }
 @keyframes jvBr { 0%, 100% { transform: scale(.85); opacity: .12; } 50% { transform: scale(1.1); opacity: .7; } }
 .jv-interlude .nt { position: relative; z-index: 2; font-size: 34px; color: var(--jv-acc); }
+
+
+/* ── 自适应字号缩放 ─────────────────────────────────────────────
+   版式里的 font-size 是固定 px（34/44/52…），在 560 宽的舞台里刚好，
+   放到 1200 宽的大屏就显小、压到 320 的窄卡又显大。
+   这里用 --jv-scale 统一缩放：由 JS 按舞台宽度算出（基准 560）。
+   用 em 相对缩放而不是改每个数值，原有版式不受影响。
+   ──────────────────────────────────────────────────────────────── */
+.jv-stage, .pv-stage { font-size: calc(16px * var(--jv-scale, 1)); }
+
+/* 各版式字号改为「基准 × 缩放」——保持原比例关系，只是整体可伸缩 */
+.jv-center .cur { font-size: calc(34px * var(--jv-scale, 1)); }
+.jv-mix .big   { font-size: calc(44px * var(--jv-scale, 1)); }
+.jv-mix .sm    { font-size: calc(15px * var(--jv-scale, 1)); }
+.jv-tategaki .cur { font-size: calc(28px * var(--jv-scale, 1)); }
+.jv-band .bandrow { font-size: calc(24px * var(--jv-scale, 1)); }
+.jv-tile .jv-w { font-size: calc(26px * var(--jv-scale, 1)); }
+.jv-scatter .jv-w { font-size: calc(24px * var(--jv-scale, 1)); }
+.jv-wave .jv-w { font-size: calc(30px * var(--jv-scale, 1)); }
+.jv-break .cur { font-size: calc(52px * var(--jv-scale, 1)); }
+.jv-break .sub2 { font-size: calc(11px * var(--jv-scale, 1)); }
+.jv-type { font-size: calc(22px * var(--jv-scale, 1)); }

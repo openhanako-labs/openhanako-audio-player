@@ -146,6 +146,18 @@
   PV.setLastLayout = function (k) { S.lastLayout = k; };
 
   /* ---------- 舞台挂载：PV 用自己的层，不碰 folia 的 #pvTrack ---------- */
+  /* ---------- 字号自适应：按舞台宽度算缩放（基准 560）---------- */
+  /* 版式 CSS 里的字号是 560 宽下的值；舞台更宽就放大、更窄就收小。
+     下限 0.72、上限 1.45，避免极端尺寸下字过大/过小。 */
+  PV.syncScale = function () {
+    var st = PV.stage();
+    if (!st) return;
+    var w = st.clientWidth || 0;
+    if (!w) return;
+    var scale = Math.max(0.72, Math.min(1.45, w / 560));
+    st.style.setProperty('--jv-scale', scale.toFixed(3));
+  };
+
   PV.mount = function () {
     var st = PV.stage();
     if (!st) return null;
@@ -161,6 +173,14 @@
     }
     S.layer = layer;
     S.track = layer.querySelector('.jv-track');
+    // 字号自适应：挂载时算一次，舞台尺寸变化时重算
+    try {
+      PV.syncScale();
+      if (!window._pvScaleObserver && window.ResizeObserver) {
+        window._pvScaleObserver = new ResizeObserver(function () { PV.syncScale(); });
+        window._pvScaleObserver.observe(st);
+      }
+    } catch (e) {}
     return layer;
   };
 

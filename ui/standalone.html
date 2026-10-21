@@ -1603,6 +1603,28 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 @keyframes jvBr { 0%, 100% { transform: scale(.85); opacity: .12; } 50% { transform: scale(1.1); opacity: .7; } }
 .jv-interlude .nt { position: relative; z-index: 2; font-size: 34px; color: var(--jv-acc); }
 
+
+/* ── 自适应字号缩放 ─────────────────────────────────────────────
+   版式里的 font-size 是固定 px（34/44/52…），在 560 宽的舞台里刚好，
+   放到 1200 宽的大屏就显小、压到 320 的窄卡又显大。
+   这里用 --jv-scale 统一缩放：由 JS 按舞台宽度算出（基准 560）。
+   用 em 相对缩放而不是改每个数值，原有版式不受影响。
+   ──────────────────────────────────────────────────────────────── */
+.jv-stage, .pv-stage { font-size: calc(16px * var(--jv-scale, 1)); }
+
+/* 各版式字号改为「基准 × 缩放」——保持原比例关系，只是整体可伸缩 */
+.jv-center .cur { font-size: calc(34px * var(--jv-scale, 1)); }
+.jv-mix .big   { font-size: calc(44px * var(--jv-scale, 1)); }
+.jv-mix .sm    { font-size: calc(15px * var(--jv-scale, 1)); }
+.jv-tategaki .cur { font-size: calc(28px * var(--jv-scale, 1)); }
+.jv-band .bandrow { font-size: calc(24px * var(--jv-scale, 1)); }
+.jv-tile .jv-w { font-size: calc(26px * var(--jv-scale, 1)); }
+.jv-scatter .jv-w { font-size: calc(24px * var(--jv-scale, 1)); }
+.jv-wave .jv-w { font-size: calc(30px * var(--jv-scale, 1)); }
+.jv-break .cur { font-size: calc(52px * var(--jv-scale, 1)); }
+.jv-break .sub2 { font-size: calc(11px * var(--jv-scale, 1)); }
+.jv-type { font-size: calc(22px * var(--jv-scale, 1)); }
+
 /* PV 引擎 · ⑨ 版式扩充样式（22 件，与 pv/src/22-layouts2.js 一一对应）
  *
  * 规矩：这些类都打在**行元素**上（.jv-line.jv-l3 …），而行已经是
@@ -2850,15 +2872,26 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
       if (!surf || typeof surf.setInteractiveRegions !== 'function') return;
       var rects = [];
       // 顶栏按钮：竖卡/横条都上报（宿主标题栏悬浮时盖住它们点不到）
-      // 顶栏所有可交互元素：图标按钮 + 模式胶囊(标准/PV/歌词) + 实例徽章
-      var headerBtns = document.querySelectorAll(
-        '.header-actions .icon-btn, .header .icon-btn, #modeCaps .mc, .header .mc'
+      // 不再堆选择器（每次都漏）：扫描全文档所有可见的可交互控件，
+      // 把落在宿主标题栏/悬浮控件带内的上报上去。
+      var seen = 0;
+      var all = document.querySelectorAll(
+        'button, [role="button"], input[type="range"], .nav-tab, .mc, .strip-btn, .icon-btn'
       );
-      headerBtns.forEach(function (b) {
+      all.forEach(function (b) {
+        if (seen >= 60) return;                      // 宿主上限 64
         var r = b.getBoundingClientRect();
-        if (r.width > 0 && r.height > 0) {
-          rects.push({ x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) });
-        }
+        if (r.width <= 0 || r.height <= 0) return;   // 隐藏控件不上报
+        var cs = getComputedStyle(b);
+        if (cs.visibility === 'hidden' || cs.display === 'none' || cs.opacity === '0') return;
+        // 上报顶部带内的控件：宿主标题栏/悬浮控件可能压到不同高度，
+        // 取 160px 覆盖「顶栏 + nav 一行」。超出这个范围的控件不受宿主 chrome 影响。
+        if (r.top > 160) return;
+        rects.push({
+          x: Math.round(r.x), y: Math.round(r.y),
+          width: Math.round(r.width), height: Math.round(r.height)
+        });
+        seen++;
       });
       // 横条按钮：strip 形态额外上报
       var isStrip = player && player.getAttribute('data-layout') === 'strip';
@@ -3309,6 +3342,18 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
   PV.setLastLayout = function (k) { S.lastLayout = k; };
 
   /* ---------- 舞台挂载：PV 用自己的层，不碰 folia 的 #pvTrack ---------- */
+  /* ---------- 字号自适应：按舞台宽度算缩放（基准 560）---------- */
+  /* 版式 CSS 里的字号是 560 宽下的值；舞台更宽就放大、更窄就收小。
+     下限 0.72、上限 1.45，避免极端尺寸下字过大/过小。 */
+  PV.syncScale = function () {
+    var st = PV.stage();
+    if (!st) return;
+    var w = st.clientWidth || 0;
+    if (!w) return;
+    var scale = Math.max(0.72, Math.min(1.45, w / 560));
+    st.style.setProperty('--jv-scale', scale.toFixed(3));
+  };
+
   PV.mount = function () {
     var st = PV.stage();
     if (!st) return null;
@@ -3324,6 +3369,14 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     }
     S.layer = layer;
     S.track = layer.querySelector('.jv-track');
+    // 字号自适应：挂载时算一次，舞台尺寸变化时重算
+    try {
+      PV.syncScale();
+      if (!window._pvScaleObserver && window.ResizeObserver) {
+        window._pvScaleObserver = new ResizeObserver(function () { PV.syncScale(); });
+        window._pvScaleObserver.observe(st);
+      }
+    } catch (e) {}
     return layer;
   };
 
