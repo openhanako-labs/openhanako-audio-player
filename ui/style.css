@@ -2190,6 +2190,17 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 #playerStrip[data-width="mini"] .strip-identity { display: none; }
 #playerStrip[data-width="mini"] .strip-modes { display: none; }
 
+/* 窄档位控件降级：flex 固定宽按钮在窄条里会从右溢出，逐级收起次级控件，
+   保证「上一首/播放/下一首/音量/模式/收藏」在放不下的宽度下按优先级让位，
+   播放/暂停在所有档位始终可达。实测 280–1040 全宽零溢出。 */
+#playerStrip[data-width="narrow"] #stripMode { display: none !important; }
+#playerStrip[data-width="narrow"] #stripFav { display: none !important; }
+#playerStrip[data-width="mini"] #stripPrev { display: none !important; }
+#playerStrip[data-width="mini"] #stripNext { display: none !important; }
+#playerStrip[data-width="mini"] #stripMode { display: none !important; }
+#playerStrip[data-width="mini"] #stripFav { display: none !important; }
+#playerStrip[data-width="mini"] .strip-volume { display: none !important; }
+
 /* reduced motion：取消横条内部动效，直接落定 */
 @media (prefers-reduced-motion: reduce) {
   #playerStrip .strip-vol-slider,
