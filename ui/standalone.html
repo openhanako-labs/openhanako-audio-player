@@ -2935,7 +2935,7 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
           }).catch(function () {});
         }
       } catch (e) {}
-      else { cover.textContent = '♫'; }
+      if (!src) { cover.textContent = '♫'; }
     }
     // 收藏态
     var fv = document.getElementById('favBtn');
