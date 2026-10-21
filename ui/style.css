@@ -2916,3 +2916,60 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 @media (max-width: 520px) {
   .header { padding-right: 96px !important; }
 }
+
+/* ═══ 顶栏改为「标题行 + 控件行」两行结构 ═══
+   宿主窗口控件浮在 iframe 右上角，宽度不可控、也不可通过 API 让位。
+   与其猜安全区数值，不如把可点控件整体移到第二行——任何宿主控件都只覆盖第一行。 */
+.header {
+  flex-wrap: wrap !important;
+  row-gap: 6px !important;
+  padding-right: 0 !important;
+  align-items: flex-start !important;
+}
+/* 第一行：只留标题（会被宿主控件盖住也无所谓，它不可点） */
+.header-left { flex: 0 0 auto !important; }
+/* 控件行：独占整行，从左排起，不与宿主控件同高 */
+.header-actions,
+#modeCaps {
+  flex: 0 0 auto !important;
+  order: 10;
+}
+.header-actions { width: 100% !important; justify-content: flex-start !important; }
+#modeCaps { order: 9; }
+
+/* 胶囊也下移到第二行（它可点，不能跟宿主控件同高） */
+#modeCaps { order: 11 !important; flex: 0 0 auto !important; margin-left: 8px !important; }
+/* 第二行整体左对齐，从 16 起排 */
+.header-actions { order: 10 !important; }
+
+/* 胶囊与图标按钮同一行：都放第二行，从左依次排 */
+.header { row-gap: 4px !important; }
+.header-actions { order: 20 !important; width: auto !important; }
+#modeCaps { order: 19 !important; margin-left: 0 !important; }
+/* 第二行容器：用一个虚拟的 flex 断行 */
+.header-actions, #modeCaps { align-self: center !important; }
+
+/* 用 flex-basis:100% 强制胶囊与控件组整体换到第二行 */
+.header-left { flex: 0 0 100% !important; }
+.header-actions { order: 20 !important; }
+#modeCaps { order: 19 !important; }
+
+/* 胶囊与按钮同行：把 actions 和 caps 放进同一个 flex 行 */
+.header { flex-wrap: wrap !important; }
+.header-left { flex: 0 0 100% !important; }
+#modeCaps { order: 19 !important; flex: 0 0 auto !important; }
+.header-actions { order: 20 !important; flex: 0 0 auto !important; width: auto !important; }
+/* 让 caps 和 actions 挤在同一行：两者都允许收缩 */
+#modeCaps, .header-actions { align-self: flex-start !important; }
+
+/* 胶囊与按钮同排：两者都允许收缩，挤在一行 */
+#modeCaps { flex: 0 1 auto !important; min-width: 0 !important; }
+.header-actions { flex: 0 1 auto !important; min-width: 0 !important; }
+.header-actions .icon-btn { flex: 0 0 auto !important; }
+
+/* 顶栏第二行：胶囊压缩 + 图标收紧，确保同排不换行 */
+#modeCaps .mc { padding: 3px 7px !important; font-size: 11px !important; }
+.header-actions { gap: 1px !important; }
+.header-actions .icon-btn { width: 26px !important; height: 26px !important; padding: 0 !important; }
+.header-actions .icon-btn svg { width: 15px !important; height: 15px !important; }
+.header { padding-left: 12px !important; padding-right: 12px !important; }
