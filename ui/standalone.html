@@ -2958,15 +2958,22 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
             && window.aiThemeGenerator.coverColorExtractor.extract) {
           window.aiThemeGenerator.coverColorExtractor.extract(src).then(function (colors) {
             if (!colors) return;
-            var c = colors.colors || colors.dominant || colors;
-            if (c && Array.isArray(c) && c.length >= 2) {
-              strip.style.setProperty('--strip-c1', c[0] || '');
-              strip.style.setProperty('--strip-c2', c[1] || '');
-              strip.style.setProperty('--strip-c3', c[1] || c[0] || '');
-            } else if (typeof colors === 'object') {
-              var base = colors.dominant || colors.main || colors.primary || colors.background;
-              if (base) { strip.style.setProperty('--strip-c1', base); strip.style.setProperty('--strip-c2', base); strip.style.setProperty('--strip-c3', base); }
-            }
+            var p = colors.primary || colors.dominant || colors.main || '';
+            var s2 = colors.secondary || colors.accent || p;
+            var a = colors.accent || p;
+            if (!p) return;
+            // 横条色场：封面主色→次色→主色 的三段渐变（接近 sample 的观感）
+            strip.style.setProperty('--strip-field', 'linear-gradient(135deg, ' + p + ' 0%, ' + s2 + ' 52%, ' + a + ' 100%)');
+            strip.style.setProperty('--strip-c1', p);
+            strip.style.setProperty('--strip-c2', s2);
+            strip.style.setProperty('--strip-c3', a);
+            // 星光用封面撞色
+            strip.style.setProperty('--strip-star-0', p);
+            strip.style.setProperty('--strip-star-1', s2);
+            strip.style.setProperty('--strip-star-2', a);
+            strip.style.setProperty('--strip-star-3', p);
+            strip.style.setProperty('--strip-star-4', s2);
+            strip.style.setProperty('--strip-star-5', a);
           }).catch(function () {});
         }
       } catch (e) {}
@@ -3100,6 +3107,10 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
   }
   // 竖卡 DOM 变化（歌名/歌手/封面/歌词当前行）→ 同步到横条
   var mo2 = new MutationObserver(function () { syncTrack(); syncLyric(); });
+  // 歌词换句时也同步（.lyric-line.current 的 class 变化）
+  var moLyric = new MutationObserver(function () { syncLyric(); });
+  var lb = document.getElementById('lyricBody');
+  if (lb) moLyric.observe(lb, { attributes: true, subtree: true, attributeFilter: ['class'] });
   var npc = document.getElementById('npCover');
   if (npc) mo2.observe(npc, { childList: true });
   var lyrBody = document.getElementById('lyricBody');
