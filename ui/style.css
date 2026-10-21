@@ -2435,3 +2435,247 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 /* ── 横条贴顶（顶栏语义），不要垂直居中 ── */
 .player-container[data-layout="strip"] { align-items: stretch !important; }
 .player-container[data-layout="strip"] > #playerStrip { align-self: flex-start; height: 96px; max-height: 96px; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   横条视觉层 v2 —— 克制、清晰、暗铜质感
+   设计原则：近黑底 + 封面色低浓度晕染（不铺满）、1px 内描边、
+   字重层级分明、控件留呼吸、时间弱化到几乎不可见但不影响读。
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* 容器底：近黑，左上角一点封面/主题色晕染，避免死板 */
+.player-container[data-layout="strip"] {
+  background:
+    radial-gradient(90% 140% at 0% 0%,
+      color-mix(in srgb, var(--accent) 8%, transparent), transparent 62%),
+    #100d0b !important;
+}
+
+/* 横条本体：近黑玻璃 + 极淡封面色，1px 内描边，圆角 10 */
+#playerStrip .strip-bar {
+  border-radius: 10px !important;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.045) 0%, rgba(255,255,255,0) 42%, rgba(0,0,0,.18) 100%),
+    linear-gradient(104deg,
+      color-mix(in srgb, var(--strip-c1, var(--accent)) 16%, #191512) 0%,
+      color-mix(in srgb, var(--strip-c2, var(--accent)) 7%, #141110) 46%,
+      color-mix(in srgb, var(--strip-c1, var(--accent)) 11%, #100d0b) 100%) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.075),
+    0 1px 3px rgba(0,0,0,.35) !important;
+}
+/* 压掉 sample 的色场/光片层，避免脏雾叠在底色上 */
+#playerStrip .strip-field-quiet::before,
+#playerStrip .strip-field-quiet::after { opacity: 0 !important; }
+#playerStrip .strip-field-played { opacity: .30 !important; }
+#playerStrip .strip-field-played::before,
+#playerStrip .strip-field-played::after { opacity: .16 !important; }
+/* 星光弱化到若隐若现 */
+#playerStrip .strip-spark { opacity: .28 !important; box-shadow: 0 0 3px 0 currentColor !important; }
+#playerStrip .strip-front-band { opacity: .55 !important; }
+#playerStrip .strip-front-glow { opacity: .18 !important; }
+
+/* 封面：52×52，圆角 8，内描边，无破图感 */
+#playerStrip .strip-cover {
+  width: 52px !important; height: 52px !important;
+  border-radius: 8px !important;
+  background: #1d1917 center/cover no-repeat !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.10),
+    0 2px 6px rgba(0,0,0,.40) !important;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; color: rgba(242,237,232,.28);
+}
+#playerStrip .strip-cover img { border-radius: 8px; }
+/* 破图时 img 透明，露出底板与 ♫ */
+#playerStrip .strip-cover img:not([src]), #playerStrip .strip-cover img[src=""] { opacity: 0; }
+#playerStrip .strip-cover.broken img { display: none; }
+
+/* 身份区：标题 13/500 冷白，歌手 11 低对比，宽度收窄 */
+#playerStrip .strip-identity { width: 128px !important; }
+#playerStrip .strip-identity strong {
+  font-size: 13px !important; font-weight: 500 !important;
+  color: #f2ede8 !important; letter-spacing: .01em;
+  line-height: 17px !important;
+}
+#playerStrip .strip-identity span {
+  font-size: 11px !important; color: rgba(242,237,232,.44) !important;
+  line-height: 15px !important;
+}
+
+/* 歌词：居中，冷白 70%，单行省略 */
+#playerStrip .strip-lyric {
+  font-size: 12.5px !important;
+  color: rgba(242,237,232,.68) !important;
+  letter-spacing: .01em;
+}
+#playerStrip .strip-lyric.empty { color: rgba(242,237,232,.24) !important; }
+
+/* 控件：右侧留 14，间距 3，按钮 28，播放 32 圆 */
+#playerStrip .strip-controls { right: 14px !important; gap: 3px !important; }
+#playerStrip .strip-btn {
+  width: 28px !important; height: 28px !important;
+  border-radius: 7px !important;
+  color: rgba(242,237,232,.62) !important;
+}
+#playerStrip .strip-btn:hover { color: #f2ede8 !important; background: rgba(255,255,255,.07) !important; }
+#playerStrip .strip-play {
+  width: 32px !important; height: 32px !important;
+  background: linear-gradient(140deg,
+    color-mix(in srgb, var(--accent) 92%, #fff 8%),
+    color-mix(in srgb, var(--accent) 78%, #2b1d12)) !important;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 26%, transparent) !important;
+}
+#playerStrip .strip-play svg { width: 13px !important; height: 13px !important; }
+
+/* 时间：弱化到地板，贴在条内两角，10px */
+#playerStrip .strip-time {
+  font-size: 10px !important;
+  color: rgba(242,237,232,.30) !important;
+  bottom: 4px !important;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .02em;
+}
+#playerStrip .strip-now { left: calc(24px + var(--strip-height) + 10px) !important; }
+#playerStrip .strip-total { right: 14px !important; }
+/* 控件区在右侧，总时长会跟控件撞；控件在场时总时长让位 */
+#playerStrip .strip-total { display: none; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   横条视觉层 v3 —— 封面与条收紧成一体、播放键正圆、时间归位
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* 封面贴紧条：左 14，条左从 76 起（封面 52 + 间隙 10） */
+#playerStrip .strip-cover { left: 14px !important; top: 50% !important; transform: translateY(-50%) !important; }
+#playerStrip .strip-bar { left: 76px !important; right: 14px !important; }
+#playerStrip { padding: 0 !important; }
+
+/* 身份区从条左起 14，宽 124 */
+#playerStrip .strip-identity { left: 14px !important; width: 124px !important; }
+/* 歌词/控件区从身份区右缘起 */
+#playerStrip .strip-context { left: 146px !important; right: 14px !important; }
+
+/* 播放键正圆 */
+#playerStrip .strip-play { border-radius: 50% !important; }
+
+/* 时间：贴条内底角，位于条内（相对 strip-bar） */
+#playerStrip .strip-now { left: 152px !important; bottom: 3px !important; }
+#playerStrip .strip-total { right: 16px !important; bottom: 3px !important; display: block !important; }
+
+/* 条内垂直居中已由 identity/context 的 height:100% + flex 保证 */
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   横条视觉层 v4 —— 收口：控件不越界、歌词居中、时间可读、封面兜底
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* 控件区：绝对定位在条右侧，内部右对齐，绝不越界 */
+#playerStrip .strip-controls {
+  position: absolute !important;
+  top: 0 !important; right: 12px !important; left: auto !important;
+  height: 100% !important; width: auto !important;
+  display: flex !important; align-items: center !important;
+  gap: 2px !important;
+  justify-content: flex-end !important;
+  max-width: 60%;
+}
+#playerStrip .strip-btn { flex: 0 0 auto !important; }
+
+/* 歌词区：让出控件宽度，居中 */
+#playerStrip .strip-context {
+  display: flex !important; align-items: center !important;
+  justify-content: center !important;
+  right: 180px !important;
+}
+#playerStrip .strip-lyric-line {
+  width: 100% !important; justify-content: center !important;
+  padding-right: 0 !important;
+}
+#playerStrip .strip-lyric { text-align: center !important; }
+
+/* 时间：条内左下，10px，提到可读但弱于正文 */
+#playerStrip .strip-time {
+  font-size: 10px !important;
+  color: rgba(242,237,232,.42) !important;
+  bottom: 5px !important;
+  letter-spacing: .02em;
+}
+#playerStrip .strip-now { left: 14px !important; }
+/* 总时长放右下，但控件在右侧会撞；放条内右侧 offset 让开 */
+#playerStrip .strip-total { right: 12px !important; display: none !important; }
+
+/* 封面：破图兜底 —— 底色 + 音符字，img 失败不显示裂图 */
+#playerStrip .strip-cover { background: #241f1c !important; }
+#playerStrip .strip-cover img { position: absolute; inset: 0; }
+#playerStrip .strip-cover:not(:has(img[src])) { }
+
+/* 条底色提亮一档，让色场可见 */
+#playerStrip .strip-bar {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.055) 0%, rgba(255,255,255,0) 46%, rgba(0,0,0,.16) 100%),
+    linear-gradient(104deg,
+      color-mix(in srgb, var(--strip-c1, var(--accent)) 22%, #1c1815) 0%,
+      color-mix(in srgb, var(--strip-c2, var(--accent)) 10%, #171310) 48%,
+      color-mix(in srgb, var(--strip-c1, var(--accent)) 16%, #14100e) 100%) !important;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   横条视觉层 v5 —— 用 flex 一线排布：身份左 / 歌词中 / 控件右
+   彻底放弃 absolute 叠层，避免任何重叠。
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* context 占满条内剩余宽度，内部横排 */
+#playerStrip .strip-context {
+  left: 150px !important; right: 14px !important;
+  top: 0 !important; height: 100% !important;
+  display: flex !important; align-items: center !important;
+  gap: 12px !important;
+  pointer-events: none;
+}
+/* 歌词：弹性占剩余，左对齐，单行 */
+#playerStrip .strip-lyric-line {
+  flex: 1 1 auto !important; min-width: 0 !important;
+  width: auto !important;
+  justify-content: flex-start !important;
+  padding-right: 0 !important;
+}
+#playerStrip .strip-lyric { text-align: left !important; }
+
+/* 控件：正常流里的固定块，永远在歌词右侧，不重叠 */
+#playerStrip .strip-controls {
+  position: static !important; inset: auto !important;
+  flex: 0 0 auto !important;
+  display: flex !important; align-items: center !important;
+  gap: 2px !important;
+  opacity: 1 !important; visibility: visible !important; pointer-events: auto !important;
+}
+
+/* 时间：只留当前时长，贴条内右下角（按钮下方留白区），9px 极弱 */
+#playerStrip .strip-now {
+  left: auto !important; right: 14px !important;
+  bottom: 2px !important;
+  font-size: 9px !important;
+  color: rgba(242,237,232,.26) !important;
+}
+#playerStrip .strip-total { display: none !important; }
+
+/* 身份区：两行，去掉挤压感 */
+#playerStrip .strip-identity {
+  left: 14px !important; width: 124px !important;
+  justify-content: center !important;
+}
+#playerStrip .strip-identity strong { font-size: 12.5px !important; line-height: 16px !important; }
+#playerStrip .strip-identity span { font-size: 10.5px !important; line-height: 14px !important; margin-top: 1px; }
+
+/* 封面：破图时露出 ♫，不显示裂图标 */
+#playerStrip .strip-cover { position: relative; overflow: hidden; }
+#playerStrip .strip-cover::after {
+  content: '♫';
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; color: rgba(242,237,232,.22);
+  pointer-events: none;
+}
+#playerStrip .strip-cover:has(img)::after { content: none; }
