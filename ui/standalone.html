@@ -1633,6 +1633,29 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 .jv-break .sub2 { font-size: calc(11px * var(--jv-scale, 1)); }
 .jv-type { font-size: calc(22px * var(--jv-scale, 1)); }
 
+/* ── 强制字号与行高生效（提高特异性压过原有单类规则）── */
+.pv-stage .jv-center .cur,
+.pv-stage .jv-mix .big { font-size: calc(44px * var(--jv-scale, 1)) !important; line-height: 1.2 !important; }
+.pv-stage .jv-center .cur { font-size: calc(34px * var(--jv-scale, 1)) !important; }
+.pv-stage .jv-mix .sm { font-size: calc(15px * var(--jv-scale, 1)) !important; }
+.pv-stage .jv-tategaki .cur { font-size: calc(28px * var(--jv-scale, 1)) !important; }
+.pv-stage .jv-break .cur { font-size: calc(52px * var(--jv-scale, 1)) !important; line-height: 1.16 !important; }
+.pv-stage .jv-wave .jv-w { font-size: calc(30px * var(--jv-scale, 1)) !important; }
+.pv-stage .jv-tile .jv-w,
+.pv-stage .jv-scatter .jv-w { font-size: calc(24px * var(--jv-scale, 1)) !important; }
+.pv-stage .jv-band .bandrow { font-size: calc(24px * var(--jv-scale, 1)) !important; }
+.pv-stage .jv-type { font-size: calc(22px * var(--jv-scale, 1)) !important; }
+
+/* 不依赖父级：直接按舞台 id 提特异性 */
+#pvStage .jv-center .cur { font-size: calc(34px * var(--jv-scale, 1)) !important; line-height: 1.2 !important; }
+#pvStage .jv-mix .big { font-size: calc(44px * var(--jv-scale, 1)) !important; line-height: 1.2 !important; }
+#pvStage .jv-break .cur { font-size: calc(52px * var(--jv-scale, 1)) !important; line-height: 1.16 !important; }
+
+/* 连行版式（jv-ren）也接缩放 —— 之前只改了 center/mix，实际渲染常用的是这个 */
+#pvStage .jv-ren .cur { font-size: calc(34px * var(--jv-scale, 1)) !important; line-height: 1.22 !important; }
+/* 兜底：任何版式的 .cur 都接缩放（不同版式基准不同，用 em 相对父级） */
+#pvStage .jv-line .cur { line-height: 1.22 !important; }
+
 /* PV 引擎 · ⑨ 版式扩充样式（22 件，与 pv/src/22-layouts2.js 一一对应）
  *
  * 规矩：这些类都打在**行元素**上（.jv-line.jv-l3 …），而行已经是
