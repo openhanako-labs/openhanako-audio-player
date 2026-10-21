@@ -2813,8 +2813,17 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     try {
       var surf = window.__hana && window.__hana.surface;
       if (!surf || typeof surf.setInteractiveRegions !== 'function') return;
-      var isStrip = player && player.getAttribute('data-layout') === 'strip';
       var rects = [];
+      // 顶栏按钮：竖卡/横条都上报（宿主标题栏悬浮时盖住它们点不到）
+      var headerBtns = document.querySelectorAll('.header-actions .icon-btn, .header .icon-btn');
+      headerBtns.forEach(function (b) {
+        var r = b.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+          rects.push({ x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) });
+        }
+      });
+      // 横条按钮：strip 形态额外上报
+      var isStrip = player && player.getAttribute('data-layout') === 'strip';
       if (isStrip) {
         var btns = strip.querySelectorAll('.strip-btn, .strip-vol-slider');
         btns.forEach(function (b) {
