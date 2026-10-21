@@ -114,6 +114,7 @@ const PROBE = `(() => {
   return {
     layout, vw, vh,
     docScrolls: document.documentElement.scrollHeight > vh + 1,
+    leak: layout !== 'strip' && vis('#playerStrip') === 'visible',
     regions: {
       nowPlaying: vis('.now-playing-section'),
       controls: vis('.controls-section'),
@@ -158,14 +159,15 @@ async function main() {
   bws.close();
 
   for (const r of rows) {
-    const flag = r.clippedCount > 0 || r.consoleErrors.length ? '  ← 有问题' : '';
+    const flag = r.clippedCount > 0 || r.consoleErrors.length || r.leak ? '  ← 有问题' : '';
     console.log(`\n${r.case}  [${r.layout}]  ${r.label}${flag}`);
     console.log(`  真裁切 ${r.clippedCount} · 可滚动(reachable) ${r.scrollableOffCount} · 装饰 ${r.decorCount} · 文档滚动 ${r.docScrolls}` +
+      (r.leak ? ` · ⚠ 横条泄漏(非strip形态却显示) ` : '') +
       (r.consoleErrors.length ? ` · 报错 ${r.consoleErrors.length}` : ''));
     r.clipped.slice(0, 5).forEach((o) => console.log(`    ✗ ${o.id}  L${o.l} R${o.r} T${o.t} B${o.b}  （被 ${o.clipper} 裁）`));
     r.consoleErrors.slice(0, 2).forEach((e) => console.log(`    ! ${String(e).slice(0, 110)}`));
   }
-  const bad = rows.filter((r) => r.clippedCount > 0 || r.consoleErrors.length > 0);
+  const bad = rows.filter((r) => r.clippedCount > 0 || r.consoleErrors.length > 0 || r.leak);
   console.log(`\n=== 真裁切形态: ${bad.length} / ${rows.length} ===`);
 }
 main().catch((e) => { console.error('FAIL:', e.message); process.exit(2); });

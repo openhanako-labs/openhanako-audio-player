@@ -2030,10 +2030,10 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 .player-container[data-layout="strip"] .player-backdrop { display: none !important; }
 
 #playerStrip {
+  display: none;   /* 默认隐藏：只有 strip 形态才显示（2026-10-21 补回，重写时弄丢） */
   position: relative;
   width: 100%;
   height: 100%;
-  display: flex;
   align-items: center;
   gap: 12px;
   padding: 0 14px 0 12px;
