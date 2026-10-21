@@ -2166,19 +2166,6 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 }
 #playerStrip .strip-time .t-total { position: absolute; right: 0; transform: translateX(calc(100% + 14px)); }
 
-/* 模式胶囊：标准 / PV / 歌词，条内可见，点一下循环（与竖卡语义一致）*/
-#playerStrip .strip-modes {
-  flex: 0 0 auto; display: flex; align-items: center; gap: 2px;
-  padding: 2px; border-radius: 999px;
-  background: color-mix(in srgb, var(--text) 10%, transparent); z-index: 1;
-}
-#playerStrip .strip-mode {
-  border: none; background: transparent; cursor: pointer;
-  font-size: 11px; line-height: 1; padding: 4px 8px; border-radius: 999px;
-  color: var(--text-dim); white-space: nowrap; transition: background .15s, color .15s;
-}
-#playerStrip .strip-mode.active { background: var(--accent); color: #fff; }
-
 /* 交互态：歌词淡出、控件+时间登场；音量展开独立维护 */
 #playerStrip.active .strip-lyric { opacity: 0; }
 #playerStrip.active .strip-controls { opacity: 1; pointer-events: auto; }
@@ -2186,9 +2173,7 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 
 /* 窄宽度：先压弹性区，次级控件收进次级组，但播放/暂停始终可达 */
 #playerStrip[data-width="narrow"] .strip-identity { flex-basis: 104px; }
-#playerStrip[data-width="narrow"] .strip-modes .strip-mode:not(.active) { display: none; }
 #playerStrip[data-width="mini"] .strip-identity { display: none; }
-#playerStrip[data-width="mini"] .strip-modes { display: none; }
 
 /* 窄档位控件降级：flex 固定宽按钮在窄条里会从右溢出，逐级收起次级控件，
    保证「上一首/播放/下一首/音量/模式/收藏」在放不下的宽度下按优先级让位，
@@ -2208,3 +2193,7 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   #playerStrip .strip-lyric,
   #playerStrip .strip-time { transition: none; }
 }
+
+/* ── 横条右上角安全区：宿主控件（聊天卡 100×40 / 拆窗窗口按钮）叠在横条上，
+   内容右移 96px 避开（对齐竖卡 view-compact 先例）── */
+#playerStrip { padding-right: 96px; }
