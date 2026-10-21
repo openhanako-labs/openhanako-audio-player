@@ -2442,7 +2442,6 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   align-self: stretch;
   height: 100%;
   max-height: 100%;
-  overflow: hidden;
 }
 /* 条本体永远不高于容器：即使 --strip-height 还没被 JS 回写。 */
 .player-container[data-layout="strip"] #playerStrip .strip-bar {
@@ -3122,3 +3121,148 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 [data-theme="dark"] #modeCaps .mc.on { background: #8a6a3c !important; color: #fff !important; }
 [data-theme="dark"] .inst-dot { background: #8a6a3c !important; }
 [data-theme="dark"] .inst-code { color: rgba(60, 50, 40, .68) !important; }
+/* ═══════════════════════════════════════════════════════════════
+   data-layout 统一覆写（2026-10-21）
+   背景：两套并行响应式系统——旧系统绑 body.view-compact（JS 从不加类，
+   79 条死代码）；新系统 data-layout=[wide|long|compact|strip] JS 会写但
+   CSS 只盖了 strip。且 .player-left/right 被全局 display:contents 剥掉盒子，
+   long 里 max-height+overflow:auto 永远不生效，播放列表整块悬在视口外。
+   这一块把 long/compact 的布局集中收口，覆盖更早全部规则。
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── long：偏竖。左区播放紧凑行（释放高度给列表），右区(列表)内部滚动 ── */
+.player-container[data-layout="long"] {
+  flex-direction: column;
+}
+.player-container[data-layout="long"] > .player-right {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.player-container[data-layout="long"] > .player-left {
+  display: contents;
+}
+/* now-playing 改紧凑行：封面小、信息右，垂直省下的都让给播放列表 */
+.player-container[data-layout="long"] .now-playing-section {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px 6px;
+  flex: 0 0 auto;
+  min-height: 0;
+}
+.player-container[data-layout="long"] .np-cover {
+  width: 48px !important;
+  height: 48px !important;
+  border-radius: 12px;
+  font-size: 20px;
+  flex: none;
+  margin: 0;
+}
+.player-container[data-layout="long"] .np-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+}
+.player-container[data-layout="long"] .lyrics-section {
+  flex: 0 1 auto;
+  max-height: 64px;
+  overflow: hidden;
+}
+.player-container[data-layout="long"] .pv-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.player-container[data-layout="long"] .nav-tabs {
+  flex: 0 0 auto;
+}
+.player-container[data-layout="long"] .tab-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* 列表体自身滚动：分组标题不会从底部溢出 */
+.player-container[data-layout="long"] .playlist-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.player-container[data-layout="long"] .pl-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ── compact：很矮。移植旧 view-compact 成熟紧凑布局 ── */
+.player-container[data-layout="compact"] {
+  flex-direction: column;
+}
+.player-container[data-layout="compact"] > .player-right {
+  display: none;
+}
+.player-container[data-layout="compact"] > .player-left {
+  display: contents;
+}
+.player-container[data-layout="compact"] .now-playing-section {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px 6px;
+  flex: 0 0 auto;
+  min-height: 0;
+}
+.player-container[data-layout="compact"] .np-cover {
+  width: 48px !important;
+  height: 48px !important;
+  border-radius: 12px;
+  font-size: 20px;
+  flex: none;
+  margin: 0;
+}
+.player-container[data-layout="compact"] .np-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+}
+.player-container[data-layout="compact"] .np-name { font-size: 14px; }
+.player-container[data-layout="compact"] .np-mode { font-size: 11px; }
+.player-container[data-layout="compact"] .np-actions {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  flex-direction: row;
+  gap: 6px;
+  margin: 0;
+}
+.player-container[data-layout="compact"] .lyrics-section,
+.player-container[data-layout="compact"] #visualizer,
+.player-container[data-layout="compact"] .volume-group,
+.player-container[data-layout="compact"] #modeBtn {
+  display: none;
+}
+.player-container[data-layout="compact"] .controls-section {
+  padding: 0 14px 10px;
+}
+.player-container[data-layout="compact"] .time-row { font-size: 10px; }
+.player-container[data-layout="compact"] .controls { gap: 10px; }
+.player-container[data-layout="compact"] .ctrl-btn { width: 28px; height: 28px; }
+.player-container[data-layout="compact"] .ctrl-play { width: 36px; height: 36px; }
+.player-container[data-layout="compact"] .pv-stage {
+  flex: 1;
+  min-height: 0;
+}
