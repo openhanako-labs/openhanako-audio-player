@@ -2175,16 +2175,29 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 #playerStrip[data-width="narrow"] .strip-identity { flex-basis: 104px; }
 #playerStrip[data-width="mini"] .strip-identity { display: none; }
 
-/* 窄档位控件降级：flex 固定宽按钮在窄条里会从右溢出，逐级收起次级控件，
-   保证「上一首/播放/下一首/音量/模式/收藏」在放不下的宽度下按优先级让位，
-   播放/暂停在所有档位始终可达。实测 280–1040 全宽零溢出。 */
-#playerStrip[data-width="narrow"] #stripMode { display: none !important; }
-#playerStrip[data-width="narrow"] #stripFav { display: none !important; }
-#playerStrip[data-width="mini"] #stripPrev { display: none !important; }
-#playerStrip[data-width="mini"] #stripNext { display: none !important; }
-#playerStrip[data-width="mini"] #stripMode { display: none !important; }
-#playerStrip[data-width="mini"] #stripFav { display: none !important; }
-#playerStrip[data-width="mini"] .strip-volume { display: none !important; }
+/* 窄档位控件：换行排布（flex-wrap），按钮始终显示、不溢出、不消失。
+   .strip-controls 从 absolute 覆盖改为正常流，窄了自动换行成多行；
+   .strip-flex 允许滚动，保证按钮都能点到。 */
+#playerStrip[data-width="narrow"] .strip-controls,
+#playerStrip[data-width="mini"] .strip-controls {
+  position: static;
+  inset: auto;
+  opacity: 1;
+  pointer-events: auto;
+  flex-wrap: wrap;
+  gap: 4px 3px;
+  justify-content: center;
+}
+#playerStrip[data-width="narrow"] .strip-btn,
+#playerStrip[data-width="mini"] .strip-btn { width: 24px; height: 24px; }
+#playerStrip[data-width="narrow"] .strip-btn svg,
+#playerStrip[data-width="mini"] .strip-btn svg { width: 14px; height: 14px; }
+#playerStrip[data-width="mini"] .strip-play { width: 28px; height: 28px; }
+#playerStrip[data-width="mini"] .strip-cover { flex: 0 0 44px; width: 44px; height: 44px; font-size: 20px; }
+#playerStrip[data-width="mini"] .strip-bar { gap: 6px; padding: 0 8px; flex-wrap: wrap; }
+#playerStrip[data-width="narrow"] .strip-flex,
+#playerStrip[data-width="mini"] .strip-flex { overflow-y: auto; min-height: 0; }
+#playerStrip[data-width="mini"] .strip-identity { display: none; }
 
 /* reduced motion：取消横条内部动效，直接落定 */
 @media (prefers-reduced-motion: reduce) {
