@@ -72,3 +72,11 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 .jv-t { display: inline-block; font-style: inherit; }
 
 @keyframes jvRise { 0% { opacity: 0; transform: translateY(.5em); } 100% { opacity: 1; transform: none; } }
+
+/* ── 自适应内边距与行高（随 --jv-scale 缩放）──
+   36px 固定内边距在窄舞台（300px 宽）里占掉 24%，字挤成一条。
+   缩放后既保留呼吸感，又不吃掉内容宽度。 */
+.jv-line { padding: calc(36px * var(--jv-scale, 1)) !important; }
+.jv-center .cur, .jv-mix, .jv-tategaki .cur, .jv-break .cur { line-height: 1.22; }
+/* 中日韩字距略收，拉丁保持 */
+.jv-center .cur { letter-spacing: .04em; }

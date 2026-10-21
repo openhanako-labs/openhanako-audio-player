@@ -2879,3 +2879,40 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 
 /* 时间抬一档，能读但不抢 */
 #playerStrip .strip-now { color: rgba(255,255,255,.34) !important; }
+
+/* ── 音量滑杆：细、低饱和、不刺眼 ── */
+#playerStrip .strip-volume .strip-vol-slider {
+  height: 3px !important;
+  border-radius: 2px !important;
+  background: linear-gradient(90deg,
+      rgba(255,255,255,.42) 0%,
+      rgba(255,255,255,.42) var(--vol, 80%),
+      rgba(255,255,255,.12) var(--vol, 80%),
+      rgba(255,255,255,.12) 100%) !important;
+  accent-color: rgba(255,255,255,.55);
+}
+#playerStrip .strip-volume .strip-vol-slider::-webkit-slider-thumb {
+  width: 9px !important; height: 9px !important;
+  background: rgba(255,255,255,.85) !important;
+  box-shadow: 0 0 3px rgba(0,0,0,.4) !important;
+  border: none !important;
+}
+#playerStrip .strip-volume .strip-vol-slider::-moz-range-thumb {
+  width: 9px !important; height: 9px !important;
+  background: rgba(255,255,255,.85) !important;
+  border: none !important;
+}
+/* 展开时不再把控件挤出边界 */
+#playerStrip .strip-volume.open .strip-vol-slider { width: 64px !important; }
+
+/* ═══ 顶栏右上角安全区（宿主窗口控件会盖住这块）═══
+   宿主在窗口右上角画自己的控件（最小化/关闭等），浮在 iframe 之上，
+   任何排到那一带的按钮都点不到。SDK 不带 setInteractiveRegions，
+   只能靠布局让位：顶栏右侧统一留 108px 空档。 */
+.header { padding-right: 108px !important; }
+.header-actions { padding-right: 0 !important; }
+
+/* 窄卡下本来就会换行，安全区可以小一点 */
+@media (max-width: 520px) {
+  .header { padding-right: 96px !important; }
+}
