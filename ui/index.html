@@ -2532,6 +2532,54 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 </div>
 
 <input type="file" id="localFilePicker" style="display:none" accept="audio/*" multiple>
+<!-- 横条形态（data-layout="strip"）：拉扁窗口/卡片时启用。
+     结构：固定封面 + 彩色进度条(身份区 | 弹性区:歌词/控件) + 模式胶囊 + 时间。
+     静听态只显歌名/歌手+一行歌词；悬停/聚焦切出控件；音量点击喇叭向右展开。
+     复用竖卡的三态(标准/PV/歌词)与现有播放/音量/收藏/模式逻辑，不另造第二套播放器。-->
+<div id="playerStrip" aria-label="横条播放器">
+  <div class="strip-cover" id="stripCover">♫</div>
+  <div class="strip-bar">
+    <div class="strip-progress" id="stripProgress"></div>
+    <div class="strip-identity">
+      <div class="strip-name" id="stripName">播放器</div>
+      <div class="strip-artist" id="stripArtist"></div>
+    </div>
+    <div class="strip-flex">
+      <div class="strip-lyric empty" id="stripLyric">暂无歌词</div>
+      <div class="strip-controls" id="stripControls">
+        <button class="strip-btn" id="stripPrev" title="上一首" aria-label="上一首">
+          <svg viewBox="0 0 24 24"><polygon points="19 20 9 12 19 4 19 20" fill="currentColor" stroke="none"/><rect x="4" y="4" width="3" height="16" rx="1"/></svg>
+        </button>
+        <button class="strip-btn strip-play" id="stripPlay" title="播放/暂停" aria-label="播放/暂停">
+          <svg id="stripPlayIcon" viewBox="0 0 24 24"><polygon points="8,5 19,12 8,19" fill="#fff" stroke="none"/></svg>
+          <svg id="stripPauseIcon" viewBox="0 0 24 24" style="display:none"><rect x="7" y="5" width="3.5" height="14" rx="1" fill="#fff" stroke="none"/><rect x="13.5" y="5" width="3.5" height="14" rx="1" fill="#fff" stroke="none"/></svg>
+        </button>
+        <button class="strip-btn" id="stripNext" title="下一首" aria-label="下一首">
+          <svg viewBox="0 0 24 24"><polygon points="5 4 15 12 5 21 5 4" fill="currentColor" stroke="none"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+        </button>
+        <button class="strip-btn" id="stripMode" title="播放模式" aria-label="播放模式">
+          <svg viewBox="0 0 24 24"><line x1="5" y1="5" x2="5" y2="19" stroke="currentColor" stroke-width="2"/><polygon points="8 12 18 5 18 19" fill="currentColor"/></svg>
+        </button>
+        <button class="strip-btn" id="stripFav" title="收藏" aria-label="收藏">
+          <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+        </button>
+        <div class="strip-volume" id="stripVolume">
+          <button class="strip-btn" id="stripVolBtn" title="音量" aria-label="音量">
+            <svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+          </button>
+          <input type="range" class="strip-vol-slider" id="stripVolSlider" min="0" max="100" value="80" aria-label="音量">
+        </div>
+      </div>
+    </div>
+    <div class="strip-modes" id="stripModes" role="group" aria-label="视图模式">
+      <button class="strip-mode active" data-mode="standard" title="标准（黑胶）">标准</button>
+      <button class="strip-mode" data-mode="pv" title="PV（文字舞台）">PV</button>
+      <button class="strip-mode" data-mode="lyric" title="歌词（AMLL 滚动）">歌词</button>
+    </div>
+    <div class="strip-time"><span id="stripCur">0:00</span><span class="t-total" id="stripTotal">0:00</span></div>
+  </div>
+</div>
+
 <div class="player-right">
 
 <!-- 标签页导航 -->
@@ -2705,55 +2753,6 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 </div>
 
 </div>
-
-<!-- 横条形态（data-layout="strip"）：拉扁窗口/卡片时启用。
-     结构：固定封面 + 彩色进度条(身份区 | 弹性区:歌词/控件) + 模式胶囊 + 时间。
-     静听态只显歌名/歌手+一行歌词；悬停/聚焦切出控件；音量点击喇叭向右展开。
-     复用竖卡的三态(标准/PV/歌词)与现有播放/音量/收藏/模式逻辑，不另造第二套播放器。-->
-<div id="playerStrip" aria-label="横条播放器">
-  <div class="strip-cover" id="stripCover">♫</div>
-  <div class="strip-bar">
-    <div class="strip-progress" id="stripProgress"></div>
-    <div class="strip-identity">
-      <div class="strip-name" id="stripName">播放器</div>
-      <div class="strip-artist" id="stripArtist"></div>
-    </div>
-    <div class="strip-flex">
-      <div class="strip-lyric empty" id="stripLyric">暂无歌词</div>
-      <div class="strip-controls" id="stripControls">
-        <button class="strip-btn" id="stripPrev" title="上一首" aria-label="上一首">
-          <svg viewBox="0 0 24 24"><polygon points="19 20 9 12 19 4 19 20" fill="currentColor" stroke="none"/><rect x="4" y="4" width="3" height="16" rx="1"/></svg>
-        </button>
-        <button class="strip-btn strip-play" id="stripPlay" title="播放/暂停" aria-label="播放/暂停">
-          <svg id="stripPlayIcon" viewBox="0 0 24 24"><polygon points="8,5 19,12 8,19" fill="#fff" stroke="none"/></svg>
-          <svg id="stripPauseIcon" viewBox="0 0 24 24" style="display:none"><rect x="7" y="5" width="3.5" height="14" rx="1" fill="#fff" stroke="none"/><rect x="13.5" y="5" width="3.5" height="14" rx="1" fill="#fff" stroke="none"/></svg>
-        </button>
-        <button class="strip-btn" id="stripNext" title="下一首" aria-label="下一首">
-          <svg viewBox="0 0 24 24"><polygon points="5 4 15 12 5 21 5 4" fill="currentColor" stroke="none"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
-        </button>
-        <button class="strip-btn" id="stripMode" title="播放模式" aria-label="播放模式">
-          <svg viewBox="0 0 24 24"><line x1="5" y1="5" x2="5" y2="19" stroke="currentColor" stroke-width="2"/><polygon points="8 12 18 5 18 19" fill="currentColor"/></svg>
-        </button>
-        <button class="strip-btn" id="stripFav" title="收藏" aria-label="收藏">
-          <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-        </button>
-        <div class="strip-volume" id="stripVolume">
-          <button class="strip-btn" id="stripVolBtn" title="音量" aria-label="音量">
-            <svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-          </button>
-          <input type="range" class="strip-vol-slider" id="stripVolSlider" min="0" max="100" value="80" aria-label="音量">
-        </div>
-      </div>
-    </div>
-    <div class="strip-modes" id="stripModes" role="group" aria-label="视图模式">
-      <button class="strip-mode active" data-mode="standard" title="标准（黑胶）">标准</button>
-      <button class="strip-mode" data-mode="pv" title="PV（文字舞台）">PV</button>
-      <button class="strip-mode" data-mode="lyric" title="歌词（AMLL 滚动）">歌词</button>
-    </div>
-    <div class="strip-time"><span id="stripCur">0:00</span><span class="t-total" id="stripTotal">0:00</span></div>
-  </div>
-</div>
-
 
 <audio id="audio" preload="auto" referrerpolicy="no-referrer"></audio>
 
