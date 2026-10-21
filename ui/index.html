@@ -2706,10 +2706,303 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 
 </div>
 
+<!-- 横条形态（data-layout="strip"）：拉扁窗口/卡片时启用。
+     结构：固定封面 + 彩色进度条(身份区 | 弹性区:歌词/控件) + 模式胶囊 + 时间。
+     静听态只显歌名/歌手+一行歌词；悬停/聚焦切出控件；音量点击喇叭向右展开。
+     复用竖卡的三态(标准/PV/歌词)与现有播放/音量/收藏/模式逻辑，不另造第二套播放器。-->
+<div id="playerStrip" aria-label="横条播放器">
+  <div class="strip-cover" id="stripCover">♫</div>
+  <div class="strip-bar">
+    <div class="strip-progress" id="stripProgress"></div>
+    <div class="strip-identity">
+      <div class="strip-name" id="stripName">播放器</div>
+      <div class="strip-artist" id="stripArtist"></div>
+    </div>
+    <div class="strip-flex">
+      <div class="strip-lyric empty" id="stripLyric">暂无歌词</div>
+      <div class="strip-controls" id="stripControls">
+        <button class="strip-btn" id="stripPrev" title="上一首" aria-label="上一首">
+          <svg viewBox="0 0 24 24"><polygon points="19 20 9 12 19 4 19 20" fill="currentColor" stroke="none"/><rect x="4" y="4" width="3" height="16" rx="1"/></svg>
+        </button>
+        <button class="strip-btn strip-play" id="stripPlay" title="播放/暂停" aria-label="播放/暂停">
+          <svg id="stripPlayIcon" viewBox="0 0 24 24"><polygon points="8,5 19,12 8,19" fill="#fff" stroke="none"/></svg>
+          <svg id="stripPauseIcon" viewBox="0 0 24 24" style="display:none"><rect x="7" y="5" width="3.5" height="14" rx="1" fill="#fff" stroke="none"/><rect x="13.5" y="5" width="3.5" height="14" rx="1" fill="#fff" stroke="none"/></svg>
+        </button>
+        <button class="strip-btn" id="stripNext" title="下一首" aria-label="下一首">
+          <svg viewBox="0 0 24 24"><polygon points="5 4 15 12 5 21 5 4" fill="currentColor" stroke="none"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+        </button>
+        <button class="strip-btn" id="stripMode" title="播放模式" aria-label="播放模式">
+          <svg viewBox="0 0 24 24"><line x1="5" y1="5" x2="5" y2="19" stroke="currentColor" stroke-width="2"/><polygon points="8 12 18 5 18 19" fill="currentColor"/></svg>
+        </button>
+        <button class="strip-btn" id="stripFav" title="收藏" aria-label="收藏">
+          <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+        </button>
+        <div class="strip-volume" id="stripVolume">
+          <button class="strip-btn" id="stripVolBtn" title="音量" aria-label="音量">
+            <svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+          </button>
+          <input type="range" class="strip-vol-slider" id="stripVolSlider" min="0" max="100" value="80" aria-label="音量">
+        </div>
+      </div>
+    </div>
+    <div class="strip-modes" id="stripModes" role="group" aria-label="视图模式">
+      <button class="strip-mode active" data-mode="standard" title="标准（黑胶）">标准</button>
+      <button class="strip-mode" data-mode="pv" title="PV（文字舞台）">PV</button>
+      <button class="strip-mode" data-mode="lyric" title="歌词（AMLL 滚动）">歌词</button>
+    </div>
+    <div class="strip-time"><span id="stripCur">0:00</span><span class="t-total" id="stripTotal">0:00</span></div>
+  </div>
+</div>
+
+
 <audio id="audio" preload="auto" referrerpolicy="no-referrer"></audio>
 
 
 <!-- 新增功能模块 (内联) -->
+
+<!-- 横条形态控制器：独立的原生脚本块，纯 DOM/CSS 操作，不依赖 app.js 内部变量。
+     只复用既有播放/音量/收藏/模式/歌词接口（按 id 取元素并触发其既有 click/handler）。-->
+<script>
+(function () {
+  'use strict';
+  var strip = document.getElementById('playerStrip');
+  if (!strip) return;
+  var player = document.querySelector('.player-container');
+  var cover = document.getElementById('stripCover');
+  var nameEl = document.getElementById('stripName');
+  var artistEl = document.getElementById('stripArtist');
+  var lyricEl = document.getElementById('stripLyric');
+  var progressEl = document.getElementById('stripProgress');
+  var curEl = document.getElementById('stripCur');
+  var totalEl = document.getElementById('stripTotal');
+  var playBtn = document.getElementById('stripPlay');
+  var playIcon = document.getElementById('stripPlayIcon');
+  var pauseIcon = document.getElementById('stripPauseIcon');
+  var prevBtn = document.getElementById('stripPrev');
+  var nextBtn = document.getElementById('stripNext');
+  var modeBtn = document.getElementById('stripMode');
+  var favBtn = document.getElementById('stripFav');
+  var volWrap = document.getElementById('stripVolume');
+  var volBtn = document.getElementById('stripVolBtn');
+  var volSlider = document.getElementById('stripVolSlider');
+  var modeBtns = strip.querySelectorAll('.strip-mode');
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ── 悬停/聚焦/键盘交互态：指针进条、获焦、或按 Tab 进入；离开且音量未展开时恢复歌词 ──
+  var volOpen = false;
+  function setActive(on) { strip.classList.toggle('active', on); }
+  strip.addEventListener('pointerenter', function () { setActive(true); });
+  strip.addEventListener('pointerleave', function () { if (!volOpen) setActive(false); });
+  strip.addEventListener('focusin', function () { setActive(true); });
+  strip.addEventListener('focusout', function (e) {
+    if (!strip.contains(e.relatedTarget) && !volOpen) setActive(false);
+  });
+  // 键盘等价入口：条内任一可见按钮聚焦即进入控件态（不要求先鼠标）
+  strip.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && volOpen) { closeVol(); setActive(false); }
+  });
+  document.addEventListener('click', function (e) {
+    if (volOpen && !volWrap.contains(e.target)) closeVol();
+  });
+  function openVol() { volOpen = true; volWrap.classList.add('open'); setActive(true); }
+  function closeVol() { volOpen = false; volWrap.classList.remove('open'); if (!strip.matches(':hover, :focus-within')) setActive(false); }
+
+  // ── 复用既有控件：直接派发它们的 click，行为与竖卡完全一致 ──
+  function tap(id) { var el = document.getElementById(id); if (el) el.click(); }
+  prevBtn.addEventListener('click', function () { tap('prevBtn'); });
+  nextBtn.addEventListener('click', function () { tap('nextBtn'); });
+  playBtn.addEventListener('click', function () { tap('playBtn'); });
+  modeBtn.addEventListener('click', function () { tap('modeBtn'); });
+  favBtn.addEventListener('click', function (e) { e.stopPropagation(); tap('favBtn'); });
+  volBtn.addEventListener('click', function (e) { e.stopPropagation(); volOpen ? closeVol() : openVol(); });
+  volSlider.addEventListener('input', function (e) {
+    var audio = document.getElementById('audio');
+    if (audio) { audio.volume = e.target.value / 100; }
+    var vs = document.getElementById('volumeSlider');
+    if (vs && vs.value !== e.target.value) vs.value = e.target.value;
+  });
+  // 进度/ seek：点在条上按比例定位（复用既有 timeupdate 写回进度）
+  var bar = strip.querySelector('.strip-bar');
+  function seekFromEvent(e) {
+    var audio = document.getElementById('audio');
+    if (!audio || !audio.duration) return;
+    var r = bar.getBoundingClientRect();
+    var p = (e.clientX - r.left) / r.width;
+    p = p < 0 ? 0 : (p > 1 ? 1 : p);
+    audio.currentTime = p * audio.duration;
+  }
+  bar.addEventListener('click', function (e) {
+    if (strip.querySelector('.strip-controls').contains(e.target) || volWrap.contains(e.target)) return;
+    seekFromEvent(e);
+  });
+
+  // ── 三态胶囊：与竖卡 body 类对齐（标准/PV=lyrics-mode/歌词=jizura-mode）──
+  function syncModes() {
+    var hasLyr = document.body.classList.contains('lyrics-mode');
+    var hasJiz = document.body.classList.contains('jizura-mode');
+    var cur = !hasLyr ? 'standard' : (hasJiz ? 'lyric' : 'pv');
+    modeBtns.forEach(function (b) { b.classList.toggle('active', b.dataset.mode === cur); });
+  }
+  modeBtns.forEach(function (b) {
+    b.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var lm = document.getElementById('lyricModeBtn');
+      var want = b.dataset.mode;
+      var hasLyr = document.body.classList.contains('lyrics-mode');
+      var hasJiz = document.body.classList.contains('jizura-mode');
+      if (want === 'standard') { document.body.classList.remove('jizura-mode', 'lyrics-mode'); }
+      else if (want === 'pv') { document.body.classList.add('lyrics-mode'); document.body.classList.remove('jizura-mode'); }
+      else { document.body.classList.add('lyrics-mode', 'jizura-mode'); }
+      if (lm) lm.click && lm.click(); // 触发竖卡模式按钮的图标同步（无副作用）
+      syncModes();
+    });
+  });
+  // 竖卡模式切换后，反向同步胶囊
+  var mo = new MutationObserver(syncModes);
+  mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
+  // ── 镜像竖卡状态：歌名/歌手/封面/播放态/音量/收藏 ──
+  function setText(el, t) { if (el && el.textContent !== t) el.textContent = t; }
+  var lastCover = null;
+  function syncTrack() {
+    var tn = document.getElementById('trackName');
+    var tm = document.getElementById('trackMode');
+    setText(nameEl, tn ? tn.textContent : '播放器');
+    setText(artistEl, tm ? tm.textContent : '');
+    var nc = document.getElementById('npCover');
+    var img = nc ? nc.querySelector('img') : null;
+    var src = img ? img.getAttribute('src') : null;
+    if (src !== lastCover) {
+      lastCover = src;
+      if (src) { cover.innerHTML = '<img src="' + src.replace(/\"/g, '') + '" alt="">'; }
+      else { cover.textContent = '♫'; }
+    }
+    // 收藏态
+    var fv = document.getElementById('favBtn');
+    favBtn.classList.toggle('is-accent', !!(fv && fv.style.color && fv.style.color.indexOf('accent') >= 0));
+  }
+  function syncPlay() {
+    var audio = document.getElementById('audio');
+    var playing = audio && !audio.paused;
+    playIcon.style.display = playing ? 'none' : 'block';
+    pauseIcon.style.display = playing ? 'block' : 'none';
+  }
+  function syncVol() {
+    var audio = document.getElementById('audio');
+    var vs = document.getElementById('volumeSlider');
+    if (!audio) return;
+    var v = Math.round(audio.volume * 100);
+    if (volSlider.value != v) volSlider.value = v;
+    // 同步喇叭图标（静音态变暗）
+    var vBtn = document.getElementById('volumeBtn');
+    var dim = vBtn && vBtn.querySelector('svg') && vBtn.querySelector('svg').style.opacity === '0.3';
+    volBtn.style.opacity = dim ? '0.4' : '1';
+  }
+  // 进度 + 时间
+  function syncProgress() {
+    var audio = document.getElementById('audio');
+    if (!audio) return;
+    var p = audio.duration ? (audio.currentTime / audio.duration) : 0;
+    p = p < 0 ? 0 : (p > 1 ? 1 : p);
+    progressEl.style.setProperty('--strip-progress', p.toFixed(4));
+    curEl.textContent = fmtTime(audio.currentTime);
+    totalEl.textContent = fmtTime(audio.duration);
+  }
+  function fmtTime(s) {
+    if (!s || !isFinite(s)) return '0:00';
+    return Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+  }
+
+  // ── 横条歌词：复用竖卡当前句（.lyric-line.current），并复用 PV 的 MonetGlow 光效 ──
+  // 高度矮 → 一行；放不下时优雅降级为纯文本（无光晕）。
+  function syncLyric() {
+    var body = document.body;
+    var isStrip = player && player.getAttribute('data-layout') === 'strip';
+    if (!isStrip) return;
+    var lyr = document.getElementById('lyricBody');
+    var cur = lyr ? lyr.querySelector('.lyric-line.current .l-main') : null;
+    var txt = cur ? cur.textContent : (lyr && lyr.textContent && lyr.textContent.trim() ? '' : '');
+    if (!cur) {
+      // 无当前句：看 PV 当前行（jizura 模式）
+      var pvLine = document.querySelector('.pv-line[data-d="0"]');
+      txt = pvLine ? pvLine.textContent : '';
+    }
+    if (!txt) { lyricEl.textContent = '暂无歌词'; lyricEl.classList.add('empty'); strip.style.setProperty('--strip-glow', 0); return; }
+    lyricEl.classList.remove('empty');
+    if (lyricEl.textContent !== txt) lyricEl.textContent = txt;
+    applyLyricGlow();
+  }
+  // MonetGlow：横条行高约 18px，用轻量包络（基于当前句进度）给文字一层柔光。
+  // 复用 PV 的同名思路（smoothstep 升起→驻留→衰减），但针对单行短文本收敛半径。
+  var _glowAccent = '';
+  function refreshGlowKey() {
+    try { _glowAccent = getComputedStyle(document.body).getPropertyValue('--accent-glow').trim(); } catch (e) {}
+  }
+  function applyLyricGlow() {
+    var audio = document.getElementById('audio');
+    if (!audio || !audio.duration) { strip.style.setProperty('--strip-glow', 0); return; }
+    // 取当前句的起止（用 .lyric-line.current 的 --lyric-progress，PV 已逐帧写）
+    var lyr = document.getElementById('lyricBody');
+    var line = lyr ? lyr.querySelector('.lyric-line.current') : null;
+    var prog = line ? parseFloat(line.style.getPropertyValue('--lyric-progress')) : 0.5;
+    if (!isFinite(prog)) prog = 0.5;
+    // 包络：句首升起、中后段驻留、句尾衰减；条形矮，半径封顶 6px
+    var g = prog < 0.15 ? (prog / 0.15) : (prog > 0.85 ? (1 - (prog - 0.85) / 0.15) : 1);
+    g = Math.max(0, Math.min(1, g));
+    strip.style.setProperty('--strip-glow', Math.round(g * 55));
+    strip.style.setProperty('--strip-glow-r', (g * 6).toFixed(1) + 'px');
+  }
+
+  // ── 宽度档位：仅压弹性区/次级控件，封面与身份区固定，播放/暂停始终可达 ──
+  function syncWidth() {
+    var r = strip.getBoundingClientRect();
+    var w = r.width;
+    var band = 'normal';
+    if (w < 360) band = 'mini'; else if (w < 520) band = 'narrow';
+    strip.setAttribute('data-width', band);
+  }
+
+  // ── 统一刷新 ──
+  function refresh() {
+    syncTrack(); syncPlay(); syncVol(); syncProgress(); syncWidth(); syncModes(); syncLyric(); }
+
+  // 订阅播放事件
+  var audio = document.getElementById('audio');
+  if (audio) {
+    audio.addEventListener('play', function () { syncPlay(); });
+    audio.addEventListener('pause', function () { syncPlay(); });
+    audio.addEventListener('timeupdate', function () { syncProgress(); applyLyricGlow(); });
+    audio.addEventListener('volumechange', function () { syncVol(); });
+    audio.addEventListener('loadedmetadata', function () { syncProgress(); });
+  }
+  // 竖卡 DOM 变化（歌名/歌手/封面/歌词当前行）→ 同步到横条
+  var mo2 = new MutationObserver(function () { syncTrack(); syncLyric(); });
+  var npc = document.getElementById('npCover');
+  if (npc) mo2.observe(npc, { childList: true });
+  var lyrBody = document.getElementById('lyricBody');
+  if (lyrBody) mo2.observe(lyrBody, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+  var tnm = document.getElementById('trackName');
+  if (tnm) mo2.observe(tnm, { childList: true });
+  var tmm = document.getElementById('trackMode');
+  if (tmm) mo2.observe(tmm, { childList: true });
+  var fvb = document.getElementById('favBtn');
+  if (fvb) mo2.observe(fvb, { attributes: true, attributeFilter: ['style'] });
+
+  // 布局切换（进入/退出 strip）时全量刷新 + 重算宽度
+  var mo3 = new MutationObserver(function () { refresh(); });
+  if (player) mo3.observe(player, { attributes: true, attributeFilter: ['data-layout'] });
+  window.addEventListener('resize', syncWidth);
+
+  refresh();
+  refreshGlowKey();
+  // 主题切换后刷新光晕色
+  if (window.matchMedia) {
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    (mq.addEventListener ? mq.addEventListener.bind(mq, 'change') : mq.addListener.bind(mq))(refreshGlowKey);
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
+})();
+</script>
 
 <script src="./app.js"></script>
 

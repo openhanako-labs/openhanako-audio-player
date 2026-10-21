@@ -4965,8 +4965,21 @@ document.getElementById('themeBtn').addEventListener('click', function() {
     // 观察 documentElement（html 元素），它的高度等于 iframe 的高度
     var r = document.documentElement.getBoundingClientRect();
     var w = r.width, h = r.height;
-    // 三档断点：wide（w≥720）/ compact（w<720 且 h<560）/ long（其余）
-    var next = w >= 720 ? 'wide' : (h < 560 ? 'compact' : 'long');
+    // 横条形态（strip）：拉扁窗口/卡片时切成横向播放条。
+    // 断点带滞回：进入 h≤156 且为横向（w≥h*1.6）才切条；退出需 h≥184，避免临界区反复闪切。
+    // 首次挂载或宿主暂给 0 尺寸时不据此切条（等有效预算）。
+    var cur = player.getAttribute('data-layout');
+    var next;
+    if (h <= 0 || w <= 0) {
+      next = cur || 'long';
+    } else if (cur === 'strip') {
+      // 滞回退出：够高就回竖卡（long/compact/wide 按宽度重判）
+      next = h >= 184 ? (w >= 720 ? 'wide' : (h < 560 ? 'compact' : 'long')) : 'strip';
+    } else {
+      // 进入条：矮且横向；否则走原三档
+      if (h <= 156 && w >= h * 1.6) next = 'strip';
+      else next = w >= 720 ? 'wide' : (h < 560 ? 'compact' : 'long');
+    }
     // 窄容器控制面密度
     var density = w < 400 ? 'narrow' : 'normal';
     if (player.getAttribute('data-layout') !== next) {
