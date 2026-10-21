@@ -3065,6 +3065,35 @@ window.integration = {
   createThemeSettingsPanel,
 };
 
+// ── 启动恢复：从后端拉当前曲目（拆窗/重开卡片时不显示"播放器/准备就绪"）──
+// 后端 state.js 持久化在 player-state，GET /api/state 返回 { track, queue }。
+// 拆窗是独立文档，自己没有播放状态，必须从后端恢复显示。
+// 注：路径写死（不能引用后面才定义的 const API，会有 TDZ）。
+(function restoreStateFromBackend() {
+  var STATE_URL = '/api/apps/hanako-audio-player/routes/api/state';
+  function apply(state) {
+    if (!state || !state.track) return;
+    var t = state.track;
+    var tn = document.getElementById('trackName');
+    var tm = document.getElementById('trackMode');
+    if (tn && t.title) tn.textContent = t.title;
+    if (tm) tm.textContent = t.source || '在线';
+  }
+  function pull() {
+    try {
+      fetch(STATE_URL, { signal: AbortSignal.timeout(6000) })
+        .then(function (r) { return r.json(); })
+        .then(function (res) { if (res && res.ok) apply(res.data); })
+        .catch(function () {});
+    } catch (e) {}
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { setTimeout(pull, 400); });
+  } else {
+    setTimeout(pull, 400);
+  }
+})();
+
 // 自动初始化
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initAll);
