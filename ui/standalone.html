@@ -2537,15 +2537,53 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
      静听态只显歌名/歌手+一行歌词；悬停/聚焦切出控件；音量点击喇叭向右展开。
      复用竖卡的三态(标准/PV/歌词)与现有播放/音量/收藏/模式逻辑，不另造第二套播放器。-->
 <div id="playerStrip" aria-label="横条播放器">
-  <div class="strip-cover" id="stripCover">♫</div>
-  <div class="strip-bar">
-    <div class="strip-progress" id="stripProgress"></div>
-    <div class="strip-identity">
-      <div class="strip-name" id="stripName">播放器</div>
-      <div class="strip-artist" id="stripArtist"></div>
+  <button class="strip-cover" id="stripCover" type="button" aria-label="显示播放控件"></button>
+  <div class="strip-bar" id="stripBar" tabindex="0" role="group" aria-label="歌曲进度与播放控制">
+    <div class="strip-field strip-field-quiet" aria-hidden="true"></div>
+    <div class="strip-field strip-field-played" id="stripPlayed" aria-hidden="true">
+      <div class="strip-sparkles">
+            <span class="strip-flight" style="--spark-left:13%;--spark-top:15%;--spark-size:1.4px;--spark-period:2.400s;--spark-delay:0.000s;--spark-color:var(--strip-star-0);--flow-period:5.200s;--flow-delay:0.000s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:50%;--spark-top:79%;--spark-size:2.3px;--spark-period:2.720s;--spark-delay:-0.420s;--spark-color:var(--strip-star-1);--flow-period:5.370s;--flow-delay:-0.190s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:87%;--spark-top:28%;--spark-size:1.1px;--spark-period:3.040s;--spark-delay:-0.840s;--spark-color:var(--strip-star-2);--flow-period:5.540s;--flow-delay:-0.380s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:24%;--spark-top:84%;--spark-size:1.8px;--spark-period:3.360s;--spark-delay:-1.260s;--spark-color:var(--strip-star-3);--flow-period:5.710s;--flow-delay:-0.570s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:61%;--spark-top:14%;--spark-size:2.8px;--spark-period:3.680s;--spark-delay:-1.680s;--spark-color:var(--strip-star-4);--flow-period:5.880s;--flow-delay:-0.760s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:98%;--spark-top:76%;--spark-size:1.5px;--spark-period:4.000s;--spark-delay:-2.100s;--spark-color:var(--strip-star-5);--flow-period:6.050s;--flow-delay:-0.950s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:35%;--spark-top:15%;--spark-size:1.4px;--spark-period:4.320s;--spark-delay:-2.520s;--spark-color:var(--strip-star-0);--flow-period:6.220s;--flow-delay:-1.140s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:72%;--spark-top:79%;--spark-size:2.3px;--spark-period:2.400s;--spark-delay:-2.940s;--spark-color:var(--strip-star-1);--flow-period:6.390s;--flow-delay:-1.330s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:9%;--spark-top:42%;--spark-size:1.9px;--spark-period:2.720s;--spark-delay:-3.360s;--spark-color:var(--strip-star-2);--flow-period:6.560s;--flow-delay:-1.520s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:46%;--spark-top:8%;--spark-size:1.2px;--spark-period:3.040s;--spark-delay:-3.780s;--spark-color:var(--strip-star-3);--flow-period:5.200s;--flow-delay:-1.710s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:83%;--spark-top:62%;--spark-size:2.5px;--spark-period:3.360s;--spark-delay:-4.200s;--spark-color:var(--strip-star-4);--flow-period:5.370s;--flow-delay:-1.900s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:20%;--spark-top:35%;--spark-size:1.6px;--spark-period:3.680s;--spark-delay:-4.620s;--spark-color:var(--strip-star-5);--flow-period:5.540s;--flow-delay:-2.090s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:57%;--spark-top:88%;--spark-size:2.1px;--spark-period:4.000s;--spark-delay:-5.040s;--spark-color:var(--strip-star-0);--flow-period:5.710s;--flow-delay:-2.280s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:94%;--spark-top:22%;--spark-size:1.3px;--spark-period:4.320s;--spark-delay:-5.460s;--spark-color:var(--strip-star-1);--flow-period:5.880s;--flow-delay:-2.470s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:31%;--spark-top:55%;--spark-size:2.6px;--spark-period:2.400s;--spark-delay:-5.880s;--spark-color:var(--strip-star-2);--flow-period:6.050s;--flow-delay:-2.660s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:68%;--spark-top:71%;--spark-size:1.7px;--spark-period:2.720s;--spark-delay:-6.300s;--spark-color:var(--strip-star-3);--flow-period:6.220s;--flow-delay:-2.850s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:5%;--spark-top:11%;--spark-size:1.4px;--spark-period:3.040s;--spark-delay:-6.720s;--spark-color:var(--strip-star-4);--flow-period:6.390s;--flow-delay:-3.040s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:42%;--spark-top:47%;--spark-size:2.3px;--spark-period:3.360s;--spark-delay:-7.140s;--spark-color:var(--strip-star-5);--flow-period:6.560s;--flow-delay:-3.230s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:79%;--spark-top:83%;--spark-size:1.1px;--spark-period:3.680s;--spark-delay:-7.560s;--spark-color:var(--strip-star-0);--flow-period:5.200s;--flow-delay:-3.420s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:16%;--spark-top:31%;--spark-size:1.8px;--spark-period:4.000s;--spark-delay:-7.980s;--spark-color:var(--strip-star-1);--flow-period:5.370s;--flow-delay:-3.610s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:53%;--spark-top:66%;--spark-size:2.8px;--spark-period:4.320s;--spark-delay:-8.400s;--spark-color:var(--strip-star-2);--flow-period:5.540s;--flow-delay:-3.800s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:90%;--spark-top:92%;--spark-size:1.5px;--spark-period:2.400s;--spark-delay:-8.820s;--spark-color:var(--strip-star-3);--flow-period:5.710s;--flow-delay:-3.990s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:27%;--spark-top:18%;--spark-size:1.4px;--spark-period:2.720s;--spark-delay:-9.240s;--spark-color:var(--strip-star-4);--flow-period:5.880s;--flow-delay:-4.180s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:64%;--spark-top:58%;--spark-size:2.3px;--spark-period:3.040s;--spark-delay:-9.660s;--spark-color:var(--strip-star-5);--flow-period:6.050s;--flow-delay:-4.370s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:1%;--spark-top:74%;--spark-size:1.9px;--spark-period:3.360s;--spark-delay:-10.080s;--spark-color:var(--strip-star-0);--flow-period:6.220s;--flow-delay:-4.560s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:38%;--spark-top:26%;--spark-size:1.2px;--spark-period:3.680s;--spark-delay:-10.500s;--spark-color:var(--strip-star-1);--flow-period:6.390s;--flow-delay:-4.750s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:75%;--spark-top:45%;--spark-size:2.5px;--spark-period:4.000s;--spark-delay:-10.920s;--spark-color:var(--strip-star-2);--flow-period:6.560s;--flow-delay:-4.940s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:12%;--spark-top:87%;--spark-size:1.6px;--spark-period:4.320s;--spark-delay:-11.340s;--spark-color:var(--strip-star-3);--flow-period:5.200s;--flow-delay:-5.130s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:49%;--spark-top:38%;--spark-size:2.1px;--spark-period:2.400s;--spark-delay:-11.760s;--spark-color:var(--strip-star-4);--flow-period:5.370s;--flow-delay:-5.320s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:86%;--spark-top:69%;--spark-size:1.3px;--spark-period:2.720s;--spark-delay:-12.180s;--spark-color:var(--strip-star-5);--flow-period:5.540s;--flow-delay:-5.510s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:23%;--spark-top:7%;--spark-size:2.6px;--spark-period:3.040s;--spark-delay:-12.600s;--spark-color:var(--strip-star-0);--flow-period:5.710s;--flow-delay:-5.700s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:60%;--spark-top:52%;--spark-size:1.7px;--spark-period:3.360s;--spark-delay:-13.020s;--spark-color:var(--strip-star-1);--flow-period:5.880s;--flow-delay:-5.890s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:97%;--spark-top:81%;--spark-size:1.4px;--spark-period:3.680s;--spark-delay:-13.440s;--spark-color:var(--strip-star-2);--flow-period:6.050s;--flow-delay:-6.080s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:34%;--spark-top:24%;--spark-size:2.3px;--spark-period:4.000s;--spark-delay:-13.860s;--spark-color:var(--strip-star-3);--flow-period:6.220s;--flow-delay:-6.270s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:71%;--spark-top:61%;--spark-size:1.1px;--spark-period:4.320s;--spark-delay:-14.280s;--spark-color:var(--strip-star-4);--flow-period:6.390s;--flow-delay:-6.460s"><span class="strip-spark"></span></span>
+            <span class="strip-flight" style="--spark-left:8%;--spark-top:95%;--spark-size:1.8px;--spark-period:2.400s;--spark-delay:-14.700s;--spark-color:var(--strip-star-5);--flow-period:6.560s;--flow-delay:-6.650s"><span class="strip-spark"></span></span>
+      </div>
     </div>
-    <div class="strip-flex">
-      <div class="strip-lyric empty" id="stripLyric">暂无歌词</div>
+    <div class="strip-front" id="stripFront" aria-hidden="true"><span class="strip-front-glow"></span><span class="strip-front-band"></span></div>
+    <div class="strip-identity" id="stripIdentity"><strong id="stripTitle">播放器</strong><span id="stripArtist"></span></div>
+    <div class="strip-context">
+      <span class="strip-lyric-line"><span class="strip-lyric" id="stripLyric">暂无歌词</span></span>
       <div class="strip-controls" id="stripControls">
         <button class="strip-btn" id="stripPrev" title="上一首" aria-label="上一首">
           <svg viewBox="0 0 24 24"><polygon points="19 20 9 12 19 4 19 20" fill="currentColor" stroke="none"/><rect x="4" y="4" width="3" height="16" rx="1"/></svg>
@@ -2556,9 +2594,6 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
         </button>
         <button class="strip-btn" id="stripNext" title="下一首" aria-label="下一首">
           <svg viewBox="0 0 24 24"><polygon points="5 4 15 12 5 21 5 4" fill="currentColor" stroke="none"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
-        </button>
-        <button class="strip-btn" id="stripMode" title="播放模式" aria-label="播放模式">
-          <svg viewBox="0 0 24 24"><line x1="5" y1="5" x2="5" y2="19" stroke="currentColor" stroke-width="2"/><polygon points="8 12 18 5 18 19" fill="currentColor"/></svg>
         </button>
         <button class="strip-btn" id="stripFav" title="收藏" aria-label="收藏">
           <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
@@ -2571,7 +2606,7 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
         </div>
       </div>
     </div>
-    <div class="strip-time"><span id="stripCur">0:00</span><span class="t-total" id="stripTotal">0:00</span></div>
+    <span class="strip-time strip-now" id="stripCur">0:00</span><span class="strip-time strip-total" id="stripTotal">0:00</span>
   </div>
 </div>
 
@@ -2763,10 +2798,10 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
   if (!strip) return;
   var player = document.querySelector('.player-container');
   var cover = document.getElementById('stripCover');
-  var nameEl = document.getElementById('stripName');
+  var nameEl = document.getElementById('stripTitle');
   var artistEl = document.getElementById('stripArtist');
   var lyricEl = document.getElementById('stripLyric');
-  var progressEl = document.getElementById('stripProgress');
+  var progressEl = document.getElementById('stripBar');
   var curEl = document.getElementById('stripCur');
   var totalEl = document.getElementById('stripTotal');
   var playBtn = document.getElementById('stripPlay');
@@ -2774,7 +2809,7 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
   var pauseIcon = document.getElementById('stripPauseIcon');
   var prevBtn = document.getElementById('stripPrev');
   var nextBtn = document.getElementById('stripNext');
-  var modeBtn = document.getElementById('stripMode');
+  var modeBtn = null;
   var favBtn = document.getElementById('stripFav');
   var volWrap = document.getElementById('stripVolume');
   var volBtn = document.getElementById('stripVolBtn');
@@ -2877,7 +2912,7 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
   prevBtn.addEventListener('click', function () { tap('prevBtn'); });
   nextBtn.addEventListener('click', function () { tap('nextBtn'); });
   playBtn.addEventListener('click', function () { tap('playBtn'); });
-  modeBtn.addEventListener('click', function () { tap('modeBtn'); });
+  if (modeBtn) modeBtn.addEventListener('click', function () { tap('modeBtn'); });
   favBtn.addEventListener('click', function (e) { e.stopPropagation(); tap('favBtn'); });
   volBtn.addEventListener('click', function (e) { e.stopPropagation(); volOpen ? closeVol() : openVol(); });
   volSlider.addEventListener('input', function (e) {
@@ -2964,7 +2999,11 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     if (!audio) return;
     var p = audio.duration ? (audio.currentTime / audio.duration) : 0;
     p = p < 0 ? 0 : (p > 1 ? 1 : p);
-    progressEl.style.setProperty('--strip-progress', p.toFixed(4));
+    if (progressEl) {
+      progressEl.style.setProperty('--strip-fill', (p * 100).toFixed(2) + '%');
+      var barEl = document.getElementById('stripBar');
+      if (barEl) barEl.setAttribute('data-progress', p <= 0 ? 'empty' : (p >= 0.999 ? 'full' : 'mid'));
+    }
     curEl.textContent = fmtTime(audio.currentTime);
     totalEl.textContent = fmtTime(audio.duration);
   }
