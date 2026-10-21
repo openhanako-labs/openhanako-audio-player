@@ -2941,6 +2941,39 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
   // ── 镜像竖卡状态：歌名/歌手/封面/播放态/音量/收藏 ──
   function setText(el, t) { if (el && el.textContent !== t) el.textContent = t; }
   var lastCover = null;
+  // ── 封面取色：带重试（取色器由 app.js 异步 boot，首次可能还没就绪）──
+  var _coverColorTries = 0, _coverColorLast = null;
+  function applyCoverColor(src, attempt) {
+    if (!src) return;
+    _coverColorLast = src;
+    var ex = window.aiThemeGenerator && window.aiThemeGenerator.coverColorExtractor;
+    if (!ex || typeof ex.extract !== 'function') {
+      // 取色器尚未就绪：最多重试 20 次 × 250ms
+      if ((attempt || 0) < 20) {
+        setTimeout(function () {
+          if (_coverColorLast === src) applyCoverColor(src, (attempt || 0) + 1);
+        }, 250);
+      }
+      return;
+    }
+    try {
+      ex.extract(src).then(function (colors) {
+        if (!colors) return;
+        var p = colors.primary || colors.dominant || colors.main || '';
+        var s2 = colors.secondary || colors.accent || p;
+        var a = colors.accent || p;
+        if (!p) return;
+        strip.style.setProperty('--strip-field', 'linear-gradient(135deg, ' + p + ' 0%, ' + s2 + ' 52%, ' + a + ' 100%)');
+        strip.style.setProperty('--strip-c1', p);
+        strip.style.setProperty('--strip-c2', s2);
+        strip.style.setProperty('--strip-c3', a);
+        for (var i = 0; i < 6; i++) {
+          strip.style.setProperty('--strip-star-' + i, [p, s2, a, p, s2, a][i]);
+        }
+      }).catch(function () {});
+    } catch (e) {}
+  }
+
   function syncTrack() {
     var tn = document.getElementById('trackName');
     var tm = document.getElementById('trackMode');
@@ -2952,31 +2985,9 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     if (src !== lastCover) {
       lastCover = src;
       if (src) { cover.innerHTML = '<img src="' + src.replace(/\"/g, '') + '" alt="">'; }
-      // 封面取色 → 横条背景多色场（--strip-c1/2/3），缺取色器/失败走 CSS 默认
-      try {
-        if (src && window.aiThemeGenerator && window.aiThemeGenerator.coverColorExtractor
-            && window.aiThemeGenerator.coverColorExtractor.extract) {
-          window.aiThemeGenerator.coverColorExtractor.extract(src).then(function (colors) {
-            if (!colors) return;
-            var p = colors.primary || colors.dominant || colors.main || '';
-            var s2 = colors.secondary || colors.accent || p;
-            var a = colors.accent || p;
-            if (!p) return;
-            // 横条色场：封面主色→次色→主色 的三段渐变（接近 sample 的观感）
-            strip.style.setProperty('--strip-field', 'linear-gradient(135deg, ' + p + ' 0%, ' + s2 + ' 52%, ' + a + ' 100%)');
-            strip.style.setProperty('--strip-c1', p);
-            strip.style.setProperty('--strip-c2', s2);
-            strip.style.setProperty('--strip-c3', a);
-            // 星光用封面撞色
-            strip.style.setProperty('--strip-star-0', p);
-            strip.style.setProperty('--strip-star-1', s2);
-            strip.style.setProperty('--strip-star-2', a);
-            strip.style.setProperty('--strip-star-3', p);
-            strip.style.setProperty('--strip-star-4', s2);
-            strip.style.setProperty('--strip-star-5', a);
-          }).catch(function () {});
-        }
-      } catch (e) {}
+      // 封面取色 → 横条色场。取色器可能还没初始化（app.js 异步 boot），
+      // 所以用 applyCoverColor 做重试，不依赖此刻是否就绪。
+      applyCoverColor(src, 0);
       if (!src) { cover.textContent = '♫'; }
     }
     // 收藏态
