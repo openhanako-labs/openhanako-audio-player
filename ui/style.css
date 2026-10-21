@@ -2403,3 +2403,22 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   visibility: visible; width: 70px !important; opacity: 1; pointer-events: auto; margin-left: 4px;
 }
 #playerStrip .strip-cover { background: var(--surface, #2a2a30) center/cover no-repeat; }
+
+/* ── 横条本体色场（sample 靠 .strip-bar 的 background + 两个 field 层叠加，这里补齐）── */
+#playerStrip .strip-bar {
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--accent) 42%, var(--card-bg)) 0%,
+      color-mix(in srgb, var(--accent) 18%, var(--card-bg)) 48%,
+      color-mix(in srgb, var(--accent) 32%, var(--card-bg)) 100%);
+}
+#playerStrip .strip-field-quiet::before,
+#playerStrip .strip-field-quiet::after {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--card-bg) 38%, transparent),
+                    color-mix(in srgb, var(--card-bg) 38%, transparent)),
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--accent) 55%, var(--card-bg)) 0%,
+      color-mix(in srgb, var(--accent) 25%, var(--card-bg)) 50%,
+      color-mix(in srgb, var(--accent) 45%, var(--card-bg)) 100%) !important;
+}
