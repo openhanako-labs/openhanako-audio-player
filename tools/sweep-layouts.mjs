@@ -82,6 +82,8 @@ const PROBE = `(() => {
   const seen = new Set();
 
   document.querySelectorAll('.player-container *').forEach((el) => {
+    // 跳过 SVG 内部的非语义几何元素（path/circle/line/use glyph 等）：它们贴近容器是正常的
+    if (el.namespaceURI && el.namespaceURI.indexOf('svg') >= 0 && !/svg$/.test(el.tagName)) return;
     const r = el.getBoundingClientRect();
     if (r.width === 0 && r.height === 0) return;
     const cs = getComputedStyle(el);
@@ -89,7 +91,7 @@ const PROBE = `(() => {
     const bad = r.right > vw + 1 || r.left < -1 || r.bottom > vh + 1 || r.top < -1;
     if (!bad) return;
     const isDecor = DECOR.test(el.id || '') || DECOR.test(String(el.className || ''));
-    const rec = { id: el.id || String(el.className).slice(0, 26),
+    const rec = { id: el.id ? String(el.id) : String(el.className).slice(0, 26),
                   l: Math.round(r.left), r: Math.round(r.right),
                   t: Math.round(r.top), b: Math.round(r.bottom) };
     if (isDecor) { decor.push(rec); return; }
@@ -98,7 +100,7 @@ const PROBE = `(() => {
     const key = rec.id + '|' + rec.t + '|' + rec.b;
     if (seen.has(key)) return;
     seen.add(key);
-    clipped.push({ ...rec, clipper: clip ? (clip.el.id || String(clip.el.className).slice(0, 20)) : 'document' });
+    clipped.push({ ...rec, clipper: clip ? (clip.el.id ? String(clip.el.id) : String(clip.el.className).slice(0, 20)) : 'document' });
   });
 
   const vis = (sel) => {
