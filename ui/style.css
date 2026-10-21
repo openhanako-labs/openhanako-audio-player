@@ -3053,3 +3053,20 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   font-size: 9px !important;
   color: rgba(255,255,255,.28) !important;
 }
+
+/* ═══ 音量滑杆强制默认收起（多次覆盖后仍展开，这里用最高优先级兜底）═══ */
+#playerStrip .strip-volume > input.strip-vol-slider:not(:focus) {
+  width: 0 !important; min-width: 0 !important; max-width: 0 !important;
+  opacity: 0 !important; visibility: hidden !important;
+  pointer-events: none !important; margin: 0 !important; padding: 0 !important;
+  border: 0 !important;
+}
+#playerStrip .strip-volume.open > input.strip-vol-slider,
+#playerStrip .strip-volume:focus-within > input.strip-vol-slider {
+  width: 58px !important; min-width: 58px !important; max-width: 58px !important;
+  opacity: 1 !important; visibility: visible !important;
+  pointer-events: auto !important; margin-left: 6px !important;
+}
+/* 细线图标统一 1.5 描边 */
+#playerStrip .strip-btn svg { stroke-width: 1.5 !important; }
+#playerStrip .strip-play svg { stroke-width: 1.5 !important; }

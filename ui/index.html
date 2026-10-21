@@ -2564,16 +2564,12 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     <button class="ctrl-btn" id="modeBtn" title="播放模式" style="width:26px;height:26px;opacity:0.8">
       <svg id="modeIcon" viewBox="0 0 24 24" width="16" height="16"><line x1="5" y1="5" x2="5" y2="19" stroke="currentColor" stroke-width="2"/><polygon points="8 12 18 5 18 19" fill="currentColor"/></svg>
     </button>
-    <button class="ctrl-btn" id="prevBtn" title="上一首" style="opacity:1;width:34px;height:34px;">
-      <svg viewBox="0 0 24 24" style="fill:currentColor;stroke:none;width:20px;height:20px;"><polygon points="19 20 9 12 19 4 19 20"/><rect x="4" y="4" width="3" height="16" rx="1"/></svg>
-    </button>
+    <button class="ctrl-btn" id="prevBtn" title="上一首" style="opacity:1;width:34px;height:34px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18.5 5.2v13.6L7.6 12z"/><path d="M4.5 5.2v13.6"/></svg></button>
     <button class="ctrl-play" id="playBtn" title="播放/暂停">
       <svg id="playIcon" viewBox="0 0 24 24"><polygon points="8,5 19,12 8,19" fill="white" stroke="none"/></svg>
       <svg id="pauseIcon" viewBox="0 0 24 24" style="display:none"><rect x="7" y="5" width="3.5" height="14" rx="1" fill="white" stroke="none"/><rect x="13.5" y="5" width="3.5" height="14" rx="1" fill="white" stroke="none"/></svg>
     </button>
-    <button class="ctrl-btn" id="nextBtn" title="下一首">
-      <svg viewBox="0 0 24 24"><polygon points="5 4 15 12 5 21 5 4" fill="currentColor" stroke="none"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
-    </button>
+    <button class="ctrl-btn" id="nextBtn" title="下一首"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 5.2v13.6L16.4 12z"/><path d="M19.5 5.2v13.6"/></svg></button>
     <div class="volume-group">
       <button class="ctrl-btn" id="volumeBtn" title="静音" style="width:26px;height:26px;">
         <svg id="volIcon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
@@ -2638,15 +2634,15 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     <div class="strip-context">
       <span class="strip-lyric-line"><span class="strip-lyric" id="stripLyric">暂无歌词</span></span>
       <div class="strip-controls" id="stripControls">
-        <button class="strip-btn" id="stripPrev" title="上一首" aria-label="上一首"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M19 5.5v13L8.5 12z" fill="currentColor" stroke="none"/><rect x="4" y="5.5" width="1.75" height="13" rx=".875" fill="currentColor" stroke="none"/></svg></button>
+        <button class="strip-btn" id="stripPrev" title="上一首" aria-label="上一首"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18.5 5.2v13.6L7.6 12z"/><path d="M4.5 5.2v13.6"/></svg></button>
         <button class="strip-btn strip-play" id="stripPlay" title="播放/暂停" aria-label="播放/暂停">
-          <svg id="stripPlayIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 5.8c0-.9 1-1.5 1.8-1l9.2 5.6c.8.5.8 1.7 0 2.2l-9.2 5.6c-.8.5-1.8-.1-1.8-1z" fill="currentColor" stroke="none"/></svg>
-          <svg id="stripPauseIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="display:none"><rect x="7.5" y="5" width="3.4" height="14" rx="1.2" fill="currentColor" stroke="none"/><rect x="13.1" y="5" width="3.4" height="14" rx="1.2" fill="currentColor" stroke="none"/></svg>
+          <svg id="stripPlayIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M9.2 5.4v13.2L19 12z"/></svg>
+          <svg id="stripPauseIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" style="display:none"><path d="M9 5.5v13"/><path d="M15 5.5v13"/></svg>
         </button>
-        <button class="strip-btn" id="stripNext" title="下一首" aria-label="下一首"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5.5v13L15.5 12z" fill="currentColor" stroke="none"/><rect x="18.25" y="5.5" width="1.75" height="13" rx=".875" fill="currentColor" stroke="none"/></svg></button>
-        <button class="strip-btn" id="stripFav" title="收藏" aria-label="收藏"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.2 4.9 13.4a4.6 4.6 0 0 1 6.5-6.5l.6.6.6-.6a4.6 4.6 0 0 1 6.5 6.5z"/></svg></button>
+        <button class="strip-btn" id="stripNext" title="下一首" aria-label="下一首"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 5.2v13.6L16.4 12z"/><path d="M19.5 5.2v13.6"/></svg></button>
+        <button class="strip-btn" id="stripFav" title="收藏" aria-label="收藏"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.1 4.7 13a4.7 4.7 0 0 1 6.6-6.7l.7.7.7-.7a4.7 4.7 0 0 1 6.6 6.7z"/></svg></button>
         <div class="strip-volume" id="stripVolume">
-          <button class="strip-btn" id="stripVolBtn" title="音量" aria-label="音量"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.2L12 5.8v12.4L7.2 14.5H4z"/><path d="M15.4 9.2a4 4 0 0 1 0 5.6"/><path d="M17.9 6.8a7.5 7.5 0 0 1 0 10.4"/></svg></button>
+          <button class="strip-btn" id="stripVolBtn" title="音量" aria-label="音量"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.2 9.4h3.1L11.8 5.6v12.8L7.3 14.6H4.2z"/><path d="M15.2 9.6a3.6 3.6 0 0 1 0 4.8"/><path d="M17.6 7.2a7 7 0 0 1 0 9.6"/></svg></button>
           <input type="range" class="strip-vol-slider" id="stripVolSlider" min="0" max="100" value="80" aria-label="音量">
         </div>
       </div>
