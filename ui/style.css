@@ -2040,6 +2040,10 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   --strip-h: min(64px, 100%);
   overflow: hidden;
   isolation: isolate;
+  /* 2026-10-21 补：横条自身底色，主题自适应（深色 #1e1e22 / 浅色 #fff）——
+     之前完全透明，浅色/纸感主题下会透出页面底色，与元素风格冲突 */
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
 }
 .player-container[data-layout="strip"] > #playerStrip { display: flex; min-width: 312px; }
 
@@ -2065,7 +2069,8 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   content: '\266A';
   position: absolute; inset: 0;
   display: grid; place-items: center;
-  color: rgba(255,255,255,.45);
+  color: var(--text);
+  opacity: .5;
   font-size: 17px;
 }
 #playerStrip .strip-ring {
@@ -2077,7 +2082,7 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   pointer-events: none;
 }
 #playerStrip .strip-ring circle { fill: none; stroke-width: 2; stroke-linecap: round; }
-#playerStrip .strip-ring-track { stroke: rgba(255,255,255,.14); }
+#playerStrip .strip-ring-track { stroke: var(--border, rgba(255,255,255,.14)); }
 #playerStrip .strip-ring-fill {
   stroke: var(--accent, #c08a5a);
   stroke-dasharray: 0 132;
@@ -2105,14 +2110,16 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   flex: 0 1 auto;
   min-width: 0;
   font-size: 11px;
-  color: var(--text-light, rgba(241,235,227,.62));
+  color: var(--text);
+  opacity: .72;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 /* ── 单行歌词（2026-10-21 加回：极简≠藏歌词）── */
 #playerStrip .strip-lyric {
   display: none;
   font-size: 10.5px;
-  color: var(--text-muted, rgba(241,235,227,.48));
+  color: var(--text);
+  opacity: .55;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   max-width: 46%;
 }
@@ -2129,7 +2136,8 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   gap: 4px;
   font-family: var(--mono, ui-monospace, Consolas, monospace);
   font-size: 10px;
-  color: rgba(255,255,255,.5);
+  color: var(--text);
+  opacity: .6;
   font-variant-numeric: tabular-nums;
   letter-spacing: .02em;
   transition: opacity .2s ease;
@@ -2168,14 +2176,14 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 #playerStrip .strip-vol-slider {
   -webkit-appearance: none; appearance: none;
   width: 66px; height: 3px; border-radius: 2px;
-  background: linear-gradient(90deg, var(--accent, #c08a5a) var(--vol, 80%), rgba(255,255,255,.16) var(--vol, 80%));
+  background: linear-gradient(90deg, var(--accent, #c08a5a) var(--vol, 80%), var(--border, rgba(255,255,255,.16)) var(--vol, 80%));
   outline: none; cursor: pointer; margin: 0 2px 0 4px;
 }
 #playerStrip .strip-vol-slider::-webkit-slider-thumb {
   -webkit-appearance: none; width: 10px; height: 10px; border-radius: 50%;
-  background: #fff; border: none;
+  background: var(--text); border: none;
 }
-#playerStrip .strip-vol-slider::-moz-range-thumb { width: 10px; height: 10px; border-radius: 50%; background: #fff; border: none; }
+#playerStrip .strip-vol-slider::-moz-range-thumb { width: 10px; height: 10px; border-radius: 50%; background: var(--text); border: none; }
 
 /* ── 封面环 seek：可拖动光标 + seeking 态 ── */
 #playerStrip .strip-cover { cursor: pointer; }
@@ -2212,7 +2220,8 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   display: grid; place-items: center;
   padding: 0; border: 0; border-radius: 50%;
   background: transparent;
-  color: rgba(241,235,227,.72);
+  color: var(--text);
+  opacity: .8;
   cursor: pointer;
   transition: color .15s ease, background .15s ease;
 }
