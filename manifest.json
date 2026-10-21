@@ -12,7 +12,9 @@
     "app/ui.clipboard-write",
     "app/ui.open-external",
     "app/resources.read",
-    "app/sessions.read"
+    "app/sessions.read",
+    "app/sessions.manage",
+    "app/session.start-turn"
   ],
   "network": {
     "allowedHosts": [

@@ -9,6 +9,8 @@
 import { createPlayerState } from "./lib/state.js";
 import { registerTools } from "./lib/register-tools.js";
 import { registerRoutes } from "./lib/register-routes.js";
+import { createMoodCommand } from "./lib/mood-command.js";
+import { createAutoPlay } from "./lib/auto-play.js";
 
 export const name = "hanako-audio-player";
 
@@ -18,14 +20,24 @@ export async function apply(ctx) {
     logger: ctx.logger,
   });
 
-  const unregisterTools = registerTools(ctx, state);
+  // 手动入口 /mood 与自动触发 auto-play 共用同一套「投指令给 agent」机制。
+  const mood = createMoodCommand(ctx);
+  const auto = createAutoPlay(ctx, state, { mood });
+
+  const unregisterTools = registerTools(ctx, state, auto);
   const unregisterRoutes = await ctx.routes.register((app) => {
-    registerRoutes(app, { ctx, state });
+    registerRoutes(app, { ctx, state, mood });
   });
+
+  // 首个注册直接验证回执（普通真机装载不需要等一次会话事件）。
+  await mood.ensure();
+  await auto.ensure();
 
 
 
   return () => {
+    mood.dispose();
+    auto.dispose();
     try {
       unregisterTools?.();
     } catch {
