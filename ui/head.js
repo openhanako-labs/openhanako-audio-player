@@ -60,10 +60,21 @@
   // 1) ResizeObserver 换成空壳：v1 那个观察器每次 body 变化都重报。
   try {
     if (window.ResizeObserver) {
-      window.ResizeObserver = function () {
-        this.observe = function () {};
-        this.unobserve = function () {};
-        this.disconnect = function () {};
+      var _RealRO = window.ResizeObserver;
+      // 代理：保留真实 observe 能力（applyLayout/横条断点依赖的 documentElement 观察要真正生效），
+      // 只拦掉 v1 的 "observe(document.body) 喂 notifySize 上报高度" 这一支，防循环。
+      window.ResizeObserver = function (cb) {
+        var _real = new _RealRO(function (entries, obs) {
+          // 若这次回调是 body 尺寸变化引起的（v1 的 notifySize），已由下方 observe 拦截，
+          // 不会走到这里；真实 documentElement 观察正常回调。
+          cb && cb(entries, obs);
+        });
+        this.observe = function (target, opts) {
+          if (target === document.body) return; // v1 的 notifySize 观察 body → 拦住
+          _real.observe(target, opts);
+        };
+        this.unobserve = function (t) { _real.unobserve(t); };
+        this.disconnect = function () { _real.disconnect(); };
       };
     }
   } catch (e) {}
