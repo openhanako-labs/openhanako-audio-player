@@ -2839,20 +2839,19 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
   function syncModes() {
     var hasLyr = document.body.classList.contains('lyrics-mode');
     var hasJiz = document.body.classList.contains('jizura-mode');
-    var cur = !hasLyr ? 'standard' : (hasJiz ? 'lyric' : 'pv');
+    // jizura-mode 是 PV（PV.active() 查的就是它）；lyrics-mode 单独才是歌词态
+    var cur = !hasLyr ? 'standard' : (hasJiz ? 'pv' : 'lyric');
     modeBtns.forEach(function (b) { b.classList.toggle('active', b.dataset.mode === cur); });
   }
+  // 横条胶囊点击 → 转调竖卡胶囊 #modeCaps .mc[data-m=N]（它走 setMode 精确切到位）。
+  // 不能自己设 body class 再点 lyricModeBtn：那个按钮是循环切换，会前进两次。
+  var MODE_M = { standard: 0, pv: 2, lyric: 1 };
   modeBtns.forEach(function (b) {
     b.addEventListener('click', function (e) {
       e.stopPropagation();
-      var lm = document.getElementById('lyricModeBtn');
-      var want = b.dataset.mode;
-      var hasLyr = document.body.classList.contains('lyrics-mode');
-      var hasJiz = document.body.classList.contains('jizura-mode');
-      if (want === 'standard') { document.body.classList.remove('jizura-mode', 'lyrics-mode'); }
-      else if (want === 'pv') { document.body.classList.add('lyrics-mode'); document.body.classList.remove('jizura-mode'); }
-      else { document.body.classList.add('lyrics-mode', 'jizura-mode'); }
-      if (lm) lm.click && lm.click(); // 触发竖卡模式按钮的图标同步（无副作用）
+      var m = MODE_M[b.dataset.mode];
+      var mc = document.querySelector('#modeCaps .mc[data-m="' + m + '"]');
+      if (mc) { mc.click(); }
       syncModes();
     });
   });
