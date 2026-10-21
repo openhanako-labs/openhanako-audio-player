@@ -3070,3 +3070,39 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 /* 细线图标统一 1.5 描边 */
 #playerStrip .strip-btn svg { stroke-width: 1.5 !important; }
 #playerStrip .strip-play svg { stroke-width: 1.5 !important; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   顶栏衔接（仅深色主题）：宿主画的白标题栏与深色主体硬碰。
+   播放器顶部铺一段浅色渐隐，与宿主标题栏同色系，向下过渡到深色，
+   窗口看起来是一体的。
+   ═══════════════════════════════════════════════════════════════════ */
+[data-theme="dark"] body::before {
+  content: '';
+  position: fixed;
+  left: 0; right: 0; top: 0;
+  height: 78px;
+  pointer-events: none;
+  z-index: 9998;
+  background: linear-gradient(180deg,
+      rgba(249, 245, 237, .95) 0%,
+      rgba(244, 238, 228, .80) 34%,
+      rgba(150, 138, 122, .22) 66%,
+      rgba(0, 0, 0, 0) 100%);
+}
+[data-theme="dark"] .header { position: relative; z-index: 9999; }
+[data-theme="dark"] .header-title,
+[data-theme="dark"] .header-left { color: #3a332c !important; }
+[data-theme="dark"] .header-icon {
+  background: rgba(60, 50, 40, .10) !important;
+  color: #4a4038 !important;
+}
+[data-theme="dark"] .header-actions .icon-btn { color: rgba(60, 50, 40, .70) !important; }
+[data-theme="dark"] .header-actions .icon-btn:hover {
+  color: #2a241f !important; background: rgba(60, 50, 40, .08) !important;
+}
+[data-theme="dark"] #modeCaps { background: rgba(60, 50, 40, .10) !important; }
+[data-theme="dark"] #modeCaps .mc { color: rgba(60, 50, 40, .68) !important; }
+[data-theme="dark"] #modeCaps .mc.on { background: #8a6a3c !important; color: #fff !important; }
+[data-theme="dark"] .inst-dot { background: #8a6a3c !important; }
+[data-theme="dark"] .inst-code { color: rgba(60, 50, 40, .68) !important; }
