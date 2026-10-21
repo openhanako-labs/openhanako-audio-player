@@ -2051,11 +2051,14 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   border-radius: 50%;
   padding: 0;
   border: 0;
-  background: linear-gradient(148deg, #6d5d4c 0%, #3a3229 46%, #241f19 100%) !important;
-  background-size: cover;
-  background-position: center;
   position: relative;
   cursor: pointer;
+  background-size: cover;
+  background-position: center;
+}
+/* 无封面图时的占位底：有图时 JS 内联 background-image 接管，这条不参与 */
+#playerStrip .strip-cover:not(.has-art) {
+  background: linear-gradient(148deg, #6d5d4c 0%, #3a3229 46%, #241f19 100%);
 }
 #playerStrip .strip-cover.has-art { box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); }
 #playerStrip .strip-cover:not(.has-art)::after {
@@ -2105,6 +2108,18 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   color: var(--text-light, rgba(241,235,227,.62));
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* ── 单行歌词（2026-10-21 加回：极简≠藏歌词）── */
+#playerStrip .strip-lyric {
+  display: none;
+  font-size: 10.5px;
+  color: var(--text-muted, rgba(241,235,227,.48));
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 46%;
+}
+#playerStrip .strip-lyric:not(:empty) { display: inline-block; }
+#playerStrip[data-width="mini"] .strip-lyric,
+#playerStrip[data-width="narrow"] .strip-lyric { display: none; }
+
 
 /* ── 时间：常驻，压住右侧留白（精确进度靠它兜）── */
 #playerStrip .strip-time {
@@ -2266,7 +2281,8 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
     0 1px 6px color-mix(in srgb, var(--accent) 26%, transparent) !important;
 }
 /* 封面占位底同样跟随 accent（保留一点中性，避免过艳） */
-#playerStrip .strip-cover {
+/* 封面默认底（仅无封面图时）：accent 渐变压住 ♪ 占位。有图时由 JS 内联 background-image 接管，不参与。 */
+#playerStrip .strip-cover:not(.has-art) {
   background: linear-gradient(152deg,
       color-mix(in srgb, var(--accent) 34%, #2e2b26) 0%,
       color-mix(in srgb, var(--accent) 12%, #232120) 56%,
