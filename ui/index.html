@@ -3026,6 +3026,30 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
   function refresh() {
     syncTrack(); syncPlay(); syncVol(); syncProgress(); syncWidth(); syncLyric(); }
 
+  // ── 背景动效驱动（A 色场流动 + B 音频低频增强）──
+  var _motionT = 0;
+  function driveMotion() {
+    var m = 0;
+    try {
+      var bins = window.__reactiveBins;
+      if (bins && bins.length > 0) {
+        var low = 0, n = Math.max(1, Math.floor(bins.length / 8));
+        for (var i = 0; i < n && i < bins.length; i++) low += (bins[i] || 0);
+        low /= n;
+        m = Math.min(1, low * 2.2);
+      }
+    } catch (e) {}
+    if (m <= 0) {
+      _motionT += 0.06;
+      m = 0.15 + 0.1 * (0.5 + 0.5 * Math.sin(_motionT));
+    }
+    strip.style.setProperty('--strip-motion', m.toFixed(3));
+    var on = m > 0.08 ? 'on' : 'off';
+    if (strip.getAttribute('data-motion') !== on) strip.setAttribute('data-motion', on);
+  }
+  setInterval(function () { driveMotion(); }, 160);
+  driveMotion();
+
   // 订阅播放事件
   var audio = document.getElementById('audio');
   if (audio) {

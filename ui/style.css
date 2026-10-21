@@ -2209,3 +2209,27 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 }
 #playerStrip .strip-vol-slider::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; }
 #playerStrip .strip-vol-slider::-moz-range-track { height: 4px; border-radius: 2px; }
+
+
+/* ── 背景动效：色场缓慢流动（A） · 音频低频驱动增强（B）──
+   --strip-motion 由 JS 写 0-1（音乐能量）；0 时不动画，有能量时色场流动。
+   配合 background-position 动画做柔和呼吸。 */
+@keyframes stripBgFlow {
+  0%   { background-position: 0% 0%; }
+  50%  { background-position: 100% 0%; }
+  100% { background-position: 0% 0%; }
+}
+#playerStrip .strip-bar {
+  animation: none;
+}
+#playerStrip[data-motion="on"] .strip-bar {
+  animation: stripBgFlow calc(9s + (1 - var(--strip-motion, 0.5)) * 8s) ease-in-out infinite;
+}
+
+/* 进度光片：音频能量高时光晕增强（B） */
+#playerStrip .strip-progress {
+  transition: filter .25s ease;
+}
+#playerStrip[data-motion="on"] .strip-progress {
+  filter: brightness(calc(1 + var(--strip-motion, 0) * 0.3));
+}
