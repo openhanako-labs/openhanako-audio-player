@@ -2197,3 +2197,15 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 /* ── 横条右上角安全区：宿主控件（聊天卡 100×40 / 拆窗窗口按钮）叠在横条上，
    内容右移 96px 避开（对齐竖卡 view-compact 先例）── */
 #playerStrip { padding-right: 96px; }
+
+/* ── 音量滑杆填充进度（track 按 --vol 百分比填 accent） ── */
+#playerStrip .strip-vol-slider {
+  background:
+    linear-gradient(90deg,
+      var(--accent) 0%,
+      var(--accent) var(--vol, 80%),
+      color-mix(in srgb, var(--text) 35%, transparent) var(--vol, 80%),
+      color-mix(in srgb, var(--text) 35%, transparent) 100%);
+}
+#playerStrip .strip-vol-slider::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; }
+#playerStrip .strip-vol-slider::-moz-range-track { height: 4px; border-radius: 2px; }

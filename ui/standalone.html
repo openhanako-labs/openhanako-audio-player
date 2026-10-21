@@ -2883,9 +2883,11 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
   volSlider.addEventListener('input', function (e) {
     var audio = document.getElementById('audio');
     if (audio) { audio.volume = e.target.value / 100; }
+    volSlider.style.setProperty('--vol', e.target.value + '%');
     var vs = document.getElementById('volumeSlider');
     if (vs && vs.value !== e.target.value) vs.value = e.target.value;
   });
+  volSlider.style.setProperty('--vol', (volSlider.value || 80) + '%');
   // 进度/ seek：点在条上按比例定位（复用既有 timeupdate 写回进度）
   var bar = strip.querySelector('.strip-bar');
   function seekFromEvent(e) {
@@ -2915,6 +2917,24 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     if (src !== lastCover) {
       lastCover = src;
       if (src) { cover.innerHTML = '<img src="' + src.replace(/\"/g, '') + '" alt="">'; }
+      // 封面取色 → 横条背景多色场（--strip-c1/2/3），缺取色器/失败走 CSS 默认
+      try {
+        if (src && window.aiThemeGenerator && window.aiThemeGenerator.coverColorExtractor
+            && window.aiThemeGenerator.coverColorExtractor.extract) {
+          window.aiThemeGenerator.coverColorExtractor.extract(src).then(function (colors) {
+            if (!colors) return;
+            var c = colors.colors || colors.dominant || colors;
+            if (c && Array.isArray(c) && c.length >= 2) {
+              strip.style.setProperty('--strip-c1', c[0] || '');
+              strip.style.setProperty('--strip-c2', c[1] || '');
+              strip.style.setProperty('--strip-c3', c[1] || c[0] || '');
+            } else if (typeof colors === 'object') {
+              var base = colors.dominant || colors.main || colors.primary || colors.background;
+              if (base) { strip.style.setProperty('--strip-c1', base); strip.style.setProperty('--strip-c2', base); strip.style.setProperty('--strip-c3', base); }
+            }
+          }).catch(function () {});
+        }
+      } catch (e) {}
       else { cover.textContent = '♫'; }
     }
     // 收藏态
