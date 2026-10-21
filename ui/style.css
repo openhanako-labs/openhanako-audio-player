@@ -2242,13 +2242,13 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 #playerStrip .strip-btn[aria-pressed="true"] .icon { fill: currentColor; }
 
 /* 圆形与命中框一起缩小，上沿多留 2px；左右各留 2px 外边距，保持原 32px 占位与中轴。 */
-#playerStrip .strip-btn#playerStrip .strip-play { position: relative; width: 28px; height: 28px; flex-basis: 28px; margin: 0 2px; border-radius: 50%; background: var(--accent); color: var(--hk-on-accent); }
+#playerStrip .strip-btn.strip-play { position: relative; width: 28px; height: 28px; flex-basis: 28px; margin: 0 2px; border-radius: 50%; background: var(--accent); color: var(--hk-on-accent); }
 
-#playerStrip .strip-btn#playerStrip .strip-play .icon { width: 16px; height: 16px; fill: currentColor; stroke-width: 1.5; }
+#playerStrip .strip-btn.strip-play .icon { width: 16px; height: 16px; fill: currentColor; stroke-width: 1.5; }
 
-#playerStrip .strip-btn#playerStrip .strip-play:hover { filter: brightness(1.04); box-shadow: var(--hv-ring-strong); }
+#playerStrip .strip-btn.strip-play:hover { filter: brightness(1.04); box-shadow: var(--hv-ring-strong); }
 
-#playerStrip .strip-btn#playerStrip .strip-play:active { transform: scale(0.96); filter: brightness(0.95); }
+#playerStrip .strip-btn.strip-play:active { transform: scale(0.96); filter: brightness(0.95); }
 
 #playerStrip .strip-volume { position: relative; display: flex; align-items: center; flex: 0 0 auto; gap: 0; }
 
@@ -2281,13 +2281,13 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 /* 最窄档只调整内容区；按钮尺寸不再压缩，间距不足时由布局逻辑移除次要键。 */
 .strip-layout[data-small="1"] #playerStrip .strip-context { right: 10px; }
 
-#playerStrip .strip-btn:active, .strip-cover:active, #playerStrip .strip-btn#playerStrip .strip-play:active { transform: none !important; }
+#playerStrip .strip-btn:active, .strip-cover:active, #playerStrip .strip-btn.strip-play:active { transform: none !important; }
 
 /* 按钮命中盒不缩放；图形按下快、松开缓，独立于外层的布局位移动画。 */
 .controls .search-entry:active, .controls .mode:active, .controls .queue-btn:active,
 .controls .volume-wrap > .icon-btn:active, .controls .transport > .icon-btn:active,
 .controls .play-btn:active, .controls .identity > .heart:active,
-#playerStrip .strip-btn:active, #playerStrip .strip-btn#playerStrip .strip-play:active, .strip-cover:active { transform: none; }
+#playerStrip .strip-btn:active, #playerStrip .strip-btn.strip-play:active, .strip-cover:active { transform: none; }
 
 .controls button > .icon, .controls .play-glyph > .icon,
 #playerStrip .strip-btn > .icon, #playerStrip .strip-btn .play-glyph > .icon {
@@ -2304,9 +2304,9 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
  * 按压仍只动画内部图形；不逐帧插值大面积阴影和背景。 */
 #playerStrip .strip-btn { transition: none; }
 
-#playerStrip .strip-btn#playerStrip .strip-play:hover { filter: brightness(1.08); box-shadow: var(--hv-ring-icon), inset 0 0 0 1px color-mix(in srgb, var(--hk-on-accent) 35%, transparent); }
+#playerStrip .strip-btn.strip-play:hover { filter: brightness(1.08); box-shadow: var(--hv-ring-icon), inset 0 0 0 1px color-mix(in srgb, var(--hk-on-accent) 35%, transparent); }
 
-#playerStrip .strip-btn:active, #playerStrip .strip-btn#playerStrip .strip-play:active { filter: brightness(.92); transition: filter 45ms ease; }
+#playerStrip .strip-btn:active, #playerStrip .strip-btn.strip-play:active { filter: brightness(.92); transition: filter 45ms ease; }
 
 #playerStrip .strip-play .play-glyph { position: absolute; display: grid; place-items: center; transition: opacity 100ms ease, transform 140ms ease; }
 
