@@ -2786,6 +2786,40 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
   var volSlider = document.getElementById('stripVolSlider');
   var modeBtns = strip.querySelectorAll('.strip-mode');
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // ── 信封驱动断点（替代被 head.js 弱化的 ResizeObserver）──
+  // 宿主按挂载位（聊天流 flexible / 黑板·拆窗 fixed / 槽位 fixed…）推真实宽高约束，
+  // 这里直接读它判定布局，不猜 documentElement。
+  var lastLayout = null;
+  function layoutFromEnvelope(env) {
+    var w = null, h = null;
+    try {
+      if (env && env.width)  w = env.width.value != null ? env.width.value : (env.width.max != null ? env.width.max : null);
+      if (env && env.height) h = env.height.value != null ? env.height.value : (env.height.max != null ? env.height.max : null);
+    } catch (e) {}
+    if (w == null) w = window.innerWidth || document.documentElement.clientWidth || 0;
+    if (h == null) h = window.innerHeight || document.documentElement.clientHeight || 0;
+    if (h <= 0 || w <= 0) return lastLayout || 'long';
+    var next;
+    if (h <= 156 && w >= h * 1.6) next = 'strip';
+    else next = w >= 720 ? 'wide' : (h < 560 ? 'compact' : 'long');
+    return next;
+  }
+  function applyEnvelopeLayout(env) {
+    var next = layoutFromEnvelope(env);
+    if (next !== lastLayout) {
+      lastLayout = next;
+      if (player) player.setAttribute('data-layout', next);
+      refresh();
+    }
+  }
+  // 宿主信封（v2 SDK；旧宿主/无宿主时走 window resize 兜底）
+  try {
+    if (window.__hana && window.__hana.envelope && window.__hana.envelope.subscribe) {
+      window.__hana.envelope.subscribe(applyEnvelopeLayout);
+      applyEnvelopeLayout(window.__hana.envelope.getSnapshot());
+    }
+  } catch (e) {}
+  window.addEventListener('resize', function () { applyEnvelopeLayout(); });
 
   // ── 悬停/聚焦/键盘交互态：指针进条、获焦、或按 Tab 进入；离开且音量未展开时恢复歌词 ──
   var volOpen = false;
