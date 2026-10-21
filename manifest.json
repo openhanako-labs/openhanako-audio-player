@@ -4,7 +4,7 @@
   "name": "音频播放器",
   "version": "0.11.9",
   "description": "音乐播放器：本地与在线、歌词横幅、主题与动效。",
-  "minAppVersion": "0.946.2",
+  "minAppVersion": "0.1017.0",
   "entry": "index.js",
   "icon": "assets/icon.png",
   "capabilities": [
@@ -48,8 +48,7 @@
         "face": {
           "image": "face-portrait.png"
         },
-        "cardForm": "flush",
-        "titlebar": "solid",
+        "cardForm": "edge-to-edge",
         "detached": {
           "route": "/standalone.html"
         },
