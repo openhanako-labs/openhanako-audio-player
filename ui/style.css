@@ -2409,26 +2409,7 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
    播放器顶部铺一段浅色渐隐，与宿主标题栏同色系，向下过渡到深色，
    窗口看起来是一体的。
    ═══════════════════════════════════════════════════════════════════ */
-[data-theme="dark"] body::before {
-  content: '';
-  position: fixed;
-  left: 0; right: 0; top: 0;
-  height: 78px;
-  pointer-events: none;
-  z-index: 9998;
-  background: linear-gradient(180deg,
-      rgba(249, 245, 237, .95) 0%,
-      rgba(244, 238, 228, .80) 34%,
-      rgba(150, 138, 122, .22) 66%,
-      rgba(0, 0, 0, 0) 100%);
-}
-[data-theme="dark"] .header { position: relative; z-index: 9999; }
 
-/* 横条贴顶时不套这条渐变：横条是深色自身，不该被顶部浅色渐隐染色（2026-10-21） */
-.player-container[data-layout="strip"] body::before,
-.player-container[data-layout="strip"] ~ body::before {
-  display: none;
-}
 body:has(.player-container[data-layout="strip"])::before {
   display: none;
 }
@@ -2591,4 +2572,11 @@ body:has(.player-container[data-layout="strip"])::before {
 .player-container[data-layout="compact"] .pv-stage {
   flex: 1;
   min-height: 0;
+}
+
+/* ── edge-to-edge 顶部安全区（2026-10-21）：宿主不画标题栏后，悬浮控件
+     仍可能盖窗口上缘。给竖卡 header 顶部留 8px 呼吸，strip 形态除外。 */
+body.eframe .header,
+.player-container:not([data-layout="strip"]) .header {
+  padding-top: 10px;
 }
