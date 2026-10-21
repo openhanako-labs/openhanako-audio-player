@@ -2433,8 +2433,24 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 .player-container[data-layout="strip"] > #playerStrip { flex: 1 1 auto; }
 
 /* ── 横条贴顶（顶栏语义），不要垂直居中 ── */
+/* 2026-10-21 修：原来这里写死 height:96px，宿主给 60px 时横条比容器高 36px，
+   歌名/歌手被切掉半截——「改了没变」的其中一个真因就是它。
+   盒子跟随容器；--strip-height 优先用 JS 实测值（index.html syncStripHeight），
+   量不到时回退到 100%（即容器高度），两重保障都不超出容器。 */
 .player-container[data-layout="strip"] { align-items: stretch !important; }
-.player-container[data-layout="strip"] > #playerStrip { align-self: flex-start; height: 96px; max-height: 96px; }
+.player-container[data-layout="strip"] > #playerStrip {
+  align-self: stretch;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+/* 条本体永远不高于容器：即使 --strip-height 还没被 JS 回写。 */
+.player-container[data-layout="strip"] #playerStrip .strip-bar {
+  height: min(var(--strip-height), 100%);
+}
+.player-container[data-layout="strip"] #playerStrip {
+  --strip-y: max(0px, calc((100% - min(var(--strip-height), 100%)) / 2));
+}
 
 
 /* ═══════════════════════════════════════════════════════════════════

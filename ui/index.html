@@ -2880,7 +2880,25 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
       lastLayout = next;
       if (player) player.setAttribute('data-layout', next);
       refresh();
+      syncStripHeight();
     }
+  }
+  // ── 实测横条高度回写（2026-10-21）──
+  // 旧代码 CSS 里写死 height:96px / --strip-height:64px，宿主给 60px 时
+  // 横条比容器高 36px，歌名歌手被切掉。改成：盒子跟随容器，这里量真实高度
+  // 写进 --strip-height，所有 calc(24px + var(--strip-height)) 拿到的都是 px。
+  function syncStripHeight() {
+    if (!strip) return;
+    var isStrip = player && player.getAttribute('data-layout') === 'strip';
+    if (!isStrip) return;
+    var h = strip.getBoundingClientRect().height;
+    if (!h || h <= 0) {
+      // 布局刚切过来时可能还没量到，下一帧再试
+      requestAnimationFrame(syncStripHeight);
+      return;
+    }
+    var capped = Math.min(64, Math.max(40, Math.round(h)));
+    strip.style.setProperty('--strip-height', capped + 'px');
   }
   // ── 标题栏交互区域上报：横条按钮被宿主标题栏挡住时保留可点击区 ──
   // 契约：hana.surface.setInteractiveRegions(rects)（Hana 0.950+）。
@@ -2930,9 +2948,10 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
   var _origApply = applyEnvelopeLayout;
   applyEnvelopeLayout = function (env) {
     _origApply(env);
+    syncStripHeight();
     reportInteractiveRegions();
   };
-  window.addEventListener('resize', function () { reportInteractiveRegions(); });
+  window.addEventListener('resize', function () { syncStripHeight(); reportInteractiveRegions(); });
 
   // 宿主信封（v2 SDK；旧宿主/无宿主时走 window resize 兜底）
   try {
