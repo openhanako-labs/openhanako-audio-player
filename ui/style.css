@@ -2148,6 +2148,58 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   pointer-events: none;
   transition: opacity .2s ease, transform .2s ease;
 }
+/* ── 音量滑杆（2026-10-21 加回）：悬停/唤醒展开。
+     绝对定位在音量按钮左侧（不参与 flex 流 → 不挤动收藏/播放键，不跳版）*/
+#playerStrip .strip-controls { position: relative; }
+#playerStrip .strip-volwrap {
+  position: absolute;
+  right: 100%;            /* 紧贴音量按钮左缘，向左展开 */
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;  /* 滑杆靠右贴音量按钮 */
+  transition: width .2s ease;
+}
+#playerStrip.active .strip-volwrap,
+#playerStrip.showing .strip-volwrap { width: 72px; }
+#playerStrip .strip-vol-slider {
+  -webkit-appearance: none; appearance: none;
+  width: 66px; height: 3px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent, #c08a5a) var(--vol, 80%), rgba(255,255,255,.16) var(--vol, 80%));
+  outline: none; cursor: pointer; margin: 0 2px 0 4px;
+}
+#playerStrip .strip-vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 10px; height: 10px; border-radius: 50%;
+  background: #fff; border: none;
+}
+#playerStrip .strip-vol-slider::-moz-range-thumb { width: 10px; height: 10px; border-radius: 50%; background: #fff; border: none; }
+
+/* ── 封面环 seek：可拖动光标 + seeking 态 ── */
+#playerStrip .strip-cover { cursor: pointer; }
+#playerStrip .strip-cover.seeking { cursor: grabbing; }
+#playerStrip.seeking .strip-ring-fill { stroke: #d59a66; }
+
+/* ── 背景 B 色带流动（transform 平移，不 reflow）── */
+#playerStrip { --strip-bgflow: rgba(192,138,90,.10); }
+#playerStrip[data-bg="flow"]::before {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: -40%;
+  width: 40%;
+  background: linear-gradient(105deg, transparent 0%, var(--strip-bgflow) 50%, transparent 100%);
+  pointer-events: none;
+  animation: stripFlow 4.2s ease-in-out infinite;
+  z-index: 0;
+}
+@keyframes stripFlow {
+  0% { transform: translateX(0); opacity: .35; }
+  50% { transform: translateX(340%); opacity: .75; }
+  100% { transform: translateX(0); opacity: .35; }
+}
+
 #playerStrip.active .strip-controls,
 #playerStrip:focus-within .strip-controls {
   opacity: 1;

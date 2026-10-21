@@ -2599,6 +2599,7 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 <svg id="stripPauseIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" style="display:none"><path d="M9 5.5v13"/><path d="M15 5.5v13"/></svg>
 </button>
 <button class="strip-btn" id="stripVolBtn" title="音量" aria-label="音量"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 9.4h2.9L11.6 6v12L7.4 14.6H4.5z"/><path d="M15.4 9.7a3.6 3.6 0 0 1 0 4.6"/></svg></button>
+<div class="strip-volwrap" id="stripVolWrap"><input type="range" class="strip-vol-slider" id="stripVolSlider2" min="0" max="100" value="80" aria-label="音量大小"></div>
 </div>
 </div>
 
@@ -2802,6 +2803,7 @@ var pauseIcon = document.getElementById('stripPauseIcon');
 var favBtn = document.getElementById('stripFav');
 var lyricEl = document.getElementById('stripLyric');
 var volBtn = document.getElementById('stripVolBtn');
+var volSliderEl = document.getElementById('stripVolSlider2');
 
 // ── 信封驱动断点 ──
 var lastLayout = null;
@@ -2890,6 +2892,16 @@ function tap(id) { var el = document.getElementById(id); if (el) el.click(); }
 playBtn.addEventListener('click', function () { tap('playBtn'); });
 favBtn.addEventListener('click', function (e) { e.stopPropagation(); tap('favBtn'); });
 volBtn.addEventListener('click', function (e) { e.stopPropagation(); tap('volumeBtn'); });
+if (volSliderEl) {
+  volSliderEl.addEventListener('input', function () {
+    var a = document.getElementById('audio');
+    var v = Number(volSliderEl.value);
+    if (a) a.volume = v / 100;
+    volSliderEl.style.setProperty('--vol', v + '%');
+    var vs = document.getElementById('volumeSlider');
+    if (vs && vs.value !== String(v)) vs.value = v;
+  });
+}
 
 // ── 镜像竖卡状态：歌名/歌手/封面/播放态/收藏 ──
 function setText(el, t) { if (el && el.textContent !== t) el.textContent = t; }
@@ -2921,6 +2933,11 @@ function syncVol() {
   var audio = document.getElementById('audio');
   if (!audio) return;
   var vBtn = document.getElementById('volumeBtn');
+  if (volSliderEl && audio.volume != null) {
+    var v = Math.round(audio.volume * 100);
+    if (Number(volSliderEl.value) !== v) volSliderEl.value = v;
+    volSliderEl.style.setProperty('--vol', v + '%');
+  }
   if (vBtn && vBtn.querySelector('svg')) {
     var dim = vBtn.querySelector('svg').style.opacity === '0.3';
     volBtn.style.opacity = dim ? '0.4' : '1';
@@ -2957,8 +2974,55 @@ function fmtTime(s) {
   return Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
 }
 
+// ── 背景动效：B 色带流动（CSS 动画，strip 上挂 data-bg="flow"）──
+strip.setAttribute('data-bg', 'flow');
 // ── 统一刷新 ──
 function refresh() { syncTrack(); syncPlay(); syncVol(); syncProgress(); syncLyric(); }
+// ── 封面环 seek（2026-10-21）：点/拖环 → audio.currentTime；环上浮时刻 ──
+var stripCoverEl = document.getElementById('stripCover');
+var ringFillEl = document.querySelector('.strip-ring-fill');
+var curEl2 = document.getElementById('stripCur');
+if (stripCoverEl) {
+  stripCoverEl.addEventListener('pointerdown', function (e) {
+    var a = document.getElementById('audio');
+    if (!a || !a.duration) return;
+    e.preventDefault();
+    stripCoverEl.setPointerCapture(e.pointerId);
+    strip.classList.add('seeking');
+    function seekTo(x, y) {
+      var r = stripCoverEl.getBoundingClientRect();
+      var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      var ang = Math.atan2(y - cy, x - cx) + Math.PI / 2;
+      if (ang < 0) ang += Math.PI * 2;
+      var t = ang / (Math.PI * 2);
+      a.currentTime = t * a.duration;
+      syncProgress();
+    }
+    function onMove(ev) { seekTo(ev.clientX, ev.clientY); }
+    function onUp() {
+      stripCoverEl.removeEventListener('pointermove', onMove);
+      stripCoverEl.removeEventListener('pointerup', onUp);
+      strip.classList.remove('seeking');
+    }
+    stripCoverEl.addEventListener('pointermove', onMove);
+    stripCoverEl.addEventListener('pointerup', onUp);
+    seekTo(e.clientX, e.clientY);
+  });
+}
+
+// ── 触屏/点按唤醒（2026-10-21）：点条身空白或封面 → 醒控件；点条外收起 ──
+function wake() { strip.classList.add('showing'); }
+function sleep() { strip.classList.remove('showing'); }
+strip.addEventListener('click', function (e) {
+  if (e.target === strip || e.target.classList.contains('strip-identity') ||
+      e.target.classList.contains('strip-lyric') || e.target.classList.contains('strip-time') ||
+      e.target === stripCoverEl) {
+    wake();
+  }
+});
+document.addEventListener('click', function (e) {
+  if (!strip.contains(e.target)) sleep();
+});
 
 // ── 订阅播放/时间/音量事件 ──
 var audio = document.getElementById('audio');
