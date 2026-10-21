@@ -40,15 +40,31 @@
     return gs.map(function (g) { return { tokens: g, explicit: gs.length > 1 }; });
   }
 
-  /* 在 [lo,hi] 里挑最后一个好断点（空格 / 标点之后 / 拉丁词之后） */
+  /* 语言边界断点：中日韩字符紧邻拉丁字母处最优先（日英混排不再硬拼） */
+  var CJK = /[\u3040-\u30FF\u4E00-\u9FFF\uAC00-\uD7AF]/;
+  var LAT = /[a-zA-Z]/;
+  function isLangEdge(a, b) {
+    var x = bare(a == null ? '' : a), y = bare(b == null ? '' : b);
+    if (!x || !y) return false;
+    var xc = CJK.test(x.charAt(x.length - 1)), yl = LAT.test(y.charAt(0));
+    var xl = LAT.test(x.charAt(x.length - 1)), yc = CJK.test(y.charAt(0));
+    return (xc && yl) || (xl && yc);
+  }
+
+  /* 在 [lo,hi] 里挑最后一个好断点。
+     优先级：语言边界 > 空格/标点 > 拉丁词后 */
   function findBreak(toks, lo, hi) {
-    var best = -1;
+    var best = -1, langEdge = -1;
     hi = Math.min(hi, toks.length - 1);
     for (var i = lo; i <= hi; i++) {
       if (i + 1 >= toks.length) break;
+      if (isLangEdge(toks[i], toks[i + 1])) {
+        langEdge = i + 1;
+        continue;
+      }
       if (isSpace(toks[i]) || MARK.test(bare(toks[i])) || toks[i + 1] === ' ' || /[a-zA-Z]{2,}/.test(toks[i])) best = i + 1;
     }
-    return best;
+    return langEdge > 0 ? langEdge : best;
   }
 
   function autoSplit(g) {

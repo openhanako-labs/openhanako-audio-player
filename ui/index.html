@@ -2850,7 +2850,10 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
       if (!surf || typeof surf.setInteractiveRegions !== 'function') return;
       var rects = [];
       // 顶栏按钮：竖卡/横条都上报（宿主标题栏悬浮时盖住它们点不到）
-      var headerBtns = document.querySelectorAll('.header-actions .icon-btn, .header .icon-btn');
+      // 顶栏所有可交互元素：图标按钮 + 模式胶囊(标准/PV/歌词) + 实例徽章
+      var headerBtns = document.querySelectorAll(
+        '.header-actions .icon-btn, .header .icon-btn, #modeCaps .mc, .header .mc'
+      );
       headerBtns.forEach(function (b) {
         var r = b.getBoundingClientRect();
         if (r.width > 0 && r.height > 0) {
@@ -3216,10 +3219,24 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 
   /* ---------- 文本切分：拉丁按词、中日韩逐字 ---------- */
   PV.hasLatin = function (t) { return /[a-zA-Z]{3,}/.test(t || ''); };
+  /* 混合切分：拉丁按词、中日韩逐字、空白保留成独立 token。
+     之前只要句中有 2 个以上拉丁字母就整句按空格切，导致中文被整块处理——
+     既没法在语言边界断行，逐字进场也退化成整句一起动。 */
+  var RE_CJK_G = /[\u3040-\u30FF\u4E00-\u9FFF\uAC00-\uD7AF]/;
   PV.tokens = function (txt) {
     txt = txt || '';
-    if (/[a-zA-Z]{2,}/.test(txt)) return txt.split(/(\s+)/).filter(function (s) { return s.length; });
-    return Array.from(txt);
+    if (!txt) return [];
+    var out = [], buf = '', mode = null; // 'cjk' | 'lat' | 'space'
+    function flush() { if (buf) { out.push(buf); buf = ''; } }
+    for (var i = 0; i < txt.length; i++) {
+      var ch = txt.charAt(i);
+      var m = /\s/.test(ch) ? 'space' : (RE_CJK_G.test(ch) ? 'cjk' : 'lat');
+      if (m === 'cjk') { flush(); out.push(ch); mode = 'cjk'; continue; }
+      if (m !== mode) { flush(); mode = m; }
+      buf += ch;
+    }
+    flush();
+    return out;
   };
   PV.glyph = function (t) { return t === ' ' ? '\u00A0' : t; };
 
@@ -5691,15 +5708,31 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
     return gs.map(function (g) { return { tokens: g, explicit: gs.length > 1 }; });
   }
 
-  /* 在 [lo,hi] 里挑最后一个好断点（空格 / 标点之后 / 拉丁词之后） */
+  /* 语言边界断点：中日韩字符紧邻拉丁字母处最优先（日英混排不再硬拼） */
+  var CJK = /[\u3040-\u30FF\u4E00-\u9FFF\uAC00-\uD7AF]/;
+  var LAT = /[a-zA-Z]/;
+  function isLangEdge(a, b) {
+    var x = bare(a == null ? '' : a), y = bare(b == null ? '' : b);
+    if (!x || !y) return false;
+    var xc = CJK.test(x.charAt(x.length - 1)), yl = LAT.test(y.charAt(0));
+    var xl = LAT.test(x.charAt(x.length - 1)), yc = CJK.test(y.charAt(0));
+    return (xc && yl) || (xl && yc);
+  }
+
+  /* 在 [lo,hi] 里挑最后一个好断点。
+     优先级：语言边界 > 空格/标点 > 拉丁词后 */
   function findBreak(toks, lo, hi) {
-    var best = -1;
+    var best = -1, langEdge = -1;
     hi = Math.min(hi, toks.length - 1);
     for (var i = lo; i <= hi; i++) {
       if (i + 1 >= toks.length) break;
+      if (isLangEdge(toks[i], toks[i + 1])) {
+        langEdge = i + 1;
+        continue;
+      }
       if (isSpace(toks[i]) || MARK.test(bare(toks[i])) || toks[i + 1] === ' ' || /[a-zA-Z]{2,}/.test(toks[i])) best = i + 1;
     }
-    return best;
+    return langEdge > 0 ? langEdge : best;
   }
 
   function autoSplit(g) {

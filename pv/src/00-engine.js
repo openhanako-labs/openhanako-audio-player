@@ -56,10 +56,24 @@
 
   /* ---------- 文本切分：拉丁按词、中日韩逐字 ---------- */
   PV.hasLatin = function (t) { return /[a-zA-Z]{3,}/.test(t || ''); };
+  /* 混合切分：拉丁按词、中日韩逐字、空白保留成独立 token。
+     之前只要句中有 2 个以上拉丁字母就整句按空格切，导致中文被整块处理——
+     既没法在语言边界断行，逐字进场也退化成整句一起动。 */
+  var RE_CJK_G = /[\u3040-\u30FF\u4E00-\u9FFF\uAC00-\uD7AF]/;
   PV.tokens = function (txt) {
     txt = txt || '';
-    if (/[a-zA-Z]{2,}/.test(txt)) return txt.split(/(\s+)/).filter(function (s) { return s.length; });
-    return Array.from(txt);
+    if (!txt) return [];
+    var out = [], buf = '', mode = null; // 'cjk' | 'lat' | 'space'
+    function flush() { if (buf) { out.push(buf); buf = ''; } }
+    for (var i = 0; i < txt.length; i++) {
+      var ch = txt.charAt(i);
+      var m = /\s/.test(ch) ? 'space' : (RE_CJK_G.test(ch) ? 'cjk' : 'lat');
+      if (m === 'cjk') { flush(); out.push(ch); mode = 'cjk'; continue; }
+      if (m !== mode) { flush(); mode = m; }
+      buf += ch;
+    }
+    flush();
+    return out;
   };
   PV.glyph = function (t) { return t === ' ' ? '\u00A0' : t; };
 
