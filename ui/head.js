@@ -1,6 +1,6 @@
 (function () {
   // 构建标记：探针会把它报回后端，用来判断卡片到底跑的是新代码还是旧代码。
-  window.__HANA_BUILD = "1022114033";
+  window.__HANA_BUILD = "1022115424";
 
   // __whenHana(cb)：SDK 就绪后回调；已就绪立即执行。事件见 index.html 的 module 胶水。
   window.__whenHana = function (cb) {
@@ -1573,21 +1573,67 @@ if (typeof module !== 'undefined' && module.exports) {
   function patchApplyTheme() {
     if (typeof window.applyTheme !== "function") return false;
     if (window.applyTheme.__themed) return true;
+
+    // ——这是整条链最关键的一行——
+    // app.js 的 boot() 已经包过一层（给背景换色，标 __bgWrapped）。
+    // 旧代码直接 window.applyTheme = function(){...} 会把那一层**整个覆盖掉**，
+    // __bgWrapped 标记也连同消失。
+    // 实测后果：applyThemeWrapped 恒为 false，切明暗时背景不跟着换
+    // （暗夜预设 light 背景应为 #F4F4F6，实际停在 rgb(5,5,5)）。
+    //
+    // 所以：先抓住**当前**的 applyTheme（可能是已经包过的），再包它。
+    // 这样两层叠加、互不吞掉；谁先谁后都没关系。
     var orig = window.applyTheme;
-    window.applyTheme = function () {
+    var chain = function () {
       clearInlineTheme();
-      return orig.apply(this, arguments);
+      var r = orig.apply(this, arguments);
+      // 清完要把用户选的配色重新铺回去。
+      //
+      // 否则会有个很难看的后果：用户选了「暗夜」，点一下日月图标切明暗，
+      // clearInlineTheme 把 --accent 抹了，而 applyTheme 只改 data-theme 属性，
+      // 配色就永久退回 CSS 默认——切换明暗等于重置配色。
+      reapplyPreset();
+      return r;
     };
-    window.applyTheme.__themed = true;
+    // 继承被包那层的标记，让后续判断（包括 app.js 自己）能认出链仍完整
+    chain.__bgWrapped = !!orig.__bgWrapped;
+    chain.__themed = true;
+    window.applyTheme = chain;
     return true;
+  }
+
+  /**
+   * 把当前选中的配色预设重新应用一次。
+   *
+   * 由 app.js 的 applyPreset 注册到 window.__reapplyPreset 上；
+   * 拿不到就静默跳过（纯预览页 / 主题引擎未就绪）。
+   */
+  function reapplyPreset() {
+    try {
+      if (typeof window.__reapplyPreset === "function") window.__reapplyPreset();
+    } catch (e) { /* 重新铺色失败不该拦住明暗切换 */ }
   }
   var pt = setInterval(function () {
     if (patchApplyTheme()) clearInterval(pt);
   }, 300);
   setTimeout(function () { clearInterval(pt); }, 15000);
 
-  // 1.5 秒后清一次：初始 applyTheme 会先跑，可能存在早期污染
-  setTimeout(clearInlineTheme, 1500);
+  // 1.5 秒后清一次：初始 applyTheme 会先跑，可能存在早期污染。
+  //
+  // ——2026-10-22 修正——
+  // 这句原本是无条件 clearInlineTheme()，它把「着色预设」写进去的 19 个变量
+  // 一起抹了。实测时序：
+  //   63ms   boot() → applyPreset → --accent: #E8E8EC（恢复成功）
+    //   1535ms 这里 → removeProperty → 退回 CSS 默认 #d49a6a
+  // 结果就是用户看到的「选了配色，重开又变回 Default」——
+  // 存储一直是对的，恢复也是对的，只是恢复完被自己人擦了。
+  //
+  // 现在改成：清完立刻把当前预设重新铺回去。
+  // 干净场景（无预设）下 reapplyPreset 什么都不做，原行为不变。
+  setTimeout(function () {
+    clearInlineTheme();
+    reapplyPreset();
+  }, 1500);
 
   setInterval(function () {
     fetch(APP_BASE + "/api/_probe/resize")

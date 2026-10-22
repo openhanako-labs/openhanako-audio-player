@@ -2805,12 +2805,20 @@ function applyThemeToCSS(theme) {
 
   const root = document.documentElement;
   const { colors, layout, animation } = theme;
-  // 明暗方向优先取 theme.mode（预设自带，最可靠），
-  // 没带才退到 data-theme；都没有才默认 dark。
-  // （实测：只靠 data-theme 时，未同步设上就会走错分支——
-  //   浅底配浅字，亮色主题的文字直接看不见。）
-  const currentTheme = theme.mode === 'light' ? 'light'
-    : (theme.mode === 'dark' ? 'dark'
+  // 明暗方向：
+  //   1) 显式传了 theme.mode → 用它（用户点配色预设时，预设自带明暗是设计意图）
+  //   2) 没传 → 跟当前 data-theme
+  //   3) 都没有 → dark
+  //
+  // ——2026-10-22 修正——
+  // 旧逻辑把 theme.mode 当**最高优先级**，而 window.__reapplyPreset
+  // （切明暗后重铺配色）传的也是预设对象，于是「点日月图标切到 light」
+  // 立刻被预设的 mode:"dark" 改回 dark —— 明暗切换看起来失效。
+  //
+  // 现在由调用方决定：想锁定明暗就传 theme.mode；只想重铺颜色就传 null。
+  const explicitMode = (theme.lockMode === false) ? null : theme.mode;
+  const currentTheme = explicitMode === 'light' ? 'light'
+    : (explicitMode === 'dark' ? 'dark'
       : (document.documentElement.getAttribute('data-theme') || 'dark'));
   // 同步把 data-theme 写正，保证 [data-theme="light"] 的 CSS 也跟上
   if (currentTheme === 'light' || currentTheme === 'dark') {
@@ -4908,6 +4916,22 @@ function applyTheme(theme) {
 // 主题预设（applyPreset）靠 window.applyTheme 设明暗 —— 不挂就永远是暗色。
 window.applyTheme = applyTheme;
 
+/**
+ * 调**全局** applyTheme，而不是同名的局部函数。
+ *
+ * 为什么必须绕一下：
+ *   head.js 和 boot() 都往 window.applyTheme 上包了一层（清行内变量 / 换背景），
+ *   而直接写 `applyTheme(mode)` 走的是**闭包里的原函数**，两层面包全绕过。
+ *   实测后果：点日月图标切明暗，data-theme 确实变了，
+ *   但配色被 clearInlineTheme 抹掉后没重铺、背景也不跟着换 → 深底配浅字。
+ */
+function applyThemeGlobal(mode) {
+  if (typeof window.applyTheme === 'function' && window.applyTheme !== applyTheme) {
+    return window.applyTheme(mode);          // 包装链在 → 走链
+  }
+  return applyTheme(mode);                   // 还没包上 → 至少把属性改了
+}
+
 function getThemeMode() {
   try { return localStorage.getItem('hanako_audio_theme_mode') || 'auto'; } catch(e) { return 'auto'; }
 }
@@ -4938,7 +4962,7 @@ function setThemeMode(mode) {
       if (hana.theme.getSnapshot) {
         var snap = hana.theme.getSnapshot();
         if (snap && snap.theme) {
-          applyTheme(snap.theme === 'light' ? 'light' : 'dark');
+          applyThemeGlobal(snap.theme === 'light' ? 'light' : 'dark');
         }
       }
       // 订阅宿主变化
@@ -4947,14 +4971,14 @@ function setThemeMode(mode) {
           // 双保险：手动模式下宿主变化不穿透
           if (getThemeMode() !== 'auto') return;
           if (snap && snap.theme) {
-            applyTheme(snap.theme === 'light' ? 'light' : 'dark');
+            applyThemeGlobal(snap.theme === 'light' ? 'light' : 'dark');
           }
         });
       }
     });
   } else {
     // 手动态：直接应用
-    applyTheme(mode);
+    applyThemeGlobal(mode);
   }
 }
 
@@ -7147,6 +7171,39 @@ setTimeout(notifySize, 300);
   // 挂到全局，供曲目切换时调用
   window.applyThemePreset = applyPreset;
 
+  /**
+   * 重新应用当前选中的配色预设。
+   *
+   * 给 head.js 的 clearInlineTheme 用：它为了修「明暗切换失效」
+   * 会把 19 个主题变量从行内样式里删掉，而配色预设正是写在那些变量上的。
+   * 删完如果不铺回去，用户选了「暗夜」，切一下明暗就退回默认色。
+   *
+   * 没有选中项、或 id 找不到对应预设时静默跳过。
+   */
+  window.__reapplyPreset = function () {
+    try {
+      var id = currentId();
+      if (!id) return false;
+      var t = allThemes().filter(function (x) { return x.id === id; })[0];
+      if (!t) return false;
+      // 只重铺颜色与背景，不再写一次 localStorage。
+      // lockMode:false 是关键：此刻的 data-theme 是用户刚点的明暗，
+      // 不能被预设自带的 mode 抢回去（否则切明暗等于失效）。
+      if (typeof window.applyThemeToCSS === "function") {
+        window.applyThemeToCSS({
+          mode: t.mode,
+          lockMode: false,
+          colors: t.colors || {},
+          animation: t.animation,
+        });
+      }
+      applyBackground(t.background);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
   function renderPanel() {
     var grid = document.getElementById("themeGrid");
     if (!grid) return;
@@ -7248,18 +7305,42 @@ setTimeout(notifySize, 300);
     // 明暗一变，背景要跟着换 —— 否则深色背景配浅色界面，左右两块直接打架。
     // 包一层而不是改 applyTheme 本体：那份代码被另一个补丁包过（清行内变量），
     // 两层都往后调原函数，就不怕先后。
+    //
+    // ——2026-10-22 修正——
+    // 旧写法是一次性判断：`if (typeof window.applyTheme !== "function") return;`
+    // 实测 boot() 在 ~56ms 就跑，而 window.applyTheme 到 336ms 才被赋值，
+    // 于是这里直接 return，永远没包上（实测 applyThemeWrapped 恒为 false）。
+    // 后果：切明暗时背景不跟着换 —— 选了「暗夜」（light 背景应为 #F4F4F6），
+    // 切到 light 后背景还是 #050505，深底配浅字。
+    //
+    // 改成轮询直到 applyTheme 就位（与 head.js 的 patchApplyTheme 同一手法，
+    // 两者都在同一条链上往后调，互不覆盖）。
     (function wrapApplyTheme() {
-      if (typeof window.applyTheme !== "function" || window.applyTheme.__bgWrapped) return;
-      var orig = window.applyTheme;
-      window.applyTheme = function () {
-        var r = orig.apply(this, arguments);
-        try {
-          var cur = allThemes().filter(function (x) { return x.id === currentId(); })[0];
-          if (cur) applyBackground(cur.background);
-        } catch (e) {}
-        return r;
-      };
-      window.applyTheme.__bgWrapped = true;
+      function tryWrap() {
+        if (typeof window.applyTheme !== "function") return false;
+        if (window.applyTheme.__bgWrapped) return true;
+        // 抓住**当前**那一层（可能已被 head.js 包过），再叠上去。
+        // 不能直接覆盖：head.js 的补丁有自己的标记和工作，盖掉就丢。
+        var orig = window.applyTheme;
+        var chain = function () {
+          var r = orig.apply(this, arguments);
+          try {
+            var cur = allThemes().filter(function (x) { return x.id === currentId(); })[0];
+            if (cur) applyBackground(cur.background);
+          } catch (e) {}
+          return r;
+        };
+        chain.__bgWrapped = true;
+        chain.__themed = !!orig.__themed;      // 继承对方的标记
+        window.applyTheme = chain;
+        return true;
+      }
+      if (tryWrap()) return;
+      var tries = 0;
+      var timer = setInterval(function () {
+        tries++;
+        if (tryWrap() || tries > 60) clearInterval(timer);   // 最多等 15 秒
+      }, 250);
     })();
 
     var btn = document.getElementById("paletteBtn");
