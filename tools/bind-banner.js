@@ -32,7 +32,7 @@ const PARAMETERS = {
       type: "string",
       description:
         "要挂载横幅的目标会话 JSONL 路径。必须是 Hana 里真实存在的会话，例如 " +
-        "C:/Users/Administrator/.hanako/agents/ophelia/sessions/<id>.jsonl",
+        "<HANA_HOME>/agents/<agentId>/sessions/<id>.jsonl",
     },
   },
   required: ["sessionPath"],

@@ -351,19 +351,11 @@ body.view-compact .inst-code { display: none; }
 .lyric-body.open { max-height:220px; overflow-y:auto; }
 .lyric-line {
   /*
-   * 字号跟全局缩放走，而不是写死 11.5px。
-   *
-   * 缘由：2026-10-22 反馈「字体大小没变」——因为这一行是硬编码，
-   * 而字号按钮改的是 document.body.style.zoom（整页缩放），
-   * 前者根本不读它。字号系统本来是 --font-base × --font-scale = --fs-base，
-   * 这里直接接到那根链上，调字号才真的会变。
-   *
-   * 同日再调：“字体很小”不是指不能调，是指绝对值太小。
-   * 原来 11.5/13 = 0.885，比正文还小一截，当成歌词读很费劲。
-   * 改成 1.15 倍（13px 时约 15px），并保留对 --font-scale 的跟随。
+   * 竖版歌词。
+   * 2026-10-22：曾为「字体小」把 11.5px 改成 calc(var(--fs-base) * 1.15)，
+   * 但反馈要调的是**横版**（横条），竖版本来就不小 —— 改错地方了，现已恢复原值。
    */
-  font-size: calc(var(--fs-base, 13px) * 1.15);
-  color:var(--lyric-color, var(--text-dim)); line-height:1.8; text-align:center;
+  font-size:11.5px; color:var(--lyric-color, var(--text-dim)); line-height:1.8; text-align:center;
   transition:color 0.2s, opacity 0.3s;
 }
 .lyric-line.current { color:var(--lyric-active-color, var(--accent)); font-weight:600; }
@@ -1919,25 +1911,41 @@ body:not(.view-compact) .np-cover {
   position: relative;
   box-shadow: 0 0 0 5px var(--card-bg, #141210), 0 0 0 6px var(--border), 0 12px 32px rgba(0,0,0,.45) !important;
 }
+/*
+ * 2026-10-22：唱片纹理已彻底移除。
+ *
+ * 这里曾经有一层作纹（先 repeating-conic-gradient 画成放射扇形，
+ * 后来改成 repeating-radial-gradient 的同心圆）—— 两次都是错的。
+ * 用户要的是**纯净的封面图**，不是拟物唱片：
+ *   “不是要同心圆，是不要这些条文，到时候需要纯净的封面而不是别的”
+ *
+ * 所以 ::before 不再生成任何东西。
+ * 要恢复纹理就在这里加回 background，别改下面的结构和层级。
+ */
 body:not(.view-compact) .np-cover::before {
-  content: '';
-  position: absolute; inset: 0; border-radius: 50%;
-  background: repeating-conic-gradient(from 0deg, rgba(0,0,0,.14) 0deg 2deg, transparent 2deg 5deg);
-  pointer-events: none;
+  content: none;
 }
+/*
+ * 中心轴孔也不再需要。
+ *
+ * 没有黑胶纹理了，这就是一张圆形封面图，中间不该挖个洞。
+ * 保留这个空规则块会让人以为“本来要挖洞”，不如直接不要。
+ * （下面 img 的 z-index 也一并简化。）
+ */
 body:not(.view-compact) .np-cover::after {
-  content: '';
-  position: absolute; inset: 41%; border-radius: 50%;
-  background: var(--card-bg, #141210);
-  box-shadow: inset 0 0 0 2px var(--border);
-  pointer-events: none;
+  content: none;
 }
 body:not(.view-compact) .np-cover.spinning {
   animation: vinylSpin 14s linear infinite;
 }
 @keyframes vinylSpin { to { transform: rotate(360deg); } }
-/* 封面图在黑胶里保持圆形 */
-body:not(.view-compact) .np-cover img { border-radius: 50%; }
+/* 封面图保持圆形铺满 */
+body:not(.view-compact) .np-cover img {
+  border-radius: 50%;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 
 
 /* ===== 主 UI 对齐设计稿 ===== */
@@ -2093,9 +2101,25 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   --strip-h: min(64px, 100%);
   overflow: hidden;
   isolation: isolate;
-  /* 2026-10-21 补：横条自身底色，主题自适应（深色 #1e1e22 / 浅色 #fff）——
-     之前完全透明，浅色/纸感主题下会透出页面底色，与元素风格冲突 */
-  background: var(--card-bg);
+  /*
+   * 横条底色。
+   *
+   * 2026-10-22：反馈「背景不跟封面」——原来这里是纯 var(--card-bg)，
+   * 而 --card-bg 由 applyThemeToCSS 混色得出，只掺了 8% 的主色，
+   * 肉眼几乎看不出与封面的关系。所以横条看起来永远是那个中性深/浅底。
+   *
+   * 这里先把主色作为色相信号铺底，card-bg 叠在它上面（半透明），
+   * 既保留原来的可读性，又能看出画面主调。
+   * 封面取色成功后，--accent 会换成封面色，这条就跟着变。
+   */
+  background:
+    linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--accent, #c08a5a) 22%, transparent) 0%,
+      transparent 46%,
+      color-mix(in srgb, var(--accent, #c08a5a) 12%, transparent) 100%
+    ),
+    var(--card-bg);
   border-bottom: 1px solid var(--border);
 }
 .player-container[data-layout="strip"] > #playerStrip { display: flex; min-width: 312px; }
@@ -2153,7 +2177,8 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   overflow: hidden;
 }
 #playerStrip .strip-identity strong {
-  font-size: 12.5px;
+  /* 横条歌名：12.5 → 15.5（与歌词同步放大，保持主次关系） */
+  font-size: calc(var(--fs-base, 13px) * 1.19);
   font-weight: 600;
   letter-spacing: .005em;
   color: var(--text, #f1ebe3);
@@ -2162,7 +2187,8 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 #playerStrip .strip-identity span {
   flex: 0 1 auto;
   min-width: 0;
-  font-size: 11px;
+  /* 歌手/来源：11 → 13 */
+  font-size: calc(var(--fs-base, 13px) * 1.0);
   color: var(--text);
   opacity: .72;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -2170,9 +2196,21 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 /* ── 单行歌词（2026-10-21 加回：极简≠藏歌词）── */
 #playerStrip .strip-lyric {
   display: none;
-  font-size: calc(var(--fs-base, 13px) * 0.92);  /* 跟随全局字号缩放，≈12px */
+  /*
+   * 横条歌词字号。
+   *
+   * 2026-10-22：反馈「横版字体小」——原值 0.92 倍（≈12px），
+   * 在 60px 高的横条里确实偏小，而且当时实测字形本身也小一号。
+   * 提到 1.15 倍（13px 基准下 ≈15px），与竖版歌词保持一致的可读尺度。
+   *
+   * 注意：这里和 style.css 里的 .lyric-line 是**两套不同的 DOM**，
+   *    .lyric-line   → 竖卡/长卡的歌词列表
+   *    .strip-lyric  → 横条那一行
+   * 改一个不会影响另一个，调字号时两边都要照顾。
+   */
+  font-size: calc(var(--fs-base, 13px) * 1.15);
   color: var(--text);
-  opacity: .6;
+  opacity: .72;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   max-width: 46%;
 }

@@ -984,6 +984,13 @@ class CoverColorExtractor {
       img.crossOrigin = "Anonymous";
       
       img.onload = () => {
+        // 上报：图加载成功，但像素可能仍不可读（tainted）。
+        // 这两种失败看起来都是「取到默认色」，必须分开才能定位。
+        if (typeof window.__coverExtractDiag === 'function') {
+          window.__coverExtractDiag('img-loaded', {
+            naturalW: img.naturalWidth, naturalH: img.naturalHeight,
+          });
+        }
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         
@@ -992,16 +999,48 @@ class CoverColorExtractor {
         canvas.width = size;
         canvas.height = size;
         
-        ctx.drawImage(img, 0, 0, size, size);
-        const imageData = ctx.getImageData(0, 0, size, size);
-        const pixels = imageData.data;
-        
-        // 提取颜色
-        const colors = this.extractColors(pixels);
-        resolve(colors);
+        try {
+          ctx.drawImage(img, 0, 0, size, size);
+          const imageData = ctx.getImageData(0, 0, size, size);
+          const pixels = imageData.data;
+
+          // 采样几个像素报上去：如果全是 0，说明画布是空的（tainted 后
+          // 某些浏览器会返回全零而不是抛错）；如果有值但不是主色，
+          // 那就是量化算法的问题。两种修法完全不同，必须分开。
+          if (typeof window.__coverExtractDiag === 'function') {
+            var samples = [];
+            for (var si = 0; si < 5; si++) {
+              var p = si * 4 * 100;   // 隔着取，别都挤在开头
+              if (p + 3 < pixels.length) {
+                samples.push([pixels[p], pixels[p + 1], pixels[p + 2], pixels[p + 3]]);
+              }
+            }
+            window.__coverExtractDiag('pixels-sampled', {
+              length: pixels.length,
+              samples: samples,
+              allZero: samples.every(function (s) { return s[0] === 0 && s[1] === 0 && s[2] === 0; }),
+            });
+          }
+          
+          // 提取颜色
+          const colors = this.extractColors(pixels);
+          resolve(colors);
+        } catch (e) {
+          // 关键：跨域图片会把画布标记为 tainted，getImageData 直接抛。
+          // 旧代码没挡这里，异常会冒到 digest 层变成 unhandled rejection，
+          // 表现出来就只是「颜色没变」。
+          if (typeof window.__coverExtractDiag === 'function') {
+            window.__coverExtractDiag('canvas-tainted', { err: String((e && e.name) + ': ' + (e && e.message || e)) });
+          }
+          resolve(this.getDefaultColors());
+        }
       };
       
       img.onerror = () => {
+        // 图根本没加载出来（404 / 403 / 网络）
+        if (typeof window.__coverExtractDiag === 'function') {
+          window.__coverExtractDiag('img-error', { src: String(imageUrl).slice(0, 220) });
+        }
         // 提取失败，返回默认颜色
         resolve(this.getDefaultColors());
       };
@@ -1041,6 +1080,17 @@ class CoverColorExtractor {
     const primary = this.rgbToHex(...sorted[0][0].split(',').map(Number));
     const secondary = sorted[1] ? this.rgbToHex(...sorted[1][0].split(',').map(Number)) : primary;
     const accent = sorted[2] ? this.rgbToHex(...sorted[2][0].split(',').map(Number)) : secondary;
+
+    // 把「量化后前几名是什么」报上去。
+    // 如果这里算出来的就是 #d49a6a，那问题在像素本身（图就长那样 / 读的是空图）；
+    // 如果算出来是别的色但最终没用上，那问题在下游。
+    if (typeof window.__coverExtractDiag === 'function') {
+      window.__coverExtractDiag('colors-computed', {
+        top5: sorted.map(function (e) { return { key: e[0], count: e[1] }; }),
+        primary: primary, secondary: secondary, accent: accent,
+        distinctKeys: colorMap.size,
+      });
+    }
     
     // 计算亮度和饱和度
     const brightness = this.calculateBrightness(primary);
@@ -3526,8 +3576,16 @@ function load(i) {
   document.getElementById('trackMode').textContent=t.mode||'';
   window._currentTrack = { title: t.name, artist: t.mode, cover: t.pic, lrcUrl: t.lrcUrl, source: 'music' };
   // 更新当前封面 URL，供封面皮肤模式使用
-  // 用代理后的同源地址，避免跨源污染画布
-  window.__currentCoverUrl = t.pic ? '/widget/api/music/pic?url=' + encodeURIComponent(t.pic) : null;
+  //
+  // 2026-10-22 修：这里原来写的是 '/widget/api/music/pic?url=...' ——
+  // 少了 API 前缀（/api/apps/hanako-audio-player/routes）。
+  // 在 v1 插件里那条根路径是存在的，v2 改成 App 路由命名空间后就没有了。
+  // 后果：取色器 new Image() 去请求 → 404 → onerror → getDefaultColors()，
+  // 永远拿到预设里写死的 #d49a6a。
+  // 看起来就同时是两件事：“背景不跟封面” + “配色像没保存”。
+  //
+  // 截图里横条的封面能出来，是因为它用的是 t.pic 原图，不走这里。
+  window.__currentCoverUrl = t.pic ? API + '/widget/api/music/pic?url=' + encodeURIComponent(t.pic) : null;
   // 如果是封面皮肤模式，重新取色（换封面 → 换主色）
   //
   // 2026-10-22 修：这里原来写的是 window.applyThemePreset('cover') ——
@@ -3548,14 +3606,13 @@ function load(i) {
   }
   // 封面更新
   //
-  // 走同源代理，不用 t.pic 原图。
-  // 原图在网易云 CDN 上，带 Referer 校验且不回 CORS：
-  //   显示层：有时能借道，有时 403，于是那个黑胶圆盘只剩底色 + 纹路。
-  //   取色层：crossOrigin=anonymous + 跨域 = 必失败，取到的永远是默认色。
-  // 两件事其实是同一个根 —— 所以统一走 /widget/api/music/pic 代理。
+  // 用 t.pic 原图。
+  // 2026-10-22 绕了一圈又回到这里：曾改成走 /widget/api/music/pic 代理，
+  // 但那个路由需要 surface 凭证，裸请求回 403 missing_credential，
+  // 结果封面全挂（黑胶圆盘只剩纹路）。
+  // 在没先验证代理能出图之前就切显示路径，是错的。
   if (t.pic) {
-    var _proxySrc = '/widget/api/music/pic?url=' + encodeURIComponent(t.pic);
-    npCover.innerHTML = '<img src="' + esc(_proxySrc) + '" style="width:100%;height:100%;border-radius:inherit;object-fit:cover;" onerror="_coverFallback(this)">';
+    npCover.innerHTML = '<img src="'+esc(t.pic)+'" style="width:100%;height:100%;border-radius:inherit;object-fit:cover;" onerror="_coverFallback(this)">';
   } else {
     npCover.innerHTML = '♫';
   }
@@ -3654,8 +3711,7 @@ function load(i) {
       t.url = hit.url;
       if(hit.pic) {
         t.pic = hit.pic;
-        // 同第一处：走同源代理，别把跨域 CDN 地址直接吐给 <img>
-        npCover.innerHTML = '<img src="' + esc('/widget/api/music/pic?url=' + encodeURIComponent(t.pic)) + '" style="width:100%;height:100%;border-radius:inherit;object-fit:cover;" onerror="_coverFallback(this)">';
+        npCover.innerHTML = '<img src="'+esc(t.pic)+'" style="width:100%;height:100%;border-radius:inherit;object-fit:cover;" onerror="_coverFallback(this)">';
       }
       document.getElementById('trackName').textContent=t.name;
       saveTrks();
@@ -7230,8 +7286,31 @@ setTimeout(notifySize, 300);
     var t = allThemes().filter(function (x) { return x.id === 'cover'; })[0];
     if (!t) return Promise.resolve(false);
     var proxiedUrl = window.__currentCoverUrl;
+
+    // 诊断上报：取色在 iframe 里静默失败过多次，而 console 主机侧读不到。
+    // 写回 app-data 是唯一能看见的方式。
+    function diag(stage, extra) {
+      try {
+        var m = /^\/api\/apps\/([^/]+)\//.exec(location.pathname);
+        var base = "/api/apps/" + (m ? m[1] : "hanako-audio-player") + "/routes";
+        fetch(base + "/api/_probe/runtime", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(Object.assign({
+            probeKey: "cover-palette",
+            where: "cover-palette",
+            stage: stage,
+            coverUrl: proxiedUrl ? String(proxiedUrl).slice(0, 220) : null,
+            origin: String(location.origin || ""),
+            at: new Date().toISOString(),
+          }, extra || {})),
+        }).catch(function () {});
+      } catch (e) {}
+    }
+
     // 没有封面就退回预设自带色（保持可见，不能让界面变空白）
     if (!proxiedUrl) {
+      diag("no-cover-url");
       if (typeof window.applyThemeToCSS === 'function') {
         window.applyThemeToCSS({ lockMode: false, colors: t.colors || {}, animation: t.animation });
       }
@@ -7239,10 +7318,15 @@ setTimeout(notifySize, 300);
       return Promise.resolve(false);
     }
     var ext = window.aiThemeGenerator && window.aiThemeGenerator.coverColorExtractor;
-    if (!ext || typeof ext.extract !== 'function') return Promise.resolve(false);
+    if (!ext || typeof ext.extract !== 'function') {
+      diag("no-extractor");
+      return Promise.resolve(false);
+    }
+    diag("start");
 
     return Promise.resolve(ext.extract(proxiedUrl)).then(function (colors) {
-      if (!colors) return false;
+      if (!colors) { diag("extract-null"); return false; }
+      diag("extract-ok", { colors: colors });
       if (typeof window.applyThemeToCSS === 'function') {
         window.applyThemeToCSS({
           lockMode: false,          // 不抢明暗，只换颜色
@@ -7268,6 +7352,25 @@ setTimeout(notifySize, 300);
     }).catch(function () { return false; });
   }
   window.__applyCoverPalette = applyCoverPalette;
+
+  // 取色器的内部诊断入口：让 CoverColorExtractor 能上报
+  // 「图加载失败」和「画布被污染」这两种不同的失败。
+  window.__coverExtractDiag = function (stage, extra) {
+    try {
+      var m = /^\/api\/apps\/([^/]+)\//.exec(location.pathname);
+      var base = "/api/apps/" + (m ? m[1] : "hanako-audio-player") + "/routes";
+      fetch(base + "/api/_probe/runtime", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.assign({
+          probeKey: "cover-extract",
+          where: "cover-extract",
+          stage: stage,
+          at: new Date().toISOString(),
+        }, extra || {})),
+      }).catch(function () {});
+    } catch (e) {}
+  };
 
   function applyPreset(t) {
     if (!t) return false;
