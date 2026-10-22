@@ -5842,8 +5842,25 @@ function doPlaylistImport(){
     if (!main || !inner) return null;
     /* 译文一般含 CJK（中文/日文）；纯英文括注多为语气/和声，不拆 */
     if (!/[\u3040-\u30ff\u3400-\u9fff]/.test(inner)) return null;
-    /* 主文本若已是纯中文（无拉丁字母），说明这行本就是中文（括号是补充），不拆 */
-    if (!/[A-Za-z]/.test(main) && /[\u3400-\u9fff]/.test(main)) return null;
+
+    /*
+     * 「主文本是否本来就是中文」的判据。
+     *
+     * 2026-10-22 修：旧条件是
+     *   !/[A-Za-z]/.test(main) && /[\u3400-\u9fff]/.test(main)
+     * 它把日文歌误判成了中文歌：
+     *   僕が死のうと思ったのは（曾经我也想过一了百了）
+     * 主文本没有拉丁字母、又含日文汉字（与中文同在 \u3400-\u9fff 区间），
+     * 于是被判成「本来就是中文，括号只是补充」→ 不拆 → 横条里整行超长被截。
+     *
+     * 正确的判据是「含假名就不是纯中文」。日文歌词几乎必带假名，
+     * 而纯中文歌词不会带 \u3040-\u30ff（平假名/片假名）。
+     */
+    var hasKana = /[\u3040-\u30ff]/.test(main);
+    var hasLatin = /[A-Za-z]/.test(main);
+    var hasHan = /[\u3400-\u9fff]/.test(main);
+    if (!hasKana && !hasLatin && hasHan) return null;   // 真的就是纯中文
+
     return { text: main, tran: inner };
   }
 

@@ -2290,6 +2290,26 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   max-width: 46%;
 }
+
+/*
+ * 译文行（2026-10-22 新增）
+ *
+ * 日文歌的歌词常常是「原文（中文译文）」，整行太长会被截断。
+ * 竖卡那边早就把译文拆成 .lyric-tran 了，横条一直只读 .l-main，
+ * 所以译文被丢进同一行里。现在单独占一行：更小、更淡、不抢原文。
+ *
+ * 默认 display:none，由 syncLyric 根据有没有译文来控制，
+ * 避免没译文时白白占一行高度。
+ */
+#playerStrip .strip-lyric-tran {
+  display: none;
+  font-size: calc(var(--fs-base, 13px) * 0.92);
+  color: var(--text);
+  opacity: .50;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 72%;
+  margin-top: 1px;
+}
 #playerStrip .strip-lyric:not(:empty) { display: inline-block; }
 #playerStrip[data-width="mini"] .strip-lyric,
 #playerStrip[data-width="narrow"] .strip-lyric { display: none; }
@@ -2616,7 +2636,7 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   align-items: flex-start;
   justify-content: center;
   height: 100%;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 
@@ -2641,11 +2661,42 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   flex: 0 1 auto;
 }
 
-/* 歌词区：两句纵向叠放，与上面歌名隔开一点 */
-#playerStrip[data-height="tall"] .strip-lyric-prev,
+/*
+ * 歌词区分层（2026-10-22 二次调整）
+ *
+ * 第一版让 tall（65–110）也显示「上一句 + 原文 + 译文」，
+ * 但 90px 里塞四行（歌名/上一句/原文/译文）实测太挤，
+ * 行距几乎贴着。
+ *
+ * 按可用高度分配：
+ *   tall   两行：原文 + 译文（歌名占一行，共三行）
+ *   grand  三行：上一句淡出 + 原文 + 译文
+ * 矮档优先保「当前在唱什么」，不为了回显牺牲可读性。
+ */
 #playerStrip[data-height="grand"] .strip-lyric-prev {
   display: block;
   margin-top: 4px;
+}
+
+/*
+ * 译文行：只在 tall / grand 且确实有译文时显示。
+ *
+ * slim 只有 60px 高，歌名+原文+译文三行塞不下，
+ * 强行显示会把歌名挤掉。矮档优先保原文。
+ *
+ * 两个条件都要：
+ *   .has-tran   由 syncLyric 根据当前行有没有译文打上
+ *   [data-height] 由 syncStripHeight 按高度打上
+ * 少了 .has-tran 会让空行也占位，没译文时白白多一行。
+ */
+#playerStrip[data-height="tall"] .strip-lyric-tran.has-tran,
+#playerStrip[data-height="grand"] .strip-lyric-tran.has-tran {
+  display: block;
+}
+
+/* slim 下如果只有译文没原文（罕见），也别硬塞 */
+#playerStrip[data-height="slim"] .strip-lyric-tran {
+  display: none !important;
 }
 
 #playerStrip[data-height="tall"] .strip-lyric {

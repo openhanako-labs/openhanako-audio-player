@@ -2590,7 +2590,7 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 <svg class="strip-ring" viewBox="0 0 48 48" aria-hidden="true"><circle class="strip-ring-track" cx="24" cy="24" r="21"/><circle class="strip-ring-fill" cx="24" cy="24" r="21"/></svg>
 <span class="strip-ring-glow"></span>
 </button>
-<div class="strip-identity" id="stripIdentity"><span class="strip-headline"><strong id="stripTitle">播放器</strong><span id="stripArtist"></span></span><span class="strip-lyric-prev" id="stripLyricPrev"></span><span class="strip-lyric" id="stripLyric"></span></div>
+<div class="strip-identity" id="stripIdentity"><span class="strip-headline"><strong id="stripTitle">播放器</strong><span id="stripArtist"></span></span><span class="strip-lyric-prev" id="stripLyricPrev"></span><span class="strip-lyric" id="stripLyric"></span><span class="strip-lyric-tran" id="stripLyricTran"></span></div>
 <div class="strip-time" id="stripTime"><span id="stripCur">0:00</span><span class="strip-time-sep">/</span><span id="stripTotal">0:00</span></div>
 <div class="strip-controls" id="stripControls">
 <button class="strip-btn" id="stripFav" title="收藏" aria-label="收藏"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19.6s-6.6-4.1-6.6-8.4A3.8 3.8 0 0 1 12 8.9a3.8 3.8 0 0 1 6.6 2.3c0 4.3-6.6 8.4-6.6 8.4z"/></svg></button>
@@ -2803,6 +2803,7 @@ var pauseIcon = document.getElementById('stripPauseIcon');
 var favBtn = document.getElementById('stripFav');
 var lyricEl = document.getElementById('stripLyric');
 var prevLyricEl = document.getElementById('stripLyricPrev');
+var tranLyricEl = document.getElementById('stripLyricTran');
 var volBtn = document.getElementById('stripVolBtn');
 var volSliderEl = document.getElementById('stripVolSlider2');
 
@@ -2994,8 +2995,14 @@ function syncVol() {
 
 function syncLyric() {
   var lyr = document.getElementById('lyricBody');
-  var cur = lyr ? lyr.querySelector('.lyric-line.current .l-main') : null;
-  var txt = cur ? cur.textContent.trim() : '';
+  var curLine = lyr ? lyr.querySelector('.lyric-line.current') : null;
+  var curMain = curLine ? curLine.querySelector('.l-main') : null;
+  var txt = curMain ? curMain.textContent.trim() : '';
+  var tranTxt = '';
+  if (curLine) {
+    var t = curLine.querySelector('.lyric-tran');
+    tranTxt = t ? t.textContent.trim() : '';
+  }
   if (!txt) {
     var pvLine = document.querySelector('.pv-line[data-d="0"]');
     txt = pvLine ? pvLine.textContent.trim() : '';
@@ -3011,19 +3018,32 @@ function syncLyric() {
    * 在歌曲开头（第一句）时它指向下一句，不是上一句。
    */
   var prevTxt = '';
-  if (lyr) {
-    var curEl = lyr.querySelector('.lyric-line.current');
-    if (curEl) {
-      var prevEl = curEl.previousElementSibling;
-      while (prevEl && !prevEl.classList.contains('lyric-line')) prevEl = prevEl.previousElementSibling;
-      if (prevEl) {
-        var pm = prevEl.querySelector('.l-main');
-        prevTxt = (pm ? pm.textContent : prevEl.textContent || '').trim();
-      }
+  if (lyr && curLine) {
+    var prevEl = curLine.previousElementSibling;
+    while (prevEl && !prevEl.classList.contains('lyric-line')) prevEl = prevEl.previousElementSibling;
+    if (prevEl) {
+      var pm = prevEl.querySelector('.l-main');
+      prevTxt = (pm ? pm.textContent : prevEl.textContent || '').trim();
     }
   }
 
   setText(lyricEl, txt);
+  /*
+   * 译文单独一行（2026-10-22）
+   *
+   * 截图里那句「僕が死のうと思ったのは（曾经我也想过一了百了）」被截断了，
+   * 因为原文和译文挤在同一行。而竖卡那边早就把译文拆成独立的 .lyric-tran，
+   * 只是横条一直只读 .l-main，把译文丢了。
+   *
+   * 拆开后：原文一行、译文一行（更小更淡）。
+   * 译文为空时保持 display:none，不会多占高度。
+   */
+  if (tranLyricEl) {
+    setText(tranLyricEl, tranTxt);
+    // 用类名而不是 inline display：档位（slim 隐藏译文）由 CSS 控制，
+    // inline style 优先级更高，会把那套规则压掉。
+    tranLyricEl.classList.toggle('has-tran', !!tranTxt);
+  }
   if (prevLyricEl) setText(prevLyricEl, prevTxt);
 }
 

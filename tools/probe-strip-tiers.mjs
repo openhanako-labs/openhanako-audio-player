@@ -132,9 +132,12 @@ for (const r of results) {
   if (r.requestedH === 60 && r.prevLyric?.display !== 'none') {
     problems.push('slim 档上一句没有隐藏');
   }
-  // tall/grand 下必须显示
-  if (r.requestedH > 60 && r.prevLyric?.display === 'none') {
-    problems.push(`${r.tier} 档上一句没有显示`);
+  // 上一句只在 grand 显示（2026-10-22：tall 的 90px 塞四行太挤，改成分层）
+  if (r.requestedH === 90 && r.prevLyric?.display !== 'none') {
+    problems.push('tall 档不该显示上一句（实测太挤）');
+  }
+  if (r.requestedH === 130 && r.prevLyric?.display === 'none') {
+    problems.push('grand 档上一句没有显示');
   }
 }
 
