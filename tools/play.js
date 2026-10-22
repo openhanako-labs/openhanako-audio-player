@@ -13,14 +13,16 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { publishLibraryChange } from "../lib/library-revision.js";
 
 const NAME = "audio_play";
 
 const DESCRIPTION =
-  "播放音乐：把音频加入播放器列表，并在当前会话投递一张播放卡片。" +
+  "把音频加入播放器列表，并在当前会话投递一张播放卡片。" +
   "source 要是真实存在的本地音频文件绝对路径，或可访问的在线音频 URL（http/https）。" +
   "不支持歌名、歌手、随机等口语描述——这些无法播放。若用户想随机播放，先调用 audio_list_music 查看曲目，" +
-  "再把返回的 source 原样传给本工具。";
+  "再把返回的 source 原样传给本工具。" +
+  "注意：本工具只入列，不会让界面开始出声——是否需要出声由用户点播放键决定。";
 
 const PARAMETERS = {
   type: "object",
@@ -60,8 +62,8 @@ export function makePlayTool(ctx, state) {
    * 份列表。v1 里 play 写 queue.json、UI 读 playlist.json，两个仓 —— 结果工具
    * 播的歌在界面上看不到。v2 不再延续这个分裂。
    *
-   * 前端每 30 秒会拉取并合并一次，所以这里的写入不会与它冲突；真正同时发生时
-   * 最坏也只是等下一轮合并回来。
+   * 写完后由调用方发一次 revision 信号，前端 onChanged 立刻重拉；
+   * 轮询（30s）只作为信号丢失时的兜底。
    */
   function appendToPlaylist(entry) {
     let list = [];
@@ -76,12 +78,14 @@ export function makePlayTool(ctx, state) {
 
     const at = list.findIndex((t) => t && t.url === entry.url);
     if (at >= 0) list[at] = { ...list[at], ...entry };
-    else list.push(entry);
+    else list.unshift(entry); // 新曲置顶：与 sample 一致，用户一进界面就能看到
 
     try {
       fs.writeFileSync(playlistPath, JSON.stringify(list, null, 2), "utf-8");
+      return true;
     } catch (err) {
       ctx.logger?.warn?.(`audio_play: 写入播放列表失败 ${err?.message || err}`);
+      return false;
     }
   }
 
@@ -99,13 +103,18 @@ export function makePlayTool(ctx, state) {
       const name = (title || "").trim() || deriveTitle(src);
       const remote = isRemote(src);
 
-      appendToPlaylist({
+      const saved = appendToPlaylist({
         name,
         url: src,
         mode: remote ? "在线" : "本地",
         dur: 0,
         group: remote ? "在线音乐" : "本地音乐",
       });
+
+      // 通知前端「列表变了」。放在写文件之后：前端收到就会重拉，
+      // 此刻盘上已经是新内容。信号失败只影响实时性（退回 30s 轮询），
+      // 不影响入列本身。
+      if (saved) await publishLibraryChange(ctx, `audio_play:${name}`);
 
       // 记住这次调用所在的会话：卡片自己拿不到 sessionPath（hana.surface.getContext
       // 只给 appId/slot/cardInstanceId），歌词横幅只能靠这里带下去。
@@ -119,7 +128,6 @@ export function makePlayTool(ctx, state) {
 
       return {
         content: [{ type: "text", text: `🎵 ${name}` }],
-
         // 聊天流卡。契约字段：pluginId / type / route 必填。
         //
         // channel: "app" 不能省。前端（SendButton 里的 el() 组件）拿它做分支：

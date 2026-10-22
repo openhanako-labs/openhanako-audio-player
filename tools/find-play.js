@@ -1,37 +1,42 @@
 /**
- * tools/find-play.js — AI 点歌工具：按关键词搜歌，取首条结果进队列播放。
+ * tools/find-play.js — AI 点歌工具：按关键词搜歌，取首条结果加入列表。
  *
- * 定位：给"来点适合深夜听的""放首周杰伦"这种自然语言需求做**中间翻译层**。
+ * 定位：给“来点适合深夜听的”“放首周杰伦”这种自然语言需求做**中间翻译层**。
  *   Agent 负责把「深夜听的」「周杰伦的」翻译成具体关键词，本工具只吃关键词。
+ *
+ * 重要：本工具**不承诺出声**。
+ *   浏览器 autoplay 策略拦得住没有用户手势的 play()，这不是 App 能绕的。
+ *   所以本工具只做“备好歌 + 请求切过去”，是否出声由用户在界面上点。
+ *   旧版返回 played:true 是语义谎言（那个值只是入参回显），已改成 queued/playRequested。
  *
  * 参数：
  *   query     — 具体歌名 / 歌手 / 风格关键词。别传整句自然语言。
  *   server    — "netease"（默认）| "tencent" | "bilibili"
- *   playNow   — true 立即切到首条并起播；false 只入队，当前曲目不动（默认）
+ *   playNow   — true 请求把当前曲目切到这首（不等于出声）
  *
  * 返回（JSON 串，给 agent 播报用）：
- *   { ok, query, server, played, track: { title, author, server, url, id }, total }
+ *   { ok, query, server, queued, playRequested, track: {...}, total, note }
  *
  * 副作用：
- *   1) 把歌曲写入 playlist.json（UI 30 秒后 sync 会看到）
- *   2) playNow=true 时同时把"当前曲目"设为这条（横幅 / UI 立刻刷新）
- *   3) 首次调用会投递一张播放卡（复用 makePlayTool 的 delivered 去重逻辑）
- *
- * ponytail: 直接读 playlist.json（和 audio_play 工具、UI 同一份文件），
- *   不引入 state.queue 那套——那是给 /api/select 路由用的内存镜像。
+ *   1) 把歌曲写入 playlist.json（置顶）
+ *   2) 发一次 library revision 信号 → 前端 onChanged 立刻重拉（不等 30s 轮询）
+ *   3) playNow=true 时把“当前曲目”设为这条（横幅 / UI 立刻切）
+ *   4) 首次调用会投递一张播放卡
  */
 
 import fs from "node:fs";
 import path from "node:path";
+import { publishLibraryChange } from "../lib/library-revision.js";
 
 const NAME = "audio_find_play";
 
 const DESCRIPTION =
-  "按关键词搜歌并把首条结果加入播放器播放队列。" +
+  "按关键词搜歌并把首条结果加入播放器列表。" +
   "query 必须是具体歌名/歌手/风格关键词（如「晴天 周杰伦」「夜航星」「Lo-fi 学习音乐」），" +
   "不要传整句自然语言（如「来点适合深夜听的」）——这类描述由 agent 翻译成关键词后再传入。" +
   "默认音源网易云；B 站音源传 server:'bilibili'（B 站无歌词）。" +
-  "playNow=false 时只入队不打断当前曲目（默认），playNow=true 时立即切到这首歌。";
+  "注意：本工具只把歌加入列表，不会让它开始出声（浏览器 autoplay 策略不是 App 能绕的）。" +
+  "用户需要自己点播放键；卡片上会出现「继续播放」入口。描述时请说“已加入列表”，不要说“正在播放”。";
 
 const PARAMETERS = {
   type: "object",
@@ -48,7 +53,9 @@ const PARAMETERS = {
     },
     playNow: {
       type: "boolean",
-      description: "true 立即起播；false 只入队（默认）。",
+      description:
+        "请求界面把你切到这首（默认 false）。注意：这只是“请求”，浏览器 autoplay 策略会拦住没有用户手势的自动出声。" +
+        "实际效果是：界面把这首设为当前曲目，若被拦则出现「继续播放」入口，用户点一下就响。",
       default: false,
     },
   },
@@ -71,6 +78,7 @@ export function makeFindPlayTool(ctx, state) {
   /**
    * 追加进 playlist.json（和 audio_play 工具、UI 读同一份文件）。
    * 按 url 去重：同一首歌被反复搜到不会重复入队。
+   * 新曲置顶（与 sample 一致）：用户一进界面就看到刚点的那首。
    */
   function appendToPlaylist(entry) {
     let list = [];
@@ -85,14 +93,15 @@ export function makeFindPlayTool(ctx, state) {
 
     const at = list.findIndex((t) => t && typeof t.url === "string" && t.url === entry.url);
     if (at >= 0) list[at] = { ...list[at], ...entry };
-    else list.push(entry);
+    else list.unshift(entry);
 
     try {
       fs.writeFileSync(playlistPath, JSON.stringify(list, null, 2), "utf-8");
+      return true;
     } catch (err) {
       ctx.logger?.warn?.(`audio_find_play: 写入播放列表失败 ${err?.message || err}`);
+      return false;
     }
-    return { isNew: at < 0 };
   }
 
   async function search(query, server) {
@@ -181,10 +190,16 @@ export function makeFindPlayTool(ctx, state) {
         group: srv === "bilibili" ? "B 站" : "在线音乐",
       };
 
-      appendToPlaylist(entry);
+      const savedFlag = appendToPlaylist(entry);
 
-      // playNow: 让"当前曲目"立刻指向这首（横幅 / UI 立刻刷新）。
-      // UI 端 30 秒 sync 也会把 playlist 里的 url 拉进来——但那个循环慢，playNow 时先手动切。
+      // 通知前端「列表变了」——这是替代 30s 轮询的关键一步。
+      // 不再谎报 played：浏览器 autoplay 策略拦得住无手势出声，
+      // 这里只声明到得了的事实（已入列 + 是否已请求切歌），
+      // 真正是否响由用户在卡片上点播放。
+      if (savedFlag) await publishLibraryChange(ctx, `find_play:${title}`);
+
+      // playNow: 让"当前曲目"指向这首（横幅 / 界面立即切过去）。
+      // 注意它不会让声音自己出来 —— 只改变“指向哪首”。
       if (now) {
         state.setCurrentTrack({ title, source: srv });
       }
@@ -197,8 +212,13 @@ export function makeFindPlayTool(ctx, state) {
         ok: true,
         query: q,
         server: srv,
-        played: now,
-        queued: !now,
+        // 字段名就是语义：入列了 = queued，不假装“在放”
+        queued: true,
+        // 请求了切到这首（仅当 playNow）。它不是“已出声”，
+        // 实际能否响取决于用户是否点播放（浏览器 autoplay 限制）。
+        playRequested: now,
+        // 保留 played 字段给旧调用方读，但恒为 false 已不合适——
+        // 改成不再输出，让读了 played 的代码尽早暴露成 undefined 而不是假 true。
         track: {
           id: stableId,
           title,
@@ -208,6 +228,10 @@ export function makeFindPlayTool(ctx, state) {
         },
         total: searchResult.total,
         returned: results.length,
+        // 告诉模型该怎么描述，避免它自己编“正在播放”
+        note: now
+          ? "已加入列表并请求切到这首。界面会把它设为当前曲目；若被浏览器拦则出现「继续播放」按钮，用户点一下才真出声。"
+          : "已加入列表（列表顶部），未切换当前曲目。用户需要在界面上点一下。",
       };
 
       return {

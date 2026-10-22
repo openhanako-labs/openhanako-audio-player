@@ -3486,15 +3486,16 @@ if (audio && audio.addEventListener) {
     try {
       if (playing) { clearInterval(t); return; }
       // 等一次服务器同步再认领 —— 否则认到的可能是本地列表里
-      // 随便哪一首的最后一条，而不是刚投进来的那首。
+      // 随便哪一首，而不是刚投进来的那首。
       // 但也不无限等：6 秒后就用手头这份。
       if ((_initialSyncDone || tries > 12) && trks.length) {
         clearInterval(t);
         // 卡片刚出现在对话里 = 用户要听这首。所以这里主动取一次播放权，
         // 而不是把机会让给别的实例 —— 否则投卡看上去像没反应。
         // （保证同一时刻仍然只有一个实例出声，由锁来管。）
+        // 新曲由后端 unshift 到 index 0；旧版用末尾是因为 push，两边别搞混。
         claimPlayLock();
-        autoplayOnce(trks.length - 1);
+        autoplayOnce(0);
         return;
       }
     } catch (e) {}
@@ -3702,12 +3703,12 @@ function _doPlay(){
     p.then(function(){
       playing = true;
       npCover.classList.add("spinning");
+      _dismissResumeBar();      // 真出声了，引导条没必要留着
     }).catch(function(e){
       if (e && e.name === "NotAllowedError") {
-        // 2026-10-22 端口 hanako-simple-player 的 onAutoplayBlocked 模式：
-        // 自动播放被拦时记录意图，注册一次性的真实点击续播（点一下就开始，
-        // 不再只弹 toast 提示完就停死）。
-        showToast("自动播放被拦，点一下界面开始", 2200);
+        // 浏览器拦住了无手势的自动播放。这不是 bug，是平台策略：
+        // 给一个看得见的「继续播放」按钮，用户点一下才算授权。
+        // （旧版弹 toast 后监听“点界面任意处”，既看不见又容易误触。）
         _armAutoplayRetry();
       }
       else if (e && e.name !== "AbortError") console.warn(e);
@@ -3715,37 +3716,91 @@ function _doPlay(){
   } else {
     playing = true;
     npCover.classList.add("spinning");
+    _dismissResumeBar();
   }
   if (window.audioEventBus) window.audioEventBus.emit("audio:play", "music", { currentTime: audio.currentTime, duration: audio.duration });
 }
 
-// ── 自动播放被拦后的一次性续播（2026-10-22 端口 hanako-simple-player）──
-// 浏览器 autoplay 拦没声时，注册一个真实 clicks 续播当前曲目：
-// 用户第一次点界面任意处，就用这次合法手势真正 play。
+// ── 自动播放被拦后的「继续播放」引导（2026-10-22 端口 hanako-simple-player）──
+//
+// 旧版做法：被拦时弹一句 toast，再注册一个“点界面任意处”的一次性监听。
+// 问题是那个监听看不见 —— 用户不知道要点哪里，而且点在任何地方（比如想拖进度条）
+// 都会意外触发一次 play。这层意图没被表达出来。
+//
+// sample 的做法是给一个可见的按钮（resumeBtn + needsResume），点它才算授权。
+// 这里同步过来：被拦时弹一个带按钮的条，用户点「继续播放」才真 play。
+//
+// 仍然保留“点播放键就能响”这条常规通路（P1 里 toggle 自己会 claimPlayLock）。
+var _resumeBar = null;
+
+/** 移除「继续播放」引导条。 */
+function _clearResumeBar() {
+  if (_resumeBar && _resumeBar.parentNode) _resumeBar.parentNode.removeChild(_resumeBar);
+  _resumeBar = null;
+}
+
+/**
+ * 显示「继续播放」引导条。
+ * 只在自动播放被浏览器拦住时出现；用户点一下才真出声（合法手势）。
+ *
+ * 住在独立的底部宿主层（#resumeHost），不用 #toastContainer——
+ * toast 在顶部居中、pointer-events:none，而且会被新 toast 推高；
+ * 这条要一直停到用户处理，必须避开顶部那排模式胶囊。
+ */
+function _showResumeBar() {
+  if (_resumeBar) return;                       // 已经在显示，不叠
+  if (typeof document === "undefined") return;
+
+  var host = document.getElementById("resumeHost");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "resumeHost";
+    document.body.appendChild(host);
+  }
+
+  var bar = document.createElement("div");
+  bar.className = "resume-bar";
+  bar.setAttribute("role", "status");
+
+  var label = document.createElement("span");
+  label.className = "resume-bar-text";
+  label.textContent = "浏览器拦住了自动播放";
+
+  var btn = document.createElement("button");
+  btn.className = "resume-bar-btn";
+  btn.type = "button";
+  btn.textContent = "继续播放";
+  btn.addEventListener("click", function (ev) {
+    ev.stopPropagation();                       // 不要把这次点击当成“点界面任意处”
+    _clearResumeBar();
+    _autoplayRetryArmed = false;                // 用户已明确授权，旧的一次性监听作废
+    _doPlay();
+  });
+
+  bar.appendChild(label);
+  bar.appendChild(btn);
+  host.appendChild(bar);
+  _resumeBar = bar;
+}
+
 var _autoplayRetryArmed = false;
 function _armAutoplayRetry() {
-  if (_autoplayRetryArmed || typeof audio === "undefined") return;
+  if (_autoplayRetryArmed) return;
   _autoplayRetryArmed = true;
-  function retry() {
-    _autoplayRetryArmed = false;
-    document.removeEventListener("click", retry);
-    document.removeEventListener("pointerdown", retry);
-    // 用户已经在这个上下文中交互过 —— 现在 play 会被放行
-    var p = audio.play();
-    if (p && typeof p.then === "function") {
-      p.then(function(){ playing=true; npCover.classList.add("spinning"); }).catch(function(e2){
-        if (e2 && e2.name !== "AbortError") console.warn("autoplay retry failed", e2);
-      });
-    }
-  }
-  document.addEventListener("click", retry, { once: true });
-  document.addEventListener("pointerdown", retry, { once: true });
+  // 只作为兜底：用户点播放键或「继续播放」都会自己走 play。
+  // 这里不再监听“页面任意处点击”（那会让拖进度条/选歌误触发）。
+  _showResumeBar();
+}
+
+// 用户正常按了播放键 / 切了歌，引导条就该消失
+function _dismissResumeBar() {
+  _autoplayRetryArmed = false;
+  _clearResumeBar();
 }
 
 function toggle() {
   if (!trks.length) return;
-  if (audio.paused) { _playCurrent("用户点击播放键"); }
-  else { audio.pause(); playing=false; npCover.classList.remove('spinning'); if (window.audioEventBus) window.audioEventBus.emit('audio:pause', 'music', { currentTime: audio.currentTime }); }
+  if (audio.paused) { _playCurrent("用户点击播放键"); }  else { audio.pause(); playing=false; npCover.classList.remove('spinning'); if (window.audioEventBus) window.audioEventBus.emit('audio:pause', 'music', { currentTime: audio.currentTime }); }
   document.getElementById('playIcon').style.display=playing?'none':'block';
   document.getElementById('pauseIcon').style.display=playing?'block':'none';
 }
@@ -6544,7 +6599,9 @@ fetch(API+'/widget/api/playlist').then(function(r){return r.json();}).then(funct
     //   导致 audio_find_play 写入 playlist.json 的新曲目（如夜航星）在本地
     //   列表不少于服务器时永不显示）。服务器为准才保证 Agent 入队的歌能出现。
     trks = data.tracks;
-    idx = Math.max(0, trks.length - 1);
+    // 新曲置顶（后端 unshift），所以最新的一首在 index 0；
+    // 旧版取末位是因为当年后端 push 到末尾，两个位置必须跟后端一致。
+    idx = 0;
     trks.forEach(function(t){ if(t.url) t.url = t.url.split('?token=')[0].split('&token=')[0]; });
     renderPL();
     var merged = false;
@@ -6571,27 +6628,61 @@ fetch(API+'/widget/api/playlist').then(function(r){return r.json();}).then(funct
   _initialSyncDone = true;
 });
 
-// 定时轮询服务器同步（替代原来的 /widget/api/queue 轮询）
-setInterval(function(){
-  fetch(API+'/widget/api/playlist').then(function(r){return r.json();}).then(function(data){
-    if(!data.ok || !data.tracks) return;
-    var needSave = false;
-    // 服务器有而本地没有 → 添加
+// ── 列表同步：事件驱动（主）+ 轮询（兜底）────────────────────────
+//
+// 旧实现只有 `setInterval(..., 30000)`：Agent 用 audio_find_play 入队后，
+// 界面最长要等 30 秒才看见那首歌 —— 看上去就是「工具说加了，界面没反应」。
+//
+// 现在后端每次写 playlist.json 会往宿主存储写一个 revision UUID
+// （lib/library-revision.js），这里收到 storage.onChanged 就立刻重拉。
+// 轮询保留，只作为「信号丢了」的兜底，不再是主路径。
+
+var _syncInFlight = false;
+
+/** 从服务器拉一次，把服务器有而本地没有的曲目并入（置顶）。 */
+function syncFromServer(done) {
+  if (_syncInFlight) { if (done) done(); return; }
+  _syncInFlight = true;
+  fetch(API+'/widget/api/playlist', {cache:'no-store'}).then(function(r){return r.json();}).then(function(data){
+    if(!data || !data.ok || !Array.isArray(data.tracks)) return;
+    var added = 0;
     data.tracks.forEach(function(t){
-      var bareUrl=stripTok(t.url||'');
-      var found=false;
-      for(var i=0;i<trks.length;i++){if(stripTok(trks[i].url)===stripTok(bareUrl)){found=true;break;}}
-      if(!found) {
-        trks.push({name:t.name||t.url.split('/').pop(), url:tok(bareUrl), mode:t.mode||'本地', dur:0, group:'本地音乐'});
-        needSave = true;
-      }
+      var bareUrl = stripTok(t.url||'');
+      if(!bareUrl) return;
+      for(var i=0;i<trks.length;i++){ if(stripTok(trks[i].url) === bareUrl) return; }
+      // 与后端 unshift 保持一致：新曲置顶，用户一进界面就看到刚点的那首
+      trks.unshift({name:t.name||bareUrl.split('/').pop(), url:tok(bareUrl),
+        mode:t.mode||'本地', dur:t.dur||0, group:t.group||'本地音乐'});
+      added++;
     });
-    // 本地有而服务器没有 → 推送到服务器
-    if(trks.length > data.tracks.length) {
-      saveTrks();
-    }
-    if(needSave) { renderPL(); saveTrks(); }
-  }).catch(function(){});
+    if(added) { renderPL(); saveTrks(); }
+  }).catch(function(){}).then(function(){ _syncInFlight = false; if(done) done(); });
+}
+
+/** 订阅宿主的存储变更：库 revision 变了就立刻同步。 */
+(function subscribeLibraryChanges() {
+  function attach() {
+    var hanaSdk = window.__hana;
+    var store = hanaSdk && hanaSdk.storage && hanaSdk.storage.global;
+    if (!store || typeof store.onChanged !== 'function') return false;
+    store.onChanged(function (keys) {
+      if (!keys) return;
+      // 兼容两种形态：键数组 或 单键字符串
+      var hit = (typeof keys === 'string')
+        ? keys === 'player-library-revision'
+        : keys.indexOf('player-library-revision') >= 0;
+      if (hit) syncFromServer();
+    });
+    return true;
+  }
+  // SDK 是 module script，可能在 app.js 之后才落地；没就绪就等它的事件
+  if (attach()) return;
+  window.addEventListener('hana-sdk-ready', attach, { once: true });
+})();
+
+// 定时轮询：兜底（revision 信号丢失、或宿主未给 storage 能力时仍能同步）
+setInterval(function(){
+  syncFromServer();
   // 验证本地文件是否仍存在（仅检查 /widget/media/ 开头的 URL）
   var toRemove=[];
   trks.forEach(function(t,i){
@@ -6909,7 +7000,10 @@ setTimeout(notifySize, 300);
       if (actx.state !== "running") return false;
       var srcNode = actx.createMediaElementSource(a);
       var an = actx.createAnalyser();
-      an.fftSize = 128;
+      // fftSize 4096（不是 128）：44.1k 下每 bin ≈10.8Hz，低频才有分辨率。
+      // 128 时每个 bin 宽 344Hz，40–180Hz 全挤进 bin 0，bass 永远读不到
+      // —— 看着「接上了」其实鼓点永不触发（sample 的 PITFALLS 实测过）。
+      an.fftSize = 4096;
       an.smoothingTimeConstant = 0.82;
       srcNode.connect(an);
       an.connect(actx.destination);
@@ -6949,8 +7043,19 @@ setTimeout(notifySize, 300);
       if (!an || !data) return;
       try {
         an.getByteFrequencyData(data);
-        // 只取低频那段（前 1/4）：鼓点与贝斯，肉眼最容易“看到节拍”
-        var n = Math.max(1, Math.floor(data.length / 4));
+        /* 取真正的低频段：40–250Hz（鼓点与贝斯）。
+         *
+         * 旧代码写的是「前 1/4」，那是错的：n = length/4 表示的永远是「0 到
+         * 奈奎斯特的 1/4」≈ 5.5kHz，跟低频毫无关系，而且把 512 个 bin 平铺
+         * 求均值，真正的低频被中高频稀释完了。
+         *
+         * 现在按采样率算 bin 宽，圈到 250Hz 为止：
+         *   fftSize 4096 @ 44.1k → binCount 2048 → bin 宽 10.77Hz → 前 23 个 bin
+         * */
+        var sr = (reactive.actx && reactive.actx.sampleRate) || 44100;
+        var nyquist = sr / 2;
+        var binHz = nyquist / data.length;
+        var n = Math.max(1, Math.min(data.length, Math.round(250 / binHz)));
         var sum = 0;
         for (var i = 0; i < n; i++) sum += data[i];
         smooth = smooth * 0.86 + (sum / n / 255) * 0.14; // 平滑，免得一格一格跳

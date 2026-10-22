@@ -682,6 +682,46 @@ body.view-compact .inst-code { display: none; }
   transform:translateY(-8px); transition:opacity .25s, transform .25s;
   pointer-events:auto;
 }
+
+/* 「继续播放」引导条（自动播放被浏览器拦住时出现）
+ *
+ * 与 toast 的区别：它有活要干 —— 用户点按钮才算授权。
+ * toast 一闪而过，压在顶部没关系；这条要一直停到用户处理，
+ * 所以它住在底部，避开顶部那排模式胶囊（标准/PV/歌词）。
+ * 只露强调色描边，不抢主题。 */
+#resumeHost {
+  position:fixed; left:50%; bottom:14px;
+  transform:translateX(-50%);
+  z-index:9998;                    /* 比 toast 低一级：同时出现时 toast 在上 */
+  pointer-events:none;             /* 宿主层不吃点击，只有条本身吃 */
+}
+.resume-bar {
+  display:flex; align-items:center; gap:10px;
+  background:var(--surface); border:1px solid var(--accent); border-radius:8px;
+  padding:6px 6px 6px 14px; max-width:min(92vw, 420px);
+  box-shadow:0 6px 22px rgba(0,0,0,.45);
+  color:var(--text); font-size:11px;
+  pointer-events:auto;
+  animation:resumeBarIn .22s ease-out;
+}
+@keyframes resumeBarIn {
+  from { opacity:0; transform:translateY(8px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+.resume-bar-text { flex:1 1 auto; color:var(--text-dim, var(--text)); opacity:.85; }
+.resume-bar-btn {
+  flex:0 0 auto; cursor:pointer;
+  background:var(--accent); color:var(--bg, #fff);
+  border:none; border-radius:6px;
+  font-size:11px; line-height:1; padding:8px 12px;
+  font-family:inherit; font-weight:600;
+  transition:filter .15s;
+}
+.resume-bar-btn:hover { filter:brightness(1.12); }
+.resume-bar-btn:active { filter:brightness(.94); }
+@media (prefers-reduced-motion: reduce) {
+  .resume-bar { animation:none; }
+}
 .toast-item.show { opacity:1; transform:translateY(0); }
 
 /* ═══ Music Search ═══ */

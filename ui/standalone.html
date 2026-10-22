@@ -5320,7 +5320,10 @@ document.addEventListener('visibilitychange', function () { if (!document.hidden
       if (actx.resume) actx.resume().catch(function () { });
       var src = actx.createMediaElementSource(el);     // 同一元素第二次调必抛，所以只在这里建
       var an = actx.createAnalyser();
-      an.fftSize = 128; an.smoothingTimeConstant = 0.6;
+      /* fftSize 4096（不是 128）：44.1k 下每 bin ≈10.8Hz。
+       * 128 时每 bin 宽 344Hz，低频全挤进 bin 0，鼓点永不触发——
+       * 看着「接上了」其实没反应。代价是每帧多算 64 倍，可接受。 */
+      an.fftSize = 4096; an.smoothingTimeConstant = 0.6;
       src.connect(an);
       an.connect(actx.destination);                   // 漏这条就是静音：接了图不接出口，声音没归处
       own.src = src; own.an = an; own.data = new Uint8Array(an.frequencyBinCount);
