@@ -2167,6 +2167,67 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 }
 #playerStrip .strip-cover:hover .strip-ring-fill { stroke: #d59a66; }
 
+/*
+ * ── 横条的音频反应（2026-10-22 新增）──
+ *
+ * 竖版一直有 --react-level（低频能量 0–1，每帧写入）驱动的呼吸/光晕，
+ * 横条一处都没用 —— 所以同一首歌在竖卡里“活”，拉成横条就“死”。
+ *
+ * 这里接三处，都是**不改变布局**的属性（只动 opacity / filter / stroke-width）：
+ *   1. 封面进度环的光晕强弱
+ *   2. 封面的微弱放大
+ *   3. 背景色带的呼吸
+ * 不做位移类动画 —— 横条高度卡在 60px，任何位移都容易撞到裁切。
+ *
+ * prefers-reduced-motion 下全部关掉。
+ */
+
+/* 封面外圈的光晕：把原来那个空壳 strip-ring-glow 真正用起来 */
+#playerStrip .strip-ring-glow {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: calc(.10 + .55 * var(--react-level, 0));
+  background: radial-gradient(
+    circle at 50% 50%,
+    color-mix(in srgb, var(--accent, #c08a5a) 42%, transparent) 0%,
+    transparent 68%
+  );
+  transition: opacity .12s linear;
+  z-index: 0;
+}
+
+/* 封面随低频轻微胀大。幅度压到 3% —— 再大就会碰到进度环 */
+#playerStrip .strip-cover {
+  transform: scale(calc(1 + var(--react-level, 0) * .03));
+  transition: transform .12s linear;
+  will-change: transform;
+}
+
+/* 进度环在重拍时亮一档 */
+#playerStrip .strip-ring-fill {
+  filter: brightness(calc(1 + var(--react-level, 0) * .45));
+}
+
+/* 背景色带跟着呼吸 */
+#playerStrip[data-bg="flow"]::before {
+  opacity: calc(.35 + .65 * var(--react-level, 0));
+  transition: opacity .12s linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #playerStrip .strip-cover,
+  #playerStrip .strip-ring-glow,
+  #playerStrip .strip-ring-fill,
+  #playerStrip[data-bg="flow"]::before {
+    transform: none;
+    filter: none;
+    transition: none;
+  }
+  #playerStrip .strip-ring-glow { opacity: .18; }
+}
+
 /* ── 单行歌名 / 来源（D 的信息层）── */
 #playerStrip .strip-identity {
   flex: 1 1 auto;
@@ -2211,6 +2272,21 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
   font-size: calc(var(--fs-base, 13px) * 1.15);
   color: var(--text);
   opacity: .72;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 46%;
+}
+
+/*
+ * 上一句（只在 tall / grand 档显示）
+ *
+ * 拉高横条后，多出来的高度不该是空白。这里把上一句放在当前句上方，
+ * 淡出处理 —— 读的时候眼睛有个“刚才唱到哪”的参照。
+ */
+#playerStrip .strip-lyric-prev {
+  display: none;
+  font-size: calc(var(--fs-base, 13px) * 0.95);
+  color: var(--text);
+  opacity: .34;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   max-width: 46%;
 }
@@ -2503,6 +2579,111 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 /* 细线图标统一 1.5 描边 */
 #playerStrip .strip-btn svg { stroke-width: 1.5 !important; }
 #playerStrip .strip-play svg { stroke-width: 1.5 !important; }
+
+/*
+ * ═══════════════════════════════════════════════════════════════════
+ * 高度档位（2026-10-22）
+ *
+ * 实测：横条高度本来就跟着容器走（60→156 都撑满），
+ * 但内部元素高度始终不变（封面 42 / 身份 20 / 歌词 16 / 控件 28），
+ * 多出来的高度全变成上下空白。这里把那段空白用起来。
+ *
+ * 档位由 index.html 的 syncStripHeight 写到 data-height：
+ *   slim   ≤ 64    单行（现状）
+ *   tall   65–110  两行：上一句淡出 + 当前句
+ *   grand  111+    两行加大字号，且歌词区可占更多宽
+ *
+ * 所有调整只动字号/间距/显隐，不动横条高度本身 ——
+ * 高度是宿主给的，改它就会跟形态判定打架。
+ * ═══════════════════════════════════════════════════════════════════
+ */
+
+/* ── tall：两行歌词 ── */
+/*
+ * 布局意图（2026-10-22）：
+ *   拉高后仍然是「一条」，不是竖卡。信息分两层：
+ *     上层：歌名 · 歌手（横排，一行）
+ *     下层：歌词（上一句淡出 + 当前句）
+ *   封面在左、时间控件在右，跟 slim 一致，保持横条的读法。
+ *
+ * 第一版写错了：把 identity 整个改成 column，
+ * 于是歌名/歌手/上一句/当前句四样东西竖着堆成一列，
+ * 读起来是倒序的。现在用两个子容器分层，不靠 order 硬排。
+ */
+#playerStrip[data-height="tall"] .strip-identity,
+#playerStrip[data-height="grand"] .strip-identity {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  height: 100%;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* 歌名与歌手横排一行
+ *
+ * 2026-10-22：DOM 改成 .strip-headline 包住 strong + #stripArtist。
+ * 之前它们是两个兄弟节点，在 column 下必然各占一行；
+ * 用负 margin 硬拉回一行会把行高算错，而这一块的高度
+ * 直接决定两行歌词能不能放下。包一层是最干净的解法。
+ *
+ * 注意：slim 档下 .strip-identity 仍然是 row，
+ * 所以 .strip-headline 必须「不影响外层」—— 用 display:flex + min-width:0，
+ * 但不设 flex:1，避免把歌词挤走。
+ */
+#playerStrip .strip-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  flex: 0 1 auto;
+}
+
+/* 歌词区：两句纵向叠放，与上面歌名隔开一点 */
+#playerStrip[data-height="tall"] .strip-lyric-prev,
+#playerStrip[data-height="grand"] .strip-lyric-prev {
+  display: block;
+  margin-top: 4px;
+}
+
+#playerStrip[data-height="tall"] .strip-lyric {
+  max-width: 72%;
+  opacity: .95;
+}
+
+/* ── grand：字更大，行距更开 ── */
+#playerStrip[data-height="grand"] .strip-lyric-prev {
+  font-size: calc(var(--fs-base, 13px) * 1.0);
+  opacity: .30;
+}
+#playerStrip[data-height="grand"] .strip-lyric {
+  font-size: calc(var(--fs-base, 13px) * 1.38);
+  max-width: 78%;
+  opacity: 1;
+}
+#playerStrip[data-height="grand"] .strip-identity strong {
+  font-size: calc(var(--fs-base, 13px) * 1.15);
+}
+
+/* 两档里歌名/歌手要跟歌词错开层次，不能一样重 */
+#playerStrip[data-height="tall"] .strip-identity strong,
+#playerStrip[data-height="grand"] .strip-identity strong {
+  opacity: .82;
+}
+#playerStrip[data-height="tall"] #stripArtist,
+#playerStrip[data-height="grand"] #stripArtist {
+  opacity: .55;
+}
+
+/* 封面在 tall/grand 下也放大一点，否则跟两行文字不成比例 */
+#playerStrip[data-height="tall"] .strip-cover {
+  width: 52px; height: 52px;
+}
+#playerStrip[data-height="grand"] .strip-cover {
+  width: 60px; height: 60px;
+}
 
 
 /* ═══════════════════════════════════════════════════════════════════

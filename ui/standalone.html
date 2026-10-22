@@ -2590,7 +2590,7 @@ body.jizura-mode:not(.view-compact) .pv-track { visibility: hidden; }
 <svg class="strip-ring" viewBox="0 0 48 48" aria-hidden="true"><circle class="strip-ring-track" cx="24" cy="24" r="21"/><circle class="strip-ring-fill" cx="24" cy="24" r="21"/></svg>
 <span class="strip-ring-glow"></span>
 </button>
-<div class="strip-identity" id="stripIdentity"><strong id="stripTitle">播放器</strong><span id="stripArtist"></span><span class="strip-lyric" id="stripLyric"></span></div>
+<div class="strip-identity" id="stripIdentity"><span class="strip-headline"><strong id="stripTitle">播放器</strong><span id="stripArtist"></span></span><span class="strip-lyric-prev" id="stripLyricPrev"></span><span class="strip-lyric" id="stripLyric"></span></div>
 <div class="strip-time" id="stripTime"><span id="stripCur">0:00</span><span class="strip-time-sep">/</span><span id="stripTotal">0:00</span></div>
 <div class="strip-controls" id="stripControls">
 <button class="strip-btn" id="stripFav" title="收藏" aria-label="收藏"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19.6s-6.6-4.1-6.6-8.4A3.8 3.8 0 0 1 12 8.9a3.8 3.8 0 0 1 6.6 2.3c0 4.3-6.6 8.4-6.6 8.4z"/></svg></button>
@@ -2802,6 +2802,7 @@ var playIcon = document.getElementById('stripPlayIcon');
 var pauseIcon = document.getElementById('stripPauseIcon');
 var favBtn = document.getElementById('stripFav');
 var lyricEl = document.getElementById('stripLyric');
+var prevLyricEl = document.getElementById('stripLyricPrev');
 var volBtn = document.getElementById('stripVolBtn');
 var volSliderEl = document.getElementById('stripVolSlider2');
 
@@ -2824,7 +2825,11 @@ function layoutFromEnvelope(env) {
 function syncStripHeight() {
   if (!strip) return;
   var isStrip = player && player.getAttribute('data-layout') === 'strip';
-  if (!isStrip) return;
+  if (!isStrip) {
+    // 离开横条形态时把高度档位摘掉，避免下次回来带着旧值
+    if (strip.hasAttribute('data-height')) strip.removeAttribute('data-height');
+    return;
+  }
   var h = strip.getBoundingClientRect().height;
   if (!h || h <= 0) {
     requestAnimationFrame(syncStripHeight);
@@ -2832,6 +2837,27 @@ function syncStripHeight() {
   }
   var capped = Math.min(64, Math.max(40, Math.round(h)));
   strip.style.setProperty('--strip-height', capped + 'px');
+
+  /*
+   * 高度档位（2026-10-22 新增）
+   *
+   * 实测：横条高度本来就跟着容器走（60→156 都撑满），
+   * 但内部元素高度始终不变（封面 42 / 身份 20 / 歌词 16 / 控件 28），
+   * 多出来的高度全变成上下空白。
+   *
+   * 这段空白就是放「简化 PV」的空间。分三档：
+   *   slim   ≤ 64   现状：单行歌词
+   *   tall   65–110 两行歌词窗（当前句 + 上一句淡出）
+   *   grand  111+   三行 + 逐字亮度
+   *
+   * 用属性而不是 class：CSS 侧 `[data-height="tall"]` 比 class 更好读，
+   * 也不会跟别处 toggle 的 class 打架。
+   */
+  var real = Math.round(h);
+  var tier = real <= 64 ? 'slim' : (real <= 110 ? 'tall' : 'grand');
+  if (strip.getAttribute('data-height') !== tier) {
+    strip.setAttribute('data-height', tier);
+  }
 }
 
 // ── 标题栏交互区域上报 ──
@@ -2864,6 +2890,28 @@ function reportInteractiveRegions() {
   } catch (e) {}
 }
 window.addEventListener('resize', function () { syncStripHeight(); reportInteractiveRegions(); });
+
+/*
+ * ResizeObserver 兜底（2026-10-22）
+ *
+ * window.resize 不一定来：宿主拖窗口时可能只改 iframe 尺寸，
+ * 而 envelope 订阅在某些挂载位也不推送。
+ * 高度档位切换（slim → tall → grand）必须及时 ——
+ * 慢了就会出现「已经拉高了但还是一行」的观感。
+ * 这里直接盯 #playerStrip 自己，它变了就重算。
+ */
+try {
+  if (window.ResizeObserver && strip) {
+    var _lastStripH = 0;
+    new ResizeObserver(function (entries) {
+      var h = entries[0] && entries[0].contentRect ? Math.round(entries[0].contentRect.height) : 0;
+      if (h && h !== _lastStripH) {
+        _lastStripH = h;
+        syncStripHeight();
+      }
+    }).observe(strip);
+  }
+} catch (e) {}
 window.addEventListener('resize', function () { applyEnvelopeResize(); });
 function applyEnvelopeResize() {
   var next = layoutFromEnvelope();
@@ -2952,7 +3000,31 @@ function syncLyric() {
     var pvLine = document.querySelector('.pv-line[data-d="0"]');
     txt = pvLine ? pvLine.textContent.trim() : '';
   }
+
+  /*
+   * 上一句（2026-10-22 新增）
+   *
+   * 高度 ≥ 65px 时横条要显示两行：当前句 + 上一句淡出。
+   * 这里顺手把「上一句」记下来 —— 只多一次 querySelector，不重建 DOM。
+   *
+   * 为什么不用 .is-near：那是「当前句 ±1」的视觉态，
+   * 在歌曲开头（第一句）时它指向下一句，不是上一句。
+   */
+  var prevTxt = '';
+  if (lyr) {
+    var curEl = lyr.querySelector('.lyric-line.current');
+    if (curEl) {
+      var prevEl = curEl.previousElementSibling;
+      while (prevEl && !prevEl.classList.contains('lyric-line')) prevEl = prevEl.previousElementSibling;
+      if (prevEl) {
+        var pm = prevEl.querySelector('.l-main');
+        prevTxt = (pm ? pm.textContent : prevEl.textContent || '').trim();
+      }
+    }
+  }
+
   setText(lyricEl, txt);
+  if (prevLyricEl) setText(prevLyricEl, prevTxt);
 }
 
 // ── 进度：环 + 时间 ──

@@ -1062,20 +1062,48 @@ class CoverColorExtractor {
       const r = pixels[i];
       const g = pixels[i + 1];
       const b = pixels[i + 2];
-      
+      const a = pixels[i + 3];
+
+      // 透明像素不参与统计（封面常有圆角/外描边是透明的）
+      if (a < 128) continue;
+
       // 量化颜色（减少颜色数量）
-      const qr = Math.round(r / 32) * 32;
-      const qg = Math.round(g / 32) * 32;
-      const qb = Math.round(b / 32) * 32;
-      
+      //
+      // 2026-10-22 修：原来是 Math.round(r/32)*32，r=255 时算出 **256**，
+      // 超出 0-255，rgbToHex 于是生成 "#100100100" 这种 9 位非法颜色，
+      // 浏览器直接忽略 —— 表现为「取了色但界面不变」。
+      // 用 min(255, ...) 夹住上限。
+      const q = (v) => Math.min(255, Math.round(v / 32) * 32);
+      const qr = q(r), qg = q(g), qb = q(b);
+
+      // 跳过无彩色（纯白/纯黑/灰阶）：它们在任何配色里都没有意义，
+      // 而白底图会让纯白拿到最高票，把真正的主色盖掉。
+      const max = Math.max(qr, qg, qb), min = Math.min(qr, qg, qb);
+      const sat = max === 0 ? 0 : (max - min) / max;
+      if (sat < 0.12) continue;             // 灰度
+      if (max < 40 || min > 240) continue;  // 极暗 / 极亮
+
       const key = `${qr},${qg},${qb}`;
       colorMap.set(key, (colorMap.get(key) || 0) + 1);
     }
     
     // 排序获取主要颜色
-    const sorted = Array.from(colorMap.entries())
+    let sorted = Array.from(colorMap.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
+
+    // 兜底：整张图都是灰阶（比如黑白摄影），那就放宽到不过滤
+    if (!sorted.length) {
+      for (let i = 0; i < pixels.length; i += 16) {
+        const a = pixels[i + 3];
+        if (a < 128) continue;
+        const q = (v) => Math.min(255, Math.round(v / 32) * 32);
+        const key = `${q(pixels[i])},${q(pixels[i + 1])},${q(pixels[i + 2])}`;
+        colorMap.set(key, (colorMap.get(key) || 0) + 1);
+      }
+      sorted = Array.from(colorMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    }
+    if (!sorted.length) return this.getDefaultColors();
     
     const primary = this.rgbToHex(...sorted[0][0].split(',').map(Number));
     const secondary = sorted[1] ? this.rgbToHex(...sorted[1][0].split(',').map(Number)) : primary;
@@ -1109,10 +1137,18 @@ class CoverColorExtractor {
    * RGB转Hex
    */
   rgbToHex(r, g, b) {
-    return '#' + [r, g, b].map(x => {
-      const hex = x.toString(16);
-      return hex.length === 1 ? '0' + hex : hex;
-    }).join('');
+    // 夹到 0-255 并取整。
+    //
+    // 2026-10-22：之前直接 x.toString(16)，如果上游传了 256（量化溢出），
+    // 会得到 "100"，拼成 "#100100100" 这种 9 位非法值，
+    // 浏览器静默忽略 —— 表现为「取了色但界面不变」，很难查。
+    // 这里做最后一道关，保证输出永远是合法的 #rrggbb。
+    const clamp = (x) => {
+      const n = Math.round(Number(x));
+      if (!Number.isFinite(n)) return 0;
+      return n < 0 ? 0 : (n > 255 ? 255 : n);
+    };
+    return '#' + [r, g, b].map(x => clamp(x).toString(16).padStart(2, '0')).join('');
   }
 
   /**
