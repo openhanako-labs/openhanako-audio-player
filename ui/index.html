@@ -3035,6 +3035,13 @@ if (audio) {
 }
 
 // ── 竖卡 DOM 变化 → 同步横条 ──
+//
+// 2026-10-22 修：原来只观察 childList，而歌词高亮是 classList.toggle('current') ——
+// class 变了但**子节点没变**，observer 永远不会触发。
+// 后果：横条歌词停在切歌那一行，之后不再更新（“歌词不同步”）。
+//
+// 修法：同时观察 attributes 的 class；另外跟一个帧循环直接读当前行，
+// 不在 DOM 上绕——观察器只能看到“变了”，看不到“应该是什么”。
 var mo2 = new MutationObserver(function () { syncTrack(); syncLyric(); });
 var npc = document.getElementById('npCover');
 if (npc) mo2.observe(npc, { childList: true });
@@ -3044,6 +3051,26 @@ var tmm = document.getElementById('trackMode');
 if (tmm) mo2.observe(tmm, { childList: true });
 var fvb = document.getElementById('favBtn');
 if (fvb) mo2.observe(fvb, { attributes: true, attributeFilter: ['class', 'style'] });
+
+// 歌词行的高亮切换只改 class，必须单独盯这一个属性。
+// 不用子树监听（那样每改一行都会触发一次全量回调）—— 只盯 lyricBody 的直接子层。
+(function watchLyricHighlight() {
+  var lb = document.getElementById('lyricBody');
+  if (!lb) return;
+  var lastTxt = '';
+  function tick() {
+    try {
+      // 只在横条形态下才需要（其余形态歌词由 app.js 自己渲染）
+      if (player && player.getAttribute('data-layout') === 'strip') {
+        var cur = lb.querySelector('.lyric-line.current .l-main');
+        var txt = cur ? cur.textContent.trim() : '';
+        if (txt !== lastTxt) { lastTxt = txt; syncLyric(); }
+      }
+    } catch (e) {}
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+})();
 // 布局切换时全量刷新
 var mo3 = new MutationObserver(function () { refresh(); syncStripHeight(); reportInteractiveRegions(); });
 if (player) mo3.observe(player, { attributes: true, attributeFilter: ['data-layout'] });

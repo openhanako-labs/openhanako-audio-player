@@ -3528,11 +3528,17 @@ function load(i) {
   // 更新当前封面 URL，供封面皮肤模式使用
   // 用代理后的同源地址，避免跨源污染画布
   window.__currentCoverUrl = t.pic ? '/widget/api/music/pic?url=' + encodeURIComponent(t.pic) : null;
-  // 如果是封面皮肤模式，重新应用背景
+  // 如果是封面皮肤模式，重新取色（换封面 → 换主色）
+  //
+  // 2026-10-22 修：这里原来写的是 window.applyThemePreset('cover') ——
+  // 但 applyPreset(t) 收的是**预设对象**，传字符串进去 t.id 就是 undefined，
+  // 函数在 `if (!t) return false` 直接返回，什么都没发生。
+  // 后果：选了「封面皮肤」也不跟封面换色，背景永远是预设里写死的那一个。
+  // 现在直接调专一的取色函数。
   try {
     var currentPreset = localStorage.getItem('hana_audio_theme_preset');
-    if (currentPreset === 'cover' && typeof window.applyThemePreset === 'function') {
-      window.applyThemePreset('cover');
+    if (currentPreset === 'cover' && typeof window.__applyCoverPalette === 'function') {
+      window.__applyCoverPalette();
     }
   } catch(e) {}
   if (window.audioEventBus) {
@@ -5057,8 +5063,14 @@ document.getElementById('themeBtn').addEventListener('click', function() {
   try { currentScale = localStorage.getItem('hanako_audio_font_scale') || 'standard'; } catch(e) {}
   function applyFontScale(scale) {
     var value = scaleMap[scale] || 1.0;
+    // 只驱动字号变量，不用 body.style.zoom。
+    //
+    // zoom 会缩放**整页**（包括横条的进度环、按钮、间距、高度约束），
+    // 它是浏览器非标准属性，在 strip 这种卡在高度上限里的布局上会把几何撑坏。
+    // 字号系统本来就有 --font-scale 这根链（--fs-base = --font-base × --font-scale），
+    // 由 CSS 按需消费才是干净的做法。
     document.documentElement.style.setProperty('--font-scale', value);
-    document.body.style.zoom = value;
+    try { document.body.style.zoom = ''; } catch (e) {}
     try { localStorage.setItem('hanako_audio_font_scale', scale); } catch(e) {}
     currentScale = scale;
   }
@@ -7025,6 +7037,70 @@ setTimeout(notifySize, 300);
     } catch (e) {}
   }
 
+  // ── 运行时自检上报 ──────────────────────────────────────
+  //
+  // 缘由：配色持久化在无头浏览器里好好的，在真宿主里“每次重开都回默认”。
+  // 差别只可能在运行环境：不透明 origin、分区存储、被禁的 API……
+  // 这些**从主机侧看不见**，只能让卡片自己把事实报上来。
+  //
+  // 写一次就够，不轮询。用单独的 probeKey，不盖掉尺寸探针。
+  function postRuntimeFacts(tag) {
+    try {
+      var m = /^\/api\/apps\/([^/]+)\//.exec(location.pathname);
+      var base = "/api/apps/" + (m ? m[1] : "hanako-audio-player") + "/routes";
+
+      // localStorage 到底能不能用、能不能跨加载存活 —— 一次性探明
+      var lsState = {};
+      try {
+        var probeVal = "probe-" + Date.now();
+        localStorage.setItem("__ls_probe", probeVal);
+        var back = localStorage.getItem("__ls_probe");
+        lsState = {
+          writable: true,
+          readBackMatches: back === probeVal,
+          // 关键：上一次加载有没有留下痕迹（能留 = 跨加载存活）
+          previousValue: localStorage.getItem("__ls_probe_prev"),
+          keyCount: (function () { try { return localStorage.length; } catch (e) { return -1; } })(),
+        };
+        localStorage.setItem("__ls_probe_prev", probeVal);
+      } catch (e) {
+        lsState = { writable: false, err: String((e && e.name) + ": " + (e && e.message || e)) };
+      }
+
+      // 主题相关键在不在（真丢 vs 没存）
+      var themeKeys = {};
+      try {
+        ["hana_audio_theme_preset", "hana_audio_theme_custom", "hana_audio_theme_mode"].forEach(function (k) {
+          themeKeys[k] = localStorage.getItem(k);
+        });
+      } catch (e) { themeKeys = { err: String(e && e.message || e) }; }
+
+      var payload = {
+        where: "runtime",
+        probeKey: "runtime",
+        tag: tag || "boot",
+        href: location.href.slice(0, 300),
+        origin: String(location.origin || ""),
+        // 不透明 origin 的典型值就是 "null"
+        isOpaqueOrigin: String(location.origin) === "null",
+        documentURI: String(document.documentURI || "").slice(0, 200),
+        referrer: String(document.referrer || "").slice(0, 200),
+        storage: lsState,
+        themeKeys: themeKeys,
+        ua: (navigator.userAgent || "").slice(0, 160),
+        at: new Date().toISOString(),
+      };
+      fetch(base + "/api/_probe/runtime", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  // 启动即报一次；window 上留个入口方便真机手动触发
+  try { window.__postRuntimeFacts = postRuntimeFacts; } catch (e) {}
+  postRuntimeFacts("boot");
+
   function buildAudioGraph() {
     if (reactive.actx) return true;
     if (!reactiveWanted()) { postReactive({ stage: "off" }); return false; }
@@ -7131,34 +7207,80 @@ setTimeout(notifySize, 300);
     });
   }
 
+  /**
+   * 把「封面皮肤」预设的颜色从当前封面取出来并应用。
+   *
+   * 单独抽出来，因为有两个入口需要它：
+   *   1) 选预设时（如果那一刻已有封面）
+   *   2) **切歌时**（换了封面就该换色）
+   *
+   * 旧实现只在入口 1 做，且条件是 `window.__currentCoverUrl` 有值 ——
+   * 打开播放器时往往还没当前曲目，于是直接跳过，
+   * 最终配色停在预设里写死的 #d49a6a，看上去就是「背景不跟封面」。
+   */
+  function applyCoverPalette() {
+    var t = allThemes().filter(function (x) { return x.id === 'cover'; })[0];
+    if (!t) return Promise.resolve(false);
+    var proxiedUrl = window.__currentCoverUrl;
+    // 没有封面就退回预设自带色（保持可见，不能让界面变空白）
+    if (!proxiedUrl) {
+      if (typeof window.applyThemeToCSS === 'function') {
+        window.applyThemeToCSS({ lockMode: false, colors: t.colors || {}, animation: t.animation });
+      }
+      applyBackground(t.background);
+      return Promise.resolve(false);
+    }
+    var ext = window.aiThemeGenerator && window.aiThemeGenerator.coverColorExtractor;
+    if (!ext || typeof ext.extract !== 'function') return Promise.resolve(false);
+
+    return Promise.resolve(ext.extract(proxiedUrl)).then(function (colors) {
+      if (!colors) return false;
+      if (typeof window.applyThemeToCSS === 'function') {
+        window.applyThemeToCSS({
+          lockMode: false,          // 不抢明暗，只换颜色
+          colors: {
+            primary: colors.primary || t.colors.primary,
+            secondary: colors.secondary || t.colors.secondary,
+            accent: colors.accent || t.colors.accent,
+          },
+          animation: t.animation,
+        });
+      }
+      applyBackground(t.background);
+      // 横条的色带吃 --accent，写完后需要让它重新计算一次
+      // （color-mix 是 CSS 层算的，但若元素在隐藏态挂载过，浏览器可能没重算）
+      try {
+        var strip = document.getElementById('playerStrip');
+        if (strip) {
+          strip.style.setProperty('--strip-bgflow',
+            'color-mix(in srgb, var(--accent, #c08a5a) 14%, transparent)');
+        }
+      } catch (e) {}
+      return true;
+    }).catch(function () { return false; });
+  }
+  window.__applyCoverPalette = applyCoverPalette;
+
   function applyPreset(t) {
     if (!t) return false;
     try { localStorage.setItem(PRESET_KEY, t.id); } catch (e) {}
     // 顺序要紧：applyTheme 被 patchApplyTheme 包过，会清掉行内的主题变量，
     // 所以必须**先**定明暗方向，**再**写配色与背景，否则刚写上的会被清掉。
-    if (t.mode && typeof window.applyTheme === "function") {
+    if (t.mode && t.mode !== 'dynamic' && typeof window.applyTheme === "function") {
       window.applyTheme(t.mode);
     }
-    // cover 预设：异步取色，更新 CSS 变量
-    if (t.id === 'cover' && window.__currentCoverUrl) {
-      // __currentCoverUrl 存的就是同源代理地址（见曲目切换处），直接取色；
-      // 不能再包一层 /music/pic 代理——双重编码后后端拿到的是编码过的相对路径，必失败
-      var proxiedUrl = window.__currentCoverUrl;
-      if (window.aiThemeGenerator && window.aiThemeGenerator.coverColorExtractor) {
-        window.aiThemeGenerator.coverColorExtractor.extract(proxiedUrl).then(function(colors) {
-          if (colors && typeof window.applyThemeToCSS === 'function') {
-            window.applyThemeToCSS({
-              colors: {
-                primary: colors.primary || t.colors.primary,
-                secondary: colors.secondary || t.colors.secondary,
-                accent: colors.accent || t.colors.accent
-              },
-              animation: t.animation
-            });
-          }
-        });
+
+    if (t.id === 'cover') {
+      // 封面皮肤：先铺一个可见的基底（避免空白），再去封面上色。
+      // 关键是必须在**取色完成后**才写背景，而不是在取色前写一次写死色。
+      if (typeof window.applyThemeToCSS === "function") {
+        window.applyThemeToCSS({ lockMode: false, colors: t.colors || {}, animation: t.animation });
       }
+      applyCoverPalette();          // 异步；拿到颜色后会再写一次正确的
+      applyBackground(t.background);
+      return true;
     }
+
     if (typeof window.applyThemeToCSS === "function") {
       window.applyThemeToCSS({ mode: t.mode, colors: t.colors || {}, animation: t.animation });
     } else {

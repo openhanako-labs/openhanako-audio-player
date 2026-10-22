@@ -350,7 +350,18 @@ body.view-compact .inst-code { display: none; }
 }
 .lyric-body.open { max-height:220px; overflow-y:auto; }
 .lyric-line {
-  font-size:11.5px; color:var(--lyric-color, var(--text-dim)); line-height:1.8; text-align:center;
+  /*
+   * 字号跟全局缩放走，而不是写死 11.5px。
+   *
+   * 缘由：2026-10-22 反馈「字体大小没变」——因为这一行是硬编码，
+   * 而字号按钮改的是 document.body.style.zoom（整页缩放），
+   * 前者根本不读它。字号系统本来是 --font-base × --font-scale = --fs-base，
+   * 这里直接接到那根链上，调字号才真的会变。
+   *
+   * 11.5/13 = 0.885，所以基准比全局文字略小一档，保持原来的克制感。
+   */
+  font-size: calc(var(--fs-base, 13px) * 0.885);
+  color:var(--lyric-color, var(--text-dim)); line-height:1.8; text-align:center;
   transition:color 0.2s, opacity 0.3s;
 }
 .lyric-line.current { color:var(--lyric-active-color, var(--accent)); font-weight:600; }
