@@ -2190,8 +2190,9 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 #playerStrip .strip-cover.seeking { cursor: grabbing; }
 #playerStrip.seeking .strip-ring-fill { stroke: #d59a66; }
 
-/* ── 背景 B 色带流动（transform 平移，不 reflow）── */
-#playerStrip { --strip-bgflow: rgba(192,138,90,.10); }
+/* ── 背景 B 色带流动（transform 平移，不 reflow）──
+   色带吃 --accent（封面主色/用户配色），不再写死铜色——深浅主题自然适配 */
+#playerStrip { --strip-bgflow: color-mix(in srgb, var(--accent, #c08a5a) 14%, transparent); }
 #playerStrip[data-bg="flow"]::before {
   content: "";
   position: absolute;
