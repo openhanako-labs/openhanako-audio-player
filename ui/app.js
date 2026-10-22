@@ -3703,7 +3703,13 @@ function _doPlay(){
       playing = true;
       npCover.classList.add("spinning");
     }).catch(function(e){
-      if (e && e.name === "NotAllowedError") showToast("点一下播放键开始", 2200);
+      if (e && e.name === "NotAllowedError") {
+        // 2026-10-22 端口 hanako-simple-player 的 onAutoplayBlocked 模式：
+        // 自动播放被拦时记录意图，注册一次性的真实点击续播（点一下就开始，
+        // 不再只弹 toast 提示完就停死）。
+        showToast("自动播放被拦，点一下界面开始", 2200);
+        _armAutoplayRetry();
+      }
       else if (e && e.name !== "AbortError") console.warn(e);
     });
   } else {
@@ -3711,6 +3717,29 @@ function _doPlay(){
     npCover.classList.add("spinning");
   }
   if (window.audioEventBus) window.audioEventBus.emit("audio:play", "music", { currentTime: audio.currentTime, duration: audio.duration });
+}
+
+// ── 自动播放被拦后的一次性续播（2026-10-22 端口 hanako-simple-player）──
+// 浏览器 autoplay 拦没声时，注册一个真实 clicks 续播当前曲目：
+// 用户第一次点界面任意处，就用这次合法手势真正 play。
+var _autoplayRetryArmed = false;
+function _armAutoplayRetry() {
+  if (_autoplayRetryArmed || typeof audio === "undefined") return;
+  _autoplayRetryArmed = true;
+  function retry() {
+    _autoplayRetryArmed = false;
+    document.removeEventListener("click", retry);
+    document.removeEventListener("pointerdown", retry);
+    // 用户已经在这个上下文中交互过 —— 现在 play 会被放行
+    var p = audio.play();
+    if (p && typeof p.then === "function") {
+      p.then(function(){ playing=true; npCover.classList.add("spinning"); }).catch(function(e2){
+        if (e2 && e2.name !== "AbortError") console.warn("autoplay retry failed", e2);
+      });
+    }
+  }
+  document.addEventListener("click", retry, { once: true });
+  document.addEventListener("pointerdown", retry, { once: true });
 }
 
 function toggle() {
