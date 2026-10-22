@@ -6511,13 +6511,13 @@ document.getElementById('sceneEditorAdd').addEventListener('click',function(){
 // 初始化：从服务器拉取完整播放列表（同步完成前 saveTrks 不写服务器）
 fetch(API+'/widget/api/playlist').then(function(r){return r.json();}).then(function(data){
   if(data.ok && data.tracks && data.tracks.length) {
-    var serverLen = data.tracks.length;
-    if (serverLen > trks.length) {
-      trks = data.tracks;
-      idx = Math.max(0, trks.length - 1);
-      trks.forEach(function(t){ if(t.url) t.url = t.url.split('?token=')[0].split('&token=')[0]; });
-      renderPL();
-    }
+    // 2026-10-22 修：无条件以服务器为准（原逻辑只在服务器比本地多时才替换，
+    //   导致 audio_find_play 写入 playlist.json 的新曲目（如夜航星）在本地
+    //   列表不少于服务器时永不显示）。服务器为准才保证 Agent 入队的歌能出现。
+    trks = data.tracks;
+    idx = Math.max(0, trks.length - 1);
+    trks.forEach(function(t){ if(t.url) t.url = t.url.split('?token=')[0].split('&token=')[0]; });
+    renderPL();
     var merged = false;
     data.tracks.forEach(function(t){
       var bareUrl=stripTok(t.url||'');
