@@ -2117,9 +2117,9 @@ body:not(.view-compact) .header { position:relative; z-index:6; flex-shrink:0; }
 /* ── 单行歌词（2026-10-21 加回：极简≠藏歌词）── */
 #playerStrip .strip-lyric {
   display: none;
-  font-size: 10.5px;
+  font-size: calc(var(--fs-base, 13px) * 0.92);  /* 跟随全局字号缩放，≈12px */
   color: var(--text);
-  opacity: .55;
+  opacity: .6;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   max-width: 46%;
 }
