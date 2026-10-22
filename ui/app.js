@@ -3547,8 +3547,15 @@ function load(i) {
     window.audioEventBus.emit('audio:play', 'music', { currentTime: 0, duration: t.dur || 0 });
   }
   // 封面更新
+  //
+  // 走同源代理，不用 t.pic 原图。
+  // 原图在网易云 CDN 上，带 Referer 校验且不回 CORS：
+  //   显示层：有时能借道，有时 403，于是那个黑胶圆盘只剩底色 + 纹路。
+  //   取色层：crossOrigin=anonymous + 跨域 = 必失败，取到的永远是默认色。
+  // 两件事其实是同一个根 —— 所以统一走 /widget/api/music/pic 代理。
   if (t.pic) {
-    npCover.innerHTML = '<img src="'+esc(t.pic)+'" style="width:100%;height:100%;border-radius:inherit;object-fit:cover;" onerror="_coverFallback(this)">';
+    var _proxySrc = '/widget/api/music/pic?url=' + encodeURIComponent(t.pic);
+    npCover.innerHTML = '<img src="' + esc(_proxySrc) + '" style="width:100%;height:100%;border-radius:inherit;object-fit:cover;" onerror="_coverFallback(this)">';
   } else {
     npCover.innerHTML = '♫';
   }
@@ -3647,7 +3654,8 @@ function load(i) {
       t.url = hit.url;
       if(hit.pic) {
         t.pic = hit.pic;
-        npCover.innerHTML = '<img src="'+esc(t.pic)+'" style="width:100%;height:100%;border-radius:inherit;object-fit:cover;" onerror="_coverFallback(this)">';
+        // 同第一处：走同源代理，别把跨域 CDN 地址直接吐给 <img>
+        npCover.innerHTML = '<img src="' + esc('/widget/api/music/pic?url=' + encodeURIComponent(t.pic)) + '" style="width:100%;height:100%;border-radius:inherit;object-fit:cover;" onerror="_coverFallback(this)">';
       }
       document.getElementById('trackName').textContent=t.name;
       saveTrks();

@@ -358,9 +358,11 @@ body.view-compact .inst-code { display: none; }
    * 前者根本不读它。字号系统本来是 --font-base × --font-scale = --fs-base，
    * 这里直接接到那根链上，调字号才真的会变。
    *
-   * 11.5/13 = 0.885，所以基准比全局文字略小一档，保持原来的克制感。
+   * 同日再调：“字体很小”不是指不能调，是指绝对值太小。
+   * 原来 11.5/13 = 0.885，比正文还小一截，当成歌词读很费劲。
+   * 改成 1.15 倍（13px 时约 15px），并保留对 --font-scale 的跟随。
    */
-  font-size: calc(var(--fs-base, 13px) * 0.885);
+  font-size: calc(var(--fs-base, 13px) * 1.15);
   color:var(--lyric-color, var(--text-dim)); line-height:1.8; text-align:center;
   transition:color 0.2s, opacity 0.3s;
 }
