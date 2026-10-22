@@ -46,9 +46,16 @@ const MEASURE = `
       overflowWrap: cs.overflowWrap,
       fontSize: cs.fontSize,
       text: (el.textContent || '').slice(0, 24),
-      // 一行还是多行：行高 * 行数 vs 实际高
+      // 一行还是多行：用行盒数（getClientRects）而不是 高/行高 估——
+      // 后者对 block 元素会把盒内边距也算进去，少字也算成多行。
       lineHeight: cs.lineHeight,
-      lines: Math.round(r.height / (parseFloat(cs.lineHeight) || 1)),
+      lineBoxes: el.getClientRects().length,
+      isVertical: (function () {
+        // 竖排的真特征：宽远小于高、且文字长度可见
+        var t = (el.textContent || '').trim();
+        if (!t) return false;
+        return r.width < r.height * 0.6 && r.width < 40 && t.length >= 3;
+      })(),
     };
   }
   var mode = document.getElementById('trackMode');
@@ -111,8 +118,8 @@ const main = async () => {
   else {
     if (mode.writingMode && mode.writingMode !== 'horizontal-tb')
       problems.push(`writing-mode 不是横排：${mode.writingMode}`);
-    if (mode.lines > 1 && mode.text && mode.text.length <= 8)
-      problems.push(`短文本（${mode.text}）占 ${mode.lines} 行，被挤成竖排`);
+    if (mode.isVertical)
+      problems.push(`「${mode.text}」被挤成竖排（${mode.w}×${mode.h}）`);
     if (mode.w < 12) problems.push(`可用宽度只有 ${mode.w}px，装不下字`);
   }
 

@@ -5924,7 +5924,17 @@ function doPlaylistImport(){
   renderPv();   // 初始占位（暂无歌词）
 
   function renderLrc(){
-    if(!lrcData.length){ lyricBody.innerHTML='<div class="lyric-line" style="color:var(--text-faint);padding:8px 0">暂无歌词</div>'; chorusSetGlobal=new Set(); renderPv(); return; }
+    if(!lrcData.length){
+      lyricBody.innerHTML='<div class="lyric-line" style="color:var(--text-faint);padding:8px 0">暂无歌词</div>';
+      // 打标记：此刻容器里只有占位文案，不该在 long 布局里占一条宽度
+      // （CSS 读 .is-placeholder 把它藏起来，见 style.css）
+      var _sec = lyricBody.closest('.lyrics-section');
+      if (_sec) _sec.classList.add('is-placeholder');
+      chorusSetGlobal=new Set(); renderPv(); return;
+    }
+    // 真有歌词了，摘掉占位标记
+    var _sec2 = lyricBody.closest('.lyrics-section');
+    if (_sec2) _sec2.classList.remove('is-placeholder');
     var chorusSet = detectChorus(lrcData);
     chorusSetGlobal = chorusSet;
     renderPv();
@@ -5940,6 +5950,9 @@ function doPlaylistImport(){
       var tran = l.tran ? '<span class="lyric-tran">'+esc(l.tran)+'</span>' : '';
       return '<div class="'+cls+'" data-lrc-idx="'+i+'"><span class="l-main">'+esc(l.text)+'</span>'+tran+'</div>';
     }).join('');
+    // 写完后确保占位标记不在（首帧可能从「暂无歌词」切过来）
+    var _sec3 = lyricBody.closest('.lyrics-section');
+    if (_sec3) _sec3.classList.remove('is-placeholder');
   }
 
   // ── 歌词浏览态：用户滚动查看时暂停自动跟随，3s 无交互自动平滑回归 ──

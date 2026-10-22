@@ -2530,9 +2530,38 @@ body:has(.player-container[data-layout="strip"])::before {
   margin: 0;
 }
 .player-container[data-layout="long"] .lyrics-section {
+  /*
+   * 必须把 width 改回 auto。
+   *
+   * 基础规则 `.lyrics-section { width:100%; }` 是给**竖排**布局写的：
+   * 那时父容器是 column，100% 指「跟父容器一样宽」，正确。
+   * 但 long 布局把 .now-playing-section 改成了 row（上一条规则），
+   * 这时 width:100% 变成 flex-basis 的参考值 = 整行宽，
+   * 于是歌词区块吃掉 父宽−60，把 np-info 挤成 0 ——
+   * 歌名、歌手、按钮全塌成一条线（420/560/640 全中）。
+   *
+   * 同一条 CSS 在两种布局下含义相反，只能显式覆盖。
+   */
+  width: auto;
   flex: 0 1 auto;
+  min-width: 0;          /* 允许收缩到比内容窄，否则长句又把 np-info 顶掉 */
   max-height: 64px;
   overflow: hidden;
+}
+
+/*
+ * 只显示「暂无歌词」时不占位。
+ *
+ * 那个 82px 灰条里装的不是歌，是占位文字「暂无歌词」（46×37，被挤成两行）。
+ * 用户看到的是“这里坏了”，而不是“这里本来没东西”。
+ *
+ * 不用 :empty —— 容器里确实有一个 .lyric-line，只是内容是占位文案。
+ * 也不靠 :has(.lyric-line) —— 它同样成立，隐藏不了。
+ * 只能由 JS 在写入歌词时打标记（见 app.js 的 syncLyricsPlaceholder），
+ * 这里读那个标记。
+ */
+.player-container[data-layout="long"] .lyrics-section.is-placeholder {
+  display: none;
 }
 .player-container[data-layout="long"] .pv-stage {
   flex: 1 1 auto;
